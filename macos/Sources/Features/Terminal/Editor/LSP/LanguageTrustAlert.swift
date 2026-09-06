@@ -295,21 +295,17 @@ enum LanguageTrustGate {
             preconditionFailure("a prompt is only built for a manifest-supplied server")
         }
         let catalog = LanguageResolver.shared.catalog
-        let contributed = catalog.contributed.first {
+        let manifest = catalog.entry(for: provenance)?.manifest
+        let language = catalog.contributed.first {
             $0.provenance == provenance && $0.language.languageID == definition.languageID
-        }
-        let companion = catalog.servers.first {
-            $0.provenance == provenance && $0.server.command == definition.command
-        }
+        }?.language
 
         return LanguageTrustAlert.Request(
-            extensionName: contributed?.extensionName ?? companion?.extensionName
-                ?? provenance.extensionID,
+            extensionName: manifest?.name ?? provenance.extensionID,
             extensionID: provenance.extensionID,
-            publisher: contributed?.publisher ?? companion?.publisher ?? "",
-            extensionVersion: contributed?.extensionVersion ?? companion?.extensionVersion ?? "",
-            languageName: contributed?.language.displayName ?? companion?.server.displayName
-                ?? definition.languageID,
+            publisher: manifest?.publisher ?? "",
+            extensionVersion: manifest?.version ?? "",
+            languageName: language?.displayName ?? definition.languageID,
             command: definition.command,
             arguments: definition.arguments,
             resolvedPath: subject.resolvedPath,

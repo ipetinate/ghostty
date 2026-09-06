@@ -263,7 +263,7 @@ struct LanguageManifest: Equatable, Sendable {
             publisher: displayString(json["publisher"]) ?? "",
             eligibility: eligibility,
             languages: dedupedByLanguageID(languages),
-            servers: deduped(servers, by: \.id),
+            servers: deduped(servers, by: \.command),
             formatters: deduped(formatters, by: \.id),
             themes: deduped(themes, by: \.name),
             iconThemes: deduped(iconThemes, by: \.name),

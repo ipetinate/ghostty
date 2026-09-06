@@ -1,75 +1,89 @@
 import Foundation
 
-/// One entry of `contributes.servers` — a server that attaches *alongside*
-/// a language's own server rather than instead of it.
+/// One entry of `contributes.servers`: a server that runs **beside** the
+/// server of a language it does not own, for the files of the languages it
+/// names, and only in a project that shows it is wanted.
 ///
-/// Tailwind IntelliSense is the shape this exists for: it completes the
-/// inside of a `class` attribute in five different languages, none of which
-/// it is *the* server for. The Vue extension's second process is the other
-/// shape — the `<script>` block of a `.vue` is served by tsserver loading a
-/// plugin, while the Vue server keeps the template and the styles.
+/// Tailwind is the shape this was written against. Its server completes the
+/// inside of a `class` attribute in HTML, Vue and JSX, none of which is its
+/// language, and it has nothing to say in a project without
+/// `node_modules/tailwindcss`. The other shape is a tsserver hosting a
+/// plugin: the `<script>` block of a `.vue` is served by that process while
+/// the Vue server keeps the template and the styles.
 ///
-/// It is appended **after** the language's own server, because everything
-/// that merges answers from several servers reads primary-first: the
-/// language's own server is the one whose hover and diagnostics should win.
-struct CompanionServerContribution: Equatable, Sendable, Identifiable {
+/// A companion is appended **after** the language's own server, because
+/// everything that merges answers from several servers reads primary-first:
+/// the language's own server is the one whose hover and diagnostics win.
+///
+/// The server half is spelled exactly as `languages[].server` is, and parsed
+/// by the same code, so an author who has written one has written the other.
+struct CompanionServerContribution: Equatable, Sendable {
     /// More than this in one extension is not a language pack, and each one
     /// is a process per language id per workspace.
     static let maxServers = 16
 
     static let maxLanguageIDs = 32
 
-    static let maxProjectMarkers = 16
-
-    static let maxMarkerLength = 256
-
-    /// Stable within the extension, and the key one companion server
-    /// shadows another on.
-    let id: String
-
+    /// What to call it in a list and in the approval prompt.
     let displayName: String
 
-    /// Resolved on the login shell's `PATH` and launched directly, never
-    /// through a shell — the same contract `LanguageServerContribution`
-    /// has.
-    let command: String
+    let server: LanguageServerContribution
 
-    let arguments: [String]
-
-    /// The documents this server is offered for. One `LSPServerDefinition`
-    /// is built per id, because `didOpen` announces the id and the server
-    /// picks how to read the document from it — a document arriving as
-    /// anything else is a document it has no rule for.
+    /// The language ids this server attaches to, lower-cased. `didOpen`
+    /// announces the file's own language id, so one process runs per
+    /// language id per workspace — the arithmetic every other server already
+    /// pays.
     let languageIDs: [String]
 
-    /// Relative paths, any one of which starting the server when it is
-    /// found walking up from the file's directory to the workspace root.
-    /// Empty means always.
-    let projectMarkers: [String]
+    /// What the project has to show before this server starts, read from
+    /// `projectMarkers` — the same key, the same parser and the same walk a
+    /// formatter uses to ask whether a project adopted it. Empty rules
+    /// attach the server to every file of those languages.
+    ///
+    /// **Only the markers are read here.** A formatter block also carries
+    /// `localBinary` and `workingDirectory`, and neither means anything to a
+    /// server: the launch resolves its command on the login `PATH` and runs
+    /// it in the workspace root. Parsing them would let a manifest write a
+    /// key that decides nothing.
+    let projectRules: FormatterProjectRules
 
-    /// **Display and copy only.** This sentence never reaches a shell. A
-    /// manifest that wants a button says so in `installPlan`, whose commands
-    /// are checked word by word; this is the text beside it.
-    let installHint: String
+    /// Which section of the Settings list this server belongs to.
+    let category: LSPServerCategory
 
-    let installPlan: ExtensionInstallPlan?
+    /// The binary, which is this server's identity: two extensions attaching
+    /// the same command to one language would run the same process twice for
+    /// one file, so the catalog keeps one of them.
+    var command: String { server.command }
 
-    let documentationURL: URL?
+    var arguments: [String] { server.arguments }
 
-    /// `initializationOptions` re-encoded as JSON text, the same way a
-    /// language's own server carries them.
-    let initializationOptionsJSON: String?
+    var installHint: String { server.installHint }
+
+    var installPlan: ExtensionInstallPlan? { server.installPlan }
+
+    var documentationURL: URL? { server.documentationURL }
+
+    var initializationOptionsJSON: String? { server.initializationOptionsJSON }
 
     /// The glue this server needs that no JSON literal can express. See
     /// `LSPInitializationOptionsKind`.
-    let resolver: LSPInitializationOptionsKind
+    var resolver: LSPInitializationOptionsKind { server.resolver }
 
-    let category: LSPServerCategory
-
-    let maximumJavaFeatureVersion: Int?
+    var maximumJavaFeatureVersion: Int? { server.maximumJavaFeatureVersion }
 
     /// The launchable definition for one of the language ids this server was
     /// declared for, or nil for any other.
+    ///
+    /// Keyed by the **file's** language id, not by anything of the
+    /// companion's own: `didOpen` announces `definition.languageID`, and the
+    /// server picks how to read the document from it. It also keeps the
+    /// companion on its own `LSPCenter.Key` — same language, same root,
+    /// different command — instead of colliding with the primary.
+    ///
+    /// That is load-bearing for a tsserver plugin host. The plugin's
+    /// `languages` array becomes tsserver's `modeIds`, which is what
+    /// registers the process for `vue` at all, and the document has to
+    /// arrive announced as `vue` to match it.
     ///
     /// `provenance` is required rather than defaulted: the definition is
     /// what reaches the trust gate, and a companion server is a program from
@@ -97,35 +111,25 @@ struct CompanionServerContribution: Equatable, Sendable, Identifiable {
 
     // MARK: Parsing
 
-    /// Nil when the entry has no usable id, no launchable command, or claims
-    /// no language at all — each of which is a server nothing could ever
-    /// start, and none of which costs the manifest anything else.
+    /// Nil for an entry with no launchable command or no language to attach
+    /// to — each of those is a server nothing could ever start. Every other
+    /// defect costs the field, not the entry.
     static func parse(json: [String: Any]) -> CompanionServerContribution? {
-        guard let id = LanguageManifest.validID(json["id"]) else { return nil }
-        guard let command = LanguageManifest.string(json["command"]),
-              LanguageServerContribution.isLaunchable(command)
-        else { return nil }
-
+        guard case (let server?, nil) = LanguageServerContribution.parse(json: json) else {
+            return nil
+        }
         let languageIDs = self.languageIDs(from: json["languageIds"])
         guard !languageIDs.isEmpty else { return nil }
 
         return CompanionServerContribution(
-            id: id,
-            displayName: LanguageManifest.displayString(json["name"]) ?? id,
-            command: command,
-            arguments: LanguageServerContribution.arguments(from: json["args"]),
+            displayName: LanguageManifest.displayString(json["name"]) ?? server.command,
+            server: server,
             languageIDs: languageIDs,
-            projectMarkers: projectMarkers(from: json["projectMarkers"]),
-            installHint: LanguageServerContribution.installHint(json["installHint"]),
-            installPlan: ExtensionInstallPlan.parse(json["install"]),
-            documentationURL: LanguageServerContribution.documentationURL(json["documentationURL"]),
-            initializationOptionsJSON: LanguageServerContribution
-                .initializationOptionsJSON(json["initializationOptions"]),
-            resolver: LanguageServerContribution.resolver(json["resolver"]),
+            projectRules: FormatterProjectRules(
+                markers: FormatterContribution.markers(from: json["projectMarkers"])
+            ),
             category: LSPServerCategory(rawValue: LanguageManifest.string(json["category"]) ?? "")
-                ?? .script,
-            maximumJavaFeatureVersion: LanguageServerContribution
-                .maximumJavaFeatureVersion(json["maximumJavaFeatureVersion"])
+                ?? .script
         )
     }
 
@@ -137,28 +141,5 @@ struct CompanionServerContribution: Equatable, Sendable, Identifiable {
             .filter { seen.insert($0).inserted }
             .prefix(maxLanguageIDs)
             .map { $0 }
-    }
-
-    /// Marker paths, refused unless they are relative and stay relative.
-    ///
-    /// An absolute marker would let a manifest decide the server runs by
-    /// pointing at something outside the project entirely, and `..` would
-    /// let it climb out of the directory the walk is standing in — which is
-    /// the same walk that is already bounded by the workspace root, and
-    /// pointless to bound if a marker can step over it.
-    static func projectMarkers(from value: Any?) -> [String] {
-        let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
-        var seen: Set<String> = []
-        return raw.compactMap { candidate -> String? in
-            let text = candidate.trimmingCharacters(in: .whitespaces)
-            guard !text.isEmpty, text.count <= maxMarkerLength else { return nil }
-            guard !text.hasPrefix("/"), !text.hasPrefix("~") else { return nil }
-            guard !text.split(separator: "/").contains("..") else { return nil }
-            guard !text.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar)
-            else { return nil }
-            return seen.insert(text).inserted ? text : nil
-        }
-        .prefix(maxProjectMarkers)
-        .map { $0 }
     }
 }

@@ -89,9 +89,9 @@ struct LanguageCatalog: Equatable {
     ///
     /// Separate from `Contributed` because a companion is not a language: it
     /// claims no file type and owns no `languageId`, it only offers itself
-    /// beside whoever does. Shadowing is by its own `id`, so two extensions
-    /// shipping the same server produce one running process and a row
-    /// saying which of them lost.
+    /// beside whoever does. Shadowing is by **command**, so two extensions
+    /// shipping the same binary produce one running process and a row saying
+    /// which of them lost.
     struct ContributedServer: Equatable, Identifiable {
         let provenance: ExtensionProvenance
         let listIdentity: String
@@ -102,9 +102,21 @@ struct LanguageCatalog: Equatable {
         let resolution: Resolution
         let manifestURL: URL
 
-        var id: String { listIdentity + "#server:" + server.id }
+        var id: String { listIdentity + "#server:" + server.command }
 
         var isActive: Bool { resolution == .active }
+
+        /// Whether this file's project shows the server is wanted, by the
+        /// same walk a formatter uses to ask whether a project adopted it: a
+        /// marker anywhere between the file and the enclosing repository.
+        /// Rules that declare nothing attach it to every file.
+        func attaches(toFile path: String, fileManager: FileManager = .default) -> Bool {
+            FormatterProject.discover(
+                forFile: path,
+                rules: server.projectRules,
+                fileManager: fileManager
+            ).adoption != .unadopted
+        }
 
         /// The launchable definition for one of the language ids this server
         /// was declared for, or nil when it is not in force or does not
@@ -261,11 +273,17 @@ struct LanguageCatalog: Equatable {
     }
 
     /// The companion servers in force for a language id, in the order they
-    /// should be consulted. Whether any of them actually starts is a
-    /// question about the project on disk — see `ProjectMarker`.
+    /// should be consulted. Whether one attaches to a particular file is the
+    /// caller's question — see `ContributedServer.attaches(toFile:)`.
     func companionServers(forLanguageID languageID: String) -> [ContributedServer] {
         let lowered = languageID.lowercased()
         return servers.filter { $0.isActive && $0.server.languageIDs.contains(lowered) }
+    }
+
+    /// The extension a provenance names, for a prompt or a row that wants
+    /// its name, publisher and version.
+    func entry(for provenance: ExtensionProvenance) -> Entry? {
+        entries.first { $0.manifest.provenance == provenance }
     }
 
     func formatter(forFileName fileName: String) -> ContributedFormatter? {
@@ -472,17 +490,20 @@ struct LanguageCatalog: Equatable {
         }
     }
 
-    /// One companion server per id, the highest-ranked extension's winning.
+    /// One companion per binary. Two extensions attaching the same command
+    /// to a language would run the same process twice for one file, so the
+    /// higher-ranked one wins and the other is listed shadowed. Two different
+    /// binaries for one language both attach: that is the point of the shape.
     ///
-    /// Claimed by id and not by language id, because a companion is offered
-    /// beside a language's own server rather than instead of it: two of them
-    /// serving the same document is the normal case, and shadowing on the
-    /// language would turn a Tailwind server and a tsserver plugin host into
-    /// a conflict neither of them has.
+    /// Claimed by command and not by language id, because a companion is
+    /// offered beside a language's own server rather than instead of it: two
+    /// of them serving the same document is the normal case, and shadowing on
+    /// the language would turn a Tailwind server and a tsserver plugin host
+    /// into a conflict neither of them has.
     static func resolveServers(manifests: [LanguageManifest]) -> [ContributedServer] {
         var claimed: [String: String] = [:]
-        return ordered(\.servers, in: manifests, by: \.id).map { manifest, server in
-            let claim = "server:" + server.id
+        return ordered(\.servers, in: manifests, by: \.command).map { manifest, server in
+            let claim = "server:" + server.command
             let resolution: Resolution
             if let owner = claimed[claim] {
                 resolution = .shadowed(by: .extensionID(owner), claim: claim)

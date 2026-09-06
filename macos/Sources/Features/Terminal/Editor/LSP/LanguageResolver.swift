@@ -189,7 +189,9 @@ final class LanguageResolver: ObservableObject {
     /// one whose hover and diagnostics should win.
     ///
     /// This is also the seam where facts about disk are resolved: the
-    /// catalog is pure and answers only which servers were *declared*.
+    /// catalog answers only which servers were *declared*, and
+    /// `attaches(toFile:)` walks up from the file to the enclosing
+    /// repository asking whether the project wanted each of them.
     func serverDefinitions(forPath path: String) -> [LSPServerDefinition] {
         guard let contributed = catalog.contribution(
             forFileName: (path as NSString).lastPathComponent
@@ -197,18 +199,10 @@ final class LanguageResolver: ObservableObject {
 
         let primary = contributed.serverDefinition.map { [$0] } ?? []
         let languageID = contributed.language.languageID
-        let companions = catalog.companionServers(forLanguageID: languageID)
-        guard !companions.isEmpty else { return primary }
 
-        let root = LSPCenter.workspaceRoot(for: path)
-        return primary + companions.compactMap { companion in
-            guard ProjectMarker.resolve(
-                forPath: path,
-                root: root,
-                markers: companion.server.projectMarkers
-            ).isPresent else { return nil }
-            return companion.serverDefinition(forLanguage: languageID)
-        }
+        return primary + catalog.companionServers(forLanguageID: languageID)
+            .filter { $0.attaches(toFile: path) }
+            .compactMap { $0.serverDefinition(forLanguage: languageID) }
     }
 
     func serverDefinition(forLanguage languageID: String) -> LSPServerDefinition? {

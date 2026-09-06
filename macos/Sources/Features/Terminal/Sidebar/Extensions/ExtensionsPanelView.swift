@@ -5,15 +5,31 @@ struct ExtensionsPanelView: View {
     @ObservedObject private var palette: ThemePalette = .shared
 
     @State private var searchText = ""
+    @State private var kind: ExtensionCatalogFilter.Kind = .all
+    @State private var sort: ExtensionCatalogFilter.Sort = .name
     @State private var selectedID: String?
     @State private var hasLoaded = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            search
-            registryContent
+        let sections = catalog
+
+        return VStack(spacing: 0) {
+            ExtensionKindTabs(selection: $kind, counts: sections.counts, style: .compact)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 2)
+            searchRow
+            registryContent(sections)
         }
         .onAppear(perform: loadOnce)
+    }
+
+    private var catalog: ExtensionCatalogFilter.Sections {
+        ExtensionCatalogFilter.sections(
+            entries: store.index?.extensions ?? [],
+            installed: store.installed,
+            query: searchText,
+            kind: kind,
+            sort: sort)
     }
 
     private func loadOnce() {
@@ -21,6 +37,26 @@ struct ExtensionsPanelView: View {
         hasLoaded = true
         store.reloadInstalled()
         Task { await store.refresh() }
+    }
+
+    private var searchRow: some View {
+        HStack(spacing: 2) {
+            search
+            sortMenu
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 4)
+    }
+
+    private var sortMenu: some View {
+        SidebarIconMenu(help: "Sort by " + sort.title, icon: "arrow.up.arrow.down") {
+            Picker("Sort", selection: $sort) {
+                ForEach(ExtensionCatalogFilter.Sort.allCases) { option in
+                    Text(verbatim: option.title).tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+        }
     }
 
     private var search: some View {
@@ -56,12 +92,10 @@ struct ExtensionsPanelView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color.secondary.opacity(0.12))
         )
-        .padding(.horizontal, 8)
-        .padding(.bottom, 4)
     }
 
     @ViewBuilder
-    private var registryContent: some View {
+    private func registryContent(_ sections: ExtensionCatalogFilter.Sections) -> some View {
         if let index = store.index {
             if let error = store.lastRefreshError {
                 Text(verbatim: error)
@@ -71,7 +105,7 @@ struct ExtensionsPanelView: View {
                     .padding(.horizontal, 10)
                     .padding(.bottom, 4)
             }
-            list(index)
+            list(index, sections)
         } else if !store.isRefreshing, let error = store.lastRefreshError {
             failure(error)
         } else {
@@ -100,16 +134,16 @@ struct ExtensionsPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func list(_ index: ExtensionIndex) -> some View {
-        let sections = ExtensionListFilter.sections(
-            entries: index.extensions, installed: store.installed, query: searchText)
-
-        return ScrollView {
+    private func list(
+        _ index: ExtensionIndex,
+        _ sections: ExtensionCatalogFilter.Sections
+    ) -> some View {
+        ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
                 if index.extensions.isEmpty {
                     message("The registry has no extensions yet.")
                 } else if sections.isEmpty {
-                    message("No extension matches.")
+                    message(emptyMessage)
                 } else {
                     ForEach(sections.entries) { entry in
                         row(for: entry)
@@ -175,8 +209,14 @@ struct ExtensionsPanelView: View {
         }
     }
 
-    private func message(_ text: LocalizedStringKey) -> some View {
-        Text(text)
+    private var emptyMessage: String {
+        kind == .all
+            ? "No extension matches."
+            : "No extension matches in " + kind.title + "."
+    }
+
+    private func message(_ text: String) -> some View {
+        Text(verbatim: text)
             .font(palette.font(size: 11))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)

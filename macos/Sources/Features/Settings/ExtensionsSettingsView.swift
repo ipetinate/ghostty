@@ -1,44 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum ExtensionListFilter {
-    struct Sections: Equatable {
-        let entries: [ExtensionIndex.Entry]
-        let orphans: [InstalledExtension]
-
-        var isEmpty: Bool { entries.isEmpty && orphans.isEmpty }
-    }
-
-    static func sections(
-        entries: [ExtensionIndex.Entry],
-        installed: [InstalledExtension],
-        query: String
-    ) -> Sections {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let listed = Set(entries.map(\.id))
-        return Sections(
-            entries: byName(entries.filter { matches(needle, in: fields(of: $0)) }, name: \.name),
-            orphans: byName(
-                installed.filter { !listed.contains($0.id) && matches(needle, in: [$0.name, $0.id]) },
-                name: \.name)
-        )
-    }
-
-    private static func fields(of entry: ExtensionIndex.Entry) -> [String] {
-        [entry.name, entry.id, entry.publisher, entry.summary] + entry.languages + (entry.card?.tags ?? [])
-    }
-
-    private static func matches(_ needle: String, in fields: [String]) -> Bool {
-        needle.isEmpty || fields.contains { $0.lowercased().contains(needle) }
-    }
-
-    private static func byName<Item>(_ items: [Item], name: KeyPath<Item, String>) -> [Item] {
-        items.sorted {
-            $0[keyPath: name].localizedStandardCompare($1[keyPath: name]) == .orderedAscending
-        }
-    }
-}
-
 struct ExtensionsSettingsView: View {
     static let registryURL = URL(string: "https://github.com/ipetinate/phantom-extensions")!
 
@@ -46,11 +8,16 @@ struct ExtensionsSettingsView: View {
     @ObservedObject private var navigation = SettingsNavigation.shared
 
     @State private var searchText = ""
+    @State private var kind: ExtensionCatalogFilter.Kind = .all
+    @State private var sort: ExtensionCatalogFilter.Sort = .name
     @State private var hasRequestedRegistry = false
 
     var body: some View {
-        Form {
+        let sections = catalog
+
+        return Form {
             Section {
+                ExtensionKindTabs(selection: $kind, counts: sections.counts)
                 headerRow
                 if store.index != nil, let error = store.lastRefreshError {
                     Text(verbatim: error)
@@ -59,7 +26,7 @@ struct ExtensionsSettingsView: View {
                 }
             }
 
-            registryContent
+            registryContent(sections)
             folderSection
         }
         .formStyle(.grouped)
@@ -74,6 +41,15 @@ struct ExtensionsSettingsView: View {
     private func consumeRequest() {
         guard navigation.target?.section == .extensions else { return }
         navigation.target = nil
+    }
+
+    private var catalog: ExtensionCatalogFilter.Sections {
+        ExtensionCatalogFilter.sections(
+            entries: store.index?.extensions ?? [],
+            installed: store.installed,
+            query: searchText,
+            kind: kind,
+            sort: sort)
     }
 
     private func loadOnce() {
@@ -100,6 +76,7 @@ struct ExtensionsSettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
+            sortMenu
             if store.isRefreshing {
                 ProgressView()
                     .controlSize(.small)
@@ -111,12 +88,30 @@ struct ExtensionsSettingsView: View {
         }
     }
 
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort", selection: $sort) {
+                ForEach(ExtensionCatalogFilter.Sort.allCases) { option in
+                    Text(verbatim: option.title).tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("Sort", systemImage: "arrow.up.arrow.down")
+                .labelStyle(.iconOnly)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Sort by " + sort.title)
+    }
+
     // MARK: Registry
 
     @ViewBuilder
-    private var registryContent: some View {
+    private func registryContent(_ sections: ExtensionCatalogFilter.Sections) -> some View {
         if let index = store.index {
-            listSections(index)
+            listSections(index, sections)
         } else if !store.isRefreshing, let error = store.lastRefreshError {
             Section {
                 LabeledContent {
@@ -146,14 +141,14 @@ struct ExtensionsSettingsView: View {
     }
 
     @ViewBuilder
-    private func listSections(_ index: ExtensionIndex) -> some View {
-        let sections = ExtensionListFilter.sections(
-            entries: index.extensions, installed: store.installed, query: searchText)
-
+    private func listSections(
+        _ index: ExtensionIndex,
+        _ sections: ExtensionCatalogFilter.Sections
+    ) -> some View {
         if index.extensions.isEmpty {
             Section { message("The registry has no extensions yet.") }
         } else if sections.isEmpty {
-            Section { message("No extension matches.") }
+            Section { message(emptyMessage) }
         } else if !sections.entries.isEmpty {
             Section {
                 ForEach(sections.entries) { entry in
@@ -183,8 +178,14 @@ struct ExtensionsSettingsView: View {
         }
     }
 
-    private func message(_ text: LocalizedStringKey) -> some View {
-        Text(text)
+    private var emptyMessage: String {
+        kind == .all
+            ? "No extension matches."
+            : "No extension matches in " + kind.title + "."
+    }
+
+    private func message(_ text: String) -> some View {
+        Text(verbatim: text)
             .foregroundStyle(.secondary)
     }
 

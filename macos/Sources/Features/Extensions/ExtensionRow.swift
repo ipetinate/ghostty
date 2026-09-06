@@ -440,6 +440,8 @@ struct ExtensionContributionChip: Equatable {
         case "languages":
             return ExtensionContributionChip(
                 title: "Languages", systemImage: "chevron.left.forwardslash.chevron.right")
+        case "servers":
+            return ExtensionContributionChip(title: "Servers", systemImage: "server.rack")
         case "formatters":
             return ExtensionContributionChip(title: "Formatters", systemImage: "text.alignleft")
         case "themes":

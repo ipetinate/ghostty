@@ -206,7 +206,7 @@ struct ExtensionPreviewCacheTests {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("phantom-preview-cache-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
+        return root.resolvingSymlinksInPath().standardizedFileURL
     }
 
     private func writeExtension(id: String, version: String, into directory: URL, document: Bool = true) throws {
@@ -329,7 +329,10 @@ struct ExtensionPreviewCacheTests {
         #expect(verified.bytes == 1065)
         #expect(verified.verifiedAt == Date(timeIntervalSince1970: 1_788_581_934))
         let stale = try #require(registry.first { $0.marker == nil })
-        #expect(stale.directory == ExtensionPreviewCache.directory(for: unverified, root: root))
+        #expect(
+            stale.directory.resolvingSymlinksInPath().standardizedFileURL
+                == ExtensionPreviewCache.directory(for: unverified, root: root)
+                .resolvingSymlinksInPath().standardizedFileURL)
         let mirror = try #require(scanned.first { $0.area == .local })
         #expect(mirror.id == "acme.zig")
 
@@ -339,7 +342,7 @@ struct ExtensionPreviewCacheTests {
         #expect(FileManager.default.fileExists(atPath: local.path))
     }
 
-    @Test func theViewerIsCopiedOnceIntoItsVersionedDirectory() throws {
+    @Test func theViewerIsCopiedIntoItsVersionedDirectoryAndRepairedWhenItDiffers() throws {
         let root = try makeRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let source = root.appendingPathComponent("bundle", isDirectory: true)
@@ -360,7 +363,7 @@ struct ExtensionPreviewCacheTests {
 
         try "changed".write(to: copied.appendingPathComponent("viewer.js"), atomically: true, encoding: .utf8)
         _ = try ExtensionViewerBundle.copy(from: source, version: "0.3.0", into: root)
-        #expect(try String(contentsOf: copied.appendingPathComponent("viewer.js"), encoding: .utf8) == "changed")
+        #expect(try String(contentsOf: copied.appendingPathComponent("viewer.js"), encoding: .utf8) == "viewer.js")
 
         try "not a version".write(to: source.appendingPathComponent("VERSION"), atomically: true, encoding: .utf8)
         #expect(ExtensionViewerBundle.version(in: source) == nil)

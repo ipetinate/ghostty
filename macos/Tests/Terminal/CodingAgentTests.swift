@@ -42,7 +42,7 @@ struct CodingAgentTests {
         let fromDisk = CodingAgent(rawValue: "codex")
 
         #expect(fromDisk == .codex)
-        #expect(fromDisk.hashValue == CodingAgent.codex.hashValue)
+        #expect(fromDisk?.hashValue == CodingAgent.codex.hashValue)
         #expect(Set([CodingAgent.codex, fromDisk].compactMap { $0 }).count == 1)
     }
 

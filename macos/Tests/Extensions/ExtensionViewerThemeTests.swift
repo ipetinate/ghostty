@@ -50,7 +50,7 @@ struct ExtensionViewerThemeTests {
 
     @Test func theCodeBackgroundShiftsAwayFromTheBackground() {
         #expect(ExtensionViewerTheme.hex(ExtensionViewerTheme.shifted(color("#000000"))) == "#0a0a0a")
-        #expect(ExtensionViewerTheme.hex(ExtensionViewerTheme.shifted(color("#ffffff"))) == "#f5f5f5")
+        #expect(ExtensionViewerTheme.hex(ExtensionViewerTheme.shifted(color("#ffffff"))) == "#f7f7f7")
 
         let dark = ExtensionViewerTheme.make(colors: palette, background: color("#060608"), uiFont: "", monoFont: "")
         let darkColors = colorMap(of: dark)

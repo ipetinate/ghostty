@@ -259,6 +259,15 @@ enum ExtensionInstaller {
         }.value
     }
 
+    static func relativePath(of item: URL, under base: [String]) -> String {
+        let parent = item.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        let components = parent.pathComponents + [item.lastPathComponent]
+        guard components.count > base.count, Array(components.prefix(base.count)) == base else {
+            return item.lastPathComponent
+        }
+        return components.dropFirst(base.count).joined(separator: "/")
+    }
+
     static func inspect(_ root: URL) throws {
         let keys: Set<URLResourceKey> = [.isSymbolicLinkKey, .isRegularFileKey, .isDirectoryKey]
         guard let enumerator = FileManager.default.enumerator(
@@ -267,10 +276,10 @@ enum ExtensionInstaller {
             options: []
         ) else { throw Failure.extraction("the extracted files could not be listed.") }
 
-        let prefixLength = root.path.count + 1
+        let base = root.resolvingSymlinksInPath().standardizedFileURL.pathComponents
         for case let item as URL in enumerator {
             let values = try item.resourceValues(forKeys: keys)
-            let relative = String(item.path.dropFirst(prefixLength))
+            let relative = Self.relativePath(of: item, under: base)
             if values.isSymbolicLink == true { throw Failure.symbolicLink(relative) }
             guard values.isRegularFile == true || values.isDirectory == true else {
                 throw Failure.unexpectedItem(relative)

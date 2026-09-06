@@ -26,9 +26,16 @@ struct ExtensionIndexTests {
 
     static func entry(_ changes: [String: Any?], download: [String: Any?] = [:]) -> [String: Any] {
         var json = lua
+        var keepsDownload = true
         for (key, value) in changes {
-            if let value { json[key] = value } else { json.removeValue(forKey: key) }
+            if let value {
+                json[key] = value
+            } else {
+                json.removeValue(forKey: key)
+                if key == "download" { keepsDownload = false }
+            }
         }
+        guard keepsDownload else { return json }
         var downloadJSON = lua["download"] as? [String: Any] ?? [:]
         for (key, value) in download {
             if let value { downloadJSON[key] = value } else { downloadJSON.removeValue(forKey: key) }

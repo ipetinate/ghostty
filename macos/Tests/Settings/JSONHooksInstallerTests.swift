@@ -395,6 +395,8 @@ struct JSONHooksInstallerTests {
                 environment: [:],
                 home: temporaryHome,
                 bundleID: PhantomBuild.releaseBundleID))
+            try FileManager.default.createDirectory(
+                at: claude.settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try #"{"theme":"dark"}"#.write(
                 to: claude.settingsURL, atomically: true, encoding: .utf8)
 

@@ -58,6 +58,7 @@ struct ExtensionRow: View {
     let onRemove: () -> Void
 
     @ObservedObject private var palette: ThemePalette = .shared
+    @ObservedObject private var store: ExtensionStore = .shared
     @State private var isHovered = false
 
     var body: some View {
@@ -160,9 +161,22 @@ struct ExtensionRow: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.red)
                 }
+                requirementsBadge
                 ExtensionActionButton(state: subject.state, onInstall: onInstall, onRemove: onRemove)
                     .controlSize(controlSize)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var requirementsBadge: some View {
+        if let missing = store.pendingRequirements[subject.id],
+           let text = ExtensionStore.requirementsBadge(missing) {
+            Text(verbatim: text)
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .help(missing.map(\.program).joined(separator: ", "))
         }
     }
 }

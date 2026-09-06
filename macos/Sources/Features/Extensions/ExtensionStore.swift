@@ -41,6 +41,8 @@ final class ExtensionStore: ObservableObject {
     @Published private(set) var activity: [String: ExtensionActivity] = [:]
     @Published private(set) var errors: [String: String] = [:]
     @Published private(set) var previews: [String: PreviewState] = [:]
+
+    @Published private(set) var pendingRequirements: [String: [ExtensionRequirement]] = [:]
     @Published private(set) var viewerHTML: URL?
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastRefreshError: String?
@@ -102,6 +104,7 @@ final class ExtensionStore: ObservableObject {
                 try ExtensionInstaller.install(from: staged, as: entry, into: directory)
             }.value
             noteInstalledChanged()
+            Task { await self.refreshRequirements(id: entry.id) }
         } catch {
             errors[entry.id] = Self.message(for: error)
             reloadInstalled()
@@ -123,10 +126,37 @@ final class ExtensionStore: ObservableObject {
 
         switch outcome {
         case .success:
+            pendingRequirements[id] = nil
             noteInstalledChanged()
         case .failure(let error):
             errors[id] = Self.message(for: error)
             reloadInstalled()
+        }
+    }
+
+    func manifestDirectory(for id: String) -> URL? {
+        if let root = installed.first(where: { $0.id == id })?.root { return root }
+        guard case .ready(let document, _)? = previews[id] else { return nil }
+        return document.deletingLastPathComponent()
+    }
+
+    func refreshRequirements(id: String) async {
+        guard let root = installed.first(where: { $0.id == id })?.root else {
+            pendingRequirements[id] = nil
+            return
+        }
+        let found = await Task.detached(priority: .utility) {
+            ExtensionRequirements.probe(directory: root)
+        }.value
+        let missing = found.filter { !$0.isInstalled }
+        pendingRequirements[id] = missing.isEmpty ? nil : missing
+    }
+
+    nonisolated static func requirementsBadge(_ missing: [ExtensionRequirement]) -> String? {
+        switch missing.count {
+        case 0: return nil
+        case 1: return "Needs " + missing[0].program
+        default: return "Needs \(missing.count) programs"
         }
     }
 

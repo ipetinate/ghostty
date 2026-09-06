@@ -7,7 +7,7 @@ struct LSPServerWarningTests {
         var params: [String: LSPValue] = [:]
         if let type { params["type"] = .integer(type) }
         if let message { params["message"] = .string(message) }
-        return LSPNotification(method: method, params: params)
+        return LSPNotification(method: method, params: .object(params))
     }
 
     @Test func onlyAnErrorOrAWarningReachesTheReader() {

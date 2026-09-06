@@ -156,7 +156,7 @@ struct CodeHoverInfoTests {
         #expect(
             documentation == [
                 .prose("Uses the value."),
-                .code("const a = 1", language: "javascript"),
+                .code("const a = 1", language: "ts"),
                 .prose("And then some more."),
             ],
             "\(documentation)"
@@ -232,8 +232,15 @@ struct CodeHoverInfoTests {
     }
 }
 
-/// Which highlighter a fence's tag picks, which is the whole difference
+/// Which language a fence's tag names, which is the whole difference
 /// between a hover that reads as CSS and one that reads as a sentence.
+///
+/// The tag is recorded here, not resolved. This build carries no table of
+/// languages, so the label travels verbatim and
+/// `LanguageResolver.highlighter(forFenceLabel:in:)` maps it onto an
+/// installed grammar when the card is drawn. That mapping — the aliases and
+/// the labels no grammar claims — is covered in `MarkdownRendererTests`,
+/// beside the other reader of the same rule.
 struct CodeHoverFenceLanguageTests {
     /// The whole block rather than its language alone, so "this was not a code
     /// block at all" and "this was a code block naming no language" stay two
@@ -253,27 +260,36 @@ struct CodeHoverFenceLanguageTests {
     /// The tag decides, never the file the pointer is in — the CSS above is
     /// hovered inside a `.tsx`, and colouring it with TypeScript's rules is
     /// the bug this replaced.
-    @Test func everyTagThisBuildKnowsResolves() {
+    ///
+    /// Each label survives the split as the fence wrote it: `typescript` stays
+    /// `typescript` and `scss` stays `scss`. Collapsing one onto another here
+    /// would be this file guessing at a family of languages, which is the
+    /// guess an installed grammar is supposed to answer for.
+    @Test func eachTagSurvivesTheSplitAsTheFenceWroteIt() {
         #expect(declaration("```swift\nlet a = 1\n```") == .code("let a = 1", language: "swift"))
-        #expect(declaration("```typescript\nconst a = 1\n```") == .code("const a = 1", language: "javascript"))
+        #expect(declaration("```typescript\nconst a = 1\n```") == .code("const a = 1", language: "typescript"))
         #expect(declaration("```rust\nlet a = 1;\n```") == .code("let a = 1;", language: "rust"))
-        #expect(declaration("```scss\n.a {}\n```") == .code(".a {}", language: "css"))
+        #expect(declaration("```scss\n.a {}\n```") == .code(".a {}", language: "scss"))
     }
 
     /// The info string can carry more than a language — `ts title="app.ts"`
     /// is a real fence in a docs site — and only its first word is the tag.
     @Test func onlyTheFirstWordOfTheInfoStringIsTheLanguage() {
         let block = declaration("```ts title=\"app.ts\"\nconst a = 1\n```")
-        #expect(block == .code("const a = 1", language: "javascript"), "\(String(describing: block))")
+        #expect(block == .code("const a = 1", language: "ts"), "\(String(describing: block))")
     }
 
-    /// Nil rather than a guess, which is what draws the block monospaced and
-    /// uncoloured. A tag naming something that is not source — `diff`,
-    /// `mermaid`, shell output — must not be run through a highlighter that
-    /// would find keywords in it anyway.
-    @Test func aFenceThatNamesNothingKnownIsNotHighlighted() {
+    /// A fence that names nothing and a fence naming a word no grammar
+    /// claims are two different answers, and only the first one is nil.
+    ///
+    /// Nil says the author wrote no tag, which is a fact about the payload
+    /// and settled here. `mermaid` is a tag like any other and is recorded
+    /// like any other: whether anything colours it is asked of the installed
+    /// grammars when the card is drawn, and a grammar for it can arrive
+    /// tomorrow without this test changing.
+    @Test func onlyAFenceWithNoTagAtAllNamesNoLanguage() {
         #expect(declaration("```\nsome text\n```") == .code("some text", language: nil))
-        #expect(declaration("```mermaid\ngraph TD\n```") == .code("graph TD", language: nil))
+        #expect(declaration("```mermaid\ngraph TD\n```") == .code("graph TD", language: "mermaid"))
     }
 
     /// `rust-analyzer` answers with the module path in one block and the

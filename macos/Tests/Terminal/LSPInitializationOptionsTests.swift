@@ -105,6 +105,8 @@ struct LSPInitializationOptionsTests {
         #expect(definition.initializationOptionsKind == .none)
 
         let declared = try #require(definition.initializationOptionsJSON)
+        #expect(LSPCenter.initializationOptionsSource(for: definition, override: nil) == .manifest(declared))
+
         guard case .success(let value) = LSPCenter.parseInitializationOptions(declared) else {
             Issue.record("the declared options did not parse: \(declared)")
             return
@@ -122,5 +124,112 @@ struct LSPInitializationOptionsTests {
             return
         }
         #expect(reason.contains("initializationOptions"))
+    }
+
+    // MARK: Which of the three sources wins
+
+    private static let literal = #"{"provideFormatter":true}"#
+
+    private func definition(
+        kind: LSPInitializationOptionsKind = .none,
+        json: String? = nil
+    ) -> LSPServerDefinition {
+        LSPServerDefinition(
+            languageID: "json",
+            displayName: "JSON",
+            command: "vscode-json-language-server",
+            arguments: ["--stdio"],
+            installHint: "npm i -g vscode-langservers-extracted",
+            initializationOptionsKind: kind,
+            initializationOptionsJSON: json
+        )
+    }
+
+    private func override(json: String) -> LSPServerOverride {
+        var override = LSPServerOverride()
+        override.initializationOptionsJSON = json
+        return override
+    }
+
+    /// The branch the three `vscode-langservers-extracted` servers depend
+    /// on: a manifest that named no resolver has its literal read, and that
+    /// literal is the whole reason those servers offer a formatter.
+    @Test func aManifestLiteralIsTheSourceWhenNoResolverWasNamed() {
+        #expect(
+            LSPCenter.initializationOptionsSource(for: definition(json: Self.literal), override: nil)
+                == .manifest(Self.literal)
+        )
+    }
+
+    /// A manifest that named a resolver asked this app to compute the value
+    /// from the project, so a literal written beside it is *not* also read.
+    /// Merging the two would send a server one field twice, and neither the
+    /// manifest nor this build could say which half won.
+    @Test func aResolverOutranksALiteralWrittenBesideIt() {
+        for kind in [
+            LSPInitializationOptionsKind.typeScriptSDKArgument,
+            .typeScriptPluginHost(plugin: "@vue/typescript-plugin", languages: ["vue"]),
+        ] {
+            let source = LSPCenter.initializationOptionsSource(
+                for: definition(kind: kind, json: Self.literal),
+                override: nil
+            )
+            #expect(source == .resolver(kind))
+        }
+    }
+
+    /// The reader's own override beats both, because it is the answer to
+    /// "this machine is not like the manifest assumed" — and it beats a
+    /// resolver too, which is the case that matters: an override exists
+    /// precisely for a project this app resolved wrongly.
+    @Test func anOverrideOutranksTheManifestAndItsResolver() {
+        let mine = #"{"mine":1}"#
+
+        #expect(
+            LSPCenter.initializationOptionsSource(
+                for: definition(json: Self.literal), override: override(json: mine)
+            ) == .override(mine)
+        )
+        #expect(
+            LSPCenter.initializationOptionsSource(
+                for: definition(kind: .typeScriptSDKArgument), override: override(json: mine)
+            ) == .override(mine)
+        )
+    }
+
+    /// An override is three fields, and a reader who filled in one of the
+    /// other two did not ask to lose the manifest's options. Blank is read
+    /// as "no override" here for the same reason `LSPServerOverride.isEmpty`
+    /// reads it that way.
+    @Test func anOverrideWithNoOptionsInItLeavesTheManifestsAlone() {
+        var pointsAtADifferentBinary = LSPServerOverride()
+        pointsAtADifferentBinary.command = "/opt/bin/vscode-json-language-server"
+        pointsAtADifferentBinary.initializationOptionsJSON = "  \n\t "
+
+        #expect(
+            LSPCenter.initializationOptionsSource(
+                for: definition(json: Self.literal), override: pointsAtADifferentBinary
+            ) == .manifest(Self.literal)
+        )
+    }
+
+    /// Trimmed here rather than at the parse, so what the source names is
+    /// exactly what gets parsed.
+    @Test func anOverrideIsTrimmedBeforeItIsHandedOn() {
+        #expect(
+            LSPCenter.initializationOptionsSource(
+                for: definition(), override: override(json: "\n  {\"a\":1}  \n")
+            ) == .override(#"{"a":1}"#)
+        )
+    }
+
+    /// The answer for most servers, and the one that sends no
+    /// `initializationOptions` at all.
+    @Test func aServerThatDeclaredNeitherSendsNothing() {
+        #expect(LSPCenter.initializationOptionsSource(for: definition(), override: nil) == .none)
+        #expect(
+            LSPCenter.initializationOptionsSource(for: definition(), override: LSPServerOverride())
+                == .none
+        )
     }
 }

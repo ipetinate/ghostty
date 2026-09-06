@@ -149,6 +149,43 @@ struct MarkdownRendererTests {
         ).isPlain)
     }
 
+    /// The renderer's own half of that: the highlighter's tokens reach the
+    /// attributed string the preview draws.
+    ///
+    /// A separate test from the resolution above because the two fail
+    /// independently. A fence can resolve to a grammar and still be drawn
+    /// flat — the colouring runs over `source` while the panel holds
+    /// `source + "\n"`, and a token range off by one line is a token range
+    /// silently dropped by the bounds check in `highlight(_:language:in:)`.
+    @MainActor
+    @Test func aFenceIsDrawnInTheColoursOfItsGrammar() throws {
+        let document = MarkdownParser.parse("""
+        ```\(FixtureGrammar.languageID)
+        // note
+        let x = "hi"
+        ```
+        """)
+
+        let coloured = MarkdownRenderer(style: style, snapshot: try FixtureGrammar.snapshot())
+            .render(document).text
+        let drawn = Set(foregroundColors(in: coloured).map(\.description))
+
+        for kind in [TokenKind.comment, .keyword, .string] {
+            #expect(
+                drawn.contains(style.theme.color(for: kind).description),
+                "\(kind) was resolved by the grammar and not drawn"
+            )
+        }
+
+        /// The same document with nothing installed, which is what every
+        /// fence gets on a machine with no extensions: one colour, and the
+        /// text still there.
+        let plain = MarkdownRenderer(style: style, snapshot: FixtureGrammar.emptySnapshot())
+            .render(document).text
+        #expect(Set(foregroundColors(in: plain).map(\.description)).count == 1)
+        #expect(plain.string.contains("let x = \"hi\""))
+    }
+
     /// Said out loud, because an unclosed fence is why the rest of the
     /// document stopped being prose.
     @Test func anUnclosedFenceIsLabelled() {

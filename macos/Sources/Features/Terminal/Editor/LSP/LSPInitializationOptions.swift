@@ -40,6 +40,36 @@ enum LSPInitializationOptionsKind: Hashable, Sendable {
     case typeScriptPluginHost(plugin: String, languages: [String])
 }
 
+/// Which of the three sources supplies one launch's `initializationOptions`.
+///
+/// The decision on its own, before any of the three has been read: an
+/// override is text in `UserDefaults`, a resolver is a walk of the project's
+/// `node_modules` and sometimes an `npm` subprocess, and a manifest's literal
+/// is text off disk. Separating the choice from the work is what lets the
+/// choice be read — and asserted — without any of it.
+///
+/// See `LSPCenter.initializationOptionsSource(for:override:)` for the order
+/// and why it is that order.
+enum LSPInitializationOptionsSource: Equatable {
+    /// The reader's own override, as the raw JSON text they typed.
+    case override(String)
+
+    /// A value this app works out from the project, named by the manifest.
+    ///
+    /// The kind travels whole rather than narrowed to the two that resolve
+    /// to something, so a launch reads exactly what the definition holds.
+    /// `LSPCenter.initializationOptionsSource(for:override:)` never answers
+    /// `.resolver(.none)` — a manifest that named no resolver is `manifest`
+    /// or `none` — and a launch handed one sends nothing, the same as `none`.
+    case resolver(LSPInitializationOptionsKind)
+
+    /// The JSON the manifest wrote out literally.
+    case manifest(String)
+
+    /// Nothing to send, which is the answer for most servers.
+    case none
+}
+
 enum LSPInitializationOptions {
     /// The concrete alternative to silence: shown when neither a
     /// project-local nor a global TypeScript can be found.

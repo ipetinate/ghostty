@@ -13,7 +13,7 @@ struct LanguageIconView: View {
                 .scaledToFit()
                 .frame(width: size, height: size)
         } else {
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
+            Image(systemName: LSPServerDefinition.genericLanguageSymbol)
                 .font(.system(size: size * 0.45, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: size, height: size)
@@ -32,32 +32,50 @@ extension LSPServerDefinition {
     /// second opinion about `ruby` gets the Ruby logo, which is the right
     /// answer either way.
     static func iconName(forLanguageID languageID: String) -> String? {
-        let base: String
-        switch languageID {
-        case "typescript", "typescriptreact", "javascript", "javascriptreact":
-            base = "ts-js"
-        case "vue": base = "vue"
-        case "swift": base = "swift"
-        case "kotlin": base = "kotlin"
-        case "python": base = "python"
-        case "rust": base = "rust"
-        case "go": base = "go"
-        case "zig": base = "zig"
-        case "json": base = "json"
-        case "yaml": base = "yaml"
-        case "toml": base = "toml"
-        case "shellscript": base = "bash"
-        case "html": base = "html"
-        case "css", "scss", "less": base = "css"
-        case "java": base = "java"
-        case "c": base = "c"
-        case "cpp": base = "cpp"
-        case "terraform": base = "terraform"
-        case "php": base = "php"
-        case "ruby": base = "ruby"
-        case "markdown": base = "markdown"
-        default: return nil
-        }
-        return "Lang-\(base)"
+        languageIconNames[languageID]
     }
+
+    /// The logos this app ships, by the language ids they are drawn for.
+    ///
+    /// A dictionary rather than a `switch` so the set can be enumerated: a
+    /// name that is not in `Assets.xcassets` draws nothing — no crash, no
+    /// warning, an 18-point hole in a row — and the only way to catch that
+    /// is to ask the bundle for every name this can return.
+    ///
+    /// Several ids share one image on purpose. The four TypeScript and
+    /// JavaScript ids are one language family with one logo between them,
+    /// and `scss` and `less` are drawn as CSS because neither ships a mark a
+    /// reader would recognise at 18 points.
+    static let languageIconNames: [String: String] = [
+        "typescript": "Lang-ts-js",
+        "typescriptreact": "Lang-ts-js",
+        "javascript": "Lang-ts-js",
+        "javascriptreact": "Lang-ts-js",
+        "vue": "Lang-vue",
+        "swift": "Lang-swift",
+        "kotlin": "Lang-kotlin",
+        "python": "Lang-python",
+        "rust": "Lang-rust",
+        "go": "Lang-go",
+        "zig": "Lang-zig",
+        "json": "Lang-json",
+        "yaml": "Lang-yaml",
+        "toml": "Lang-toml",
+        "shellscript": "Lang-bash",
+        "html": "Lang-html",
+        "css": "Lang-css",
+        "scss": "Lang-css",
+        "less": "Lang-css",
+        "java": "Lang-java",
+        "c": "Lang-c",
+        "cpp": "Lang-cpp",
+        "terraform": "Lang-terraform",
+        "php": "Lang-php",
+        "ruby": "Lang-ruby",
+        "markdown": "Lang-markdown",
+    ]
+
+    /// Drawn for a language this app ships no logo for, which after 0.17.0
+    /// is every language an extension can contribute.
+    static let genericLanguageSymbol = "chevron.left.forwardslash.chevron.right"
 }

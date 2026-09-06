@@ -59,6 +59,16 @@ struct MarkdownRenderer {
     /// The directory the document lives in, for resolving `./docs/a.png`.
     var baseURL: URL?
 
+    /// The grammars a fenced code block is coloured with, taken once when
+    /// the renderer is built rather than read at each fence.
+    ///
+    /// A parameter for the reason `GitDiffHighlight.make(for:file:source:snapshot:)`
+    /// takes one: the shared snapshot is built by reloading the installed
+    /// extensions off disk, so a caller that cannot do that — a test — has no
+    /// way to put a grammar where this can find it, and every fence in every
+    /// assertion would come back plain whatever the renderer did with it.
+    var snapshot: LanguageResolver.Snapshot = LanguageResolver.snapshot
+
     /// One level of list or quote indentation.
     private static let indentStep: CGFloat = 22
 
@@ -357,7 +367,7 @@ struct MarkdownRenderer {
     /// pane — and it is the difference between a preview that looks like a
     /// document and one that looks unfinished.
     private func highlight(_ source: String, language: String, in body: NSMutableAttributedString) {
-        let highlighter = LanguageResolver.highlighter(forFenceLabel: language, in: LanguageResolver.snapshot)
+        let highlighter = LanguageResolver.highlighter(forFenceLabel: language, in: snapshot)
         guard !highlighter.isPlain else { return }
         let full = NSRange(location: 0, length: (source as NSString).length)
         for token in highlighter.tokens(in: source, range: full) {

@@ -1981,6 +1981,40 @@ final class LSPCenter: ObservableObject {
         return process
     }
 
+    /// Where one server's `initializationOptions` come from, in the order
+    /// the three sources outrank each other.
+    ///
+    /// A reader's override wins over everything a manifest said, because it
+    /// is the answer to "this machine is not like the manifest assumed". A
+    /// manifest that named a resolver asked this app to compute the value
+    /// from the project, so its own literal JSON is *not* read as well — two
+    /// sources for one field is a question nobody should have to answer
+    /// while reading a launch, and `LSPServerDefinition.initializationOptionsJSON`
+    /// says the same thing from the other end. A manifest that named no
+    /// resolver has only its literal, and most have neither.
+    ///
+    /// Separate from `resolvedLaunchSettings(for:key:baseCommand:searchPath:)`
+    /// because the order is a fact about data while acting on it walks a
+    /// project and can spawn `npm` — and because a decision no caller can
+    /// reach is a decision nothing can check.
+    ///
+    /// - Parameter override: read by the caller, so the answer is a function
+    ///   of the arguments and not of `UserDefaults`.
+    static func initializationOptionsSource(
+        for definition: LSPServerDefinition,
+        override: LSPServerOverride?
+    ) -> LSPInitializationOptionsSource {
+        let raw = override?.initializationOptionsJSON
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !raw.isEmpty { return .override(raw) }
+
+        guard definition.initializationOptionsKind == .none else {
+            return .resolver(definition.initializationOptionsKind)
+        }
+        guard let declared = definition.initializationOptionsJSON else { return .none }
+        return .manifest(declared)
+    }
+
     /// What this workspace adds to one server's launch: the
     /// `initializationOptions` to send, and the arguments to append.
     ///
@@ -2012,6 +2046,9 @@ final class LSPCenter: ObservableObject {
     /// `LanguageTrustAlert.detailRows(for:)` — because an option is enough
     /// to redirect which code a server loads, and approving what you cannot
     /// see is not approving.
+    ///
+    /// Which of the three wins is `initializationOptionsSource(for:override:)`;
+    /// this function is the work that decision names.
     private func resolvedLaunchSettings(
         for definition: LSPServerDefinition,
         key: Key,
@@ -2032,29 +2069,28 @@ final class LSPCenter: ObservableObject {
             return LSPInitializationOptions.tsdkArgument(tsdk: path)
         }).map { [$0] } ?? []
 
-        if let override = LSPServerOverrideStore.override(for: baseCommand) {
-            let raw = override.initializationOptionsJSON.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !raw.isEmpty {
-                switch Self.parseInitializationOptions(raw) {
-                case .success(let value):
-                    return .success(LSPLaunchSettings(initializationOptions: value, arguments: tsdkArguments))
-                case .failure(let reason): return .failure(reason)
-                }
+        switch Self.initializationOptionsSource(
+            for: definition,
+            override: LSPServerOverrideStore.override(for: baseCommand)
+        ) {
+        case .override(let raw):
+            switch Self.parseInitializationOptions(raw) {
+            case .success(let value):
+                return .success(LSPLaunchSettings(initializationOptions: value, arguments: tsdkArguments))
+            case .failure(let reason): return .failure(reason)
             }
-        }
 
-        switch definition.initializationOptionsKind {
-        case .none:
-            guard let declared = definition.initializationOptionsJSON else {
-                return .success(LSPLaunchSettings())
-            }
+        case .manifest(let declared):
             switch Self.parseInitializationOptions(declared) {
             case .success(let value):
                 return .success(LSPLaunchSettings(initializationOptions: value))
             case .failure(let reason): return .failure(reason)
             }
 
-        case .typeScriptSDKArgument:
+        case .none, .resolver(.none):
+            return .success(LSPLaunchSettings())
+
+        case .resolver(.typeScriptSDKArgument):
             switch tsdk {
             case .success(let path):
                 return .success(LSPLaunchSettings(
@@ -2065,7 +2101,7 @@ final class LSPCenter: ObservableObject {
             case nil: return .failure(LSPInitializationOptions.missingTypeScriptMessage)
             }
 
-        case .typeScriptPluginHost(let plugin, let languages):
+        case .resolver(.typeScriptPluginHost(let plugin, let languages)):
             /// A failure here is reported rather than swallowed, and that is
             /// the whole point of the case: without the plugin this server
             /// refuses the document, so starting it anyway would spend a

@@ -36,6 +36,18 @@ struct ContributedFormatterTests {
     { "id": "stylua", "name": "StyLua", "command": "stylua", "args": ["-"], "extensions": ["lua"] }
     """#
 
+    /// The same two tools as they would actually be shipped: each asking for
+    /// the file's name, and each spelling the option its own way.
+    private static let ruffNamingTheFile = #"""
+    { "id": "ruff", "name": "Ruff", "command": "ruff",
+      "args": ["format", "--stdin-filename", "$FILE", "-"], "extensions": ["py"] }
+    """#
+
+    private static let styluaNamingTheFile = #"""
+    { "id": "stylua", "name": "StyLua", "command": "stylua",
+      "args": ["--stdin-filepath", "$FILE", "-"], "extensions": ["lua"] }
+    """#
+
     // MARK: The catalog
 
     @Test func aFormatterForFilesNobodyClaimsIsActive() throws {
@@ -112,6 +124,44 @@ struct ContributedFormatterTests {
         #expect(catalog.formatters.first?.provenance.extensionID == "zeta.zig")
         #expect(catalog.formatters.first?.isActive == true)
         #expect(catalog.formatters.last?.isActive == false)
+    }
+
+    /// The flag that tells a tool which file it is formatting is manifest
+    /// data, and it has to survive to the command line spelled exactly as the
+    /// manifest spelled it.
+    ///
+    /// It is not one flag. `ruff` reads `--stdin-filename` and `stylua` reads
+    /// `--stdin-filepath`, and neither answers to the other's — so this build
+    /// cannot supply the name itself, and nothing here may know which tool is
+    /// which. Getting it wrong is silent: the tool formats with its defaults
+    /// instead of with the `pyproject.toml` or `stylua.toml` above the file,
+    /// and the reader sees a diff they did not ask for rather than an error.
+    @Test func theFileFlagAManifestDeclaresReachesTheCommandLine() throws {
+        let catalog = LanguageCatalog.resolve(
+            manifests: [manifest(
+                directory: "acme.tools",
+                id: "acme.tools",
+                formatters: [Self.ruffNamingTheFile, Self.styluaNamingTheFile, Self.zigfmt]
+                    .joined(separator: ",")
+            )],
+            promotions: []
+        )
+
+        let ruff = try #require(LanguageResolver.formatter(forFileNamed: "main.py", catalog: catalog))
+        #expect(ruff.arguments == ["format", "--stdin-filename", ExternalFormatter.filePlaceholder, "-"])
+        #expect(ruff.invocation == "ruff format --stdin-filename $FILE -")
+        #expect(ruff.arguments(for: "/repo/app/main.py")
+            == ["format", "--stdin-filename", "/repo/app/main.py", "-"])
+
+        let stylua = try #require(LanguageResolver.formatter(forFileNamed: "init.lua", catalog: catalog))
+        #expect(stylua.arguments == ["--stdin-filepath", ExternalFormatter.filePlaceholder, "-"])
+        #expect(stylua.arguments(for: "/repo/init.lua") == ["--stdin-filepath", "/repo/init.lua", "-"])
+        #expect(!stylua.invocation.contains("--stdin-filename"))
+
+        /// A tool that never asked for the name is handed nothing extra:
+        /// the substitution replaces a placeholder, it does not append one.
+        let zig = try #require(LanguageResolver.formatter(forFileNamed: "main.zig", catalog: catalog))
+        #expect(zig.arguments(for: "/repo/main.zig") == ["fmt", "--stdin"])
     }
 
     @Test func theEmptyCatalogHasNoFormatters() {

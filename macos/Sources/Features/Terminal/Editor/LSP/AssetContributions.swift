@@ -68,6 +68,7 @@ struct FormatterContribution: Equatable, Sendable {
     let arguments: [String]
     let fileExtensions: [String]
     let installHint: String
+    let installPlan: ExtensionInstallPlan?
     let documentationURL: URL?
 
     static let maxFormatters = 32
@@ -93,6 +94,7 @@ struct FormatterContribution: Equatable, Sendable {
             arguments: arguments,
             fileExtensions: fileExtensions,
             installHint: LanguageServerContribution.installHint(json["installHint"]),
+            installPlan: ExtensionInstallPlan.parse(json["install"]),
             documentationURL: LanguageServerContribution.documentationURL(json["documentationURL"])
         )
     }

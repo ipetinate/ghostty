@@ -18,7 +18,9 @@ struct ExtensionsSettingsView: View {
         return Form {
             Section {
                 ExtensionKindTabs(selection: $kind, counts: sections.counts)
+                    .padding(.vertical, 6)
                 headerRow
+                    .padding(.vertical, 4)
                 if store.index != nil, let error = store.lastRefreshError {
                     Text(verbatim: error)
                         .font(.caption)

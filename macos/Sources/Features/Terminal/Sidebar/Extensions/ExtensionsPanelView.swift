@@ -16,7 +16,8 @@ struct ExtensionsPanelView: View {
         return VStack(spacing: 0) {
             ExtensionKindTabs(selection: $kind, counts: sections.counts, style: .compact)
                 .padding(.horizontal, 8)
-                .padding(.bottom, 2)
+                .padding(.top, 6)
+                .padding(.bottom, 12)
             searchRow
             registryContent(sections)
         }
@@ -45,7 +46,7 @@ struct ExtensionsPanelView: View {
             sortMenu
         }
         .padding(.horizontal, 8)
-        .padding(.bottom, 4)
+        .padding(.bottom, 12)
     }
 
     private var sortMenu: some View {
@@ -86,8 +87,8 @@ struct ExtensionsPanelView: View {
                 .help("Clear")
             }
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color.secondary.opacity(0.12))

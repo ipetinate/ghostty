@@ -332,9 +332,11 @@ class BaseTerminalController: NSWindowController,
         // Move focus to the target surface and activate the window/app
         DispatchQueue.main.async {
             Ghostty.moveFocus(to: view)
-            view.window?.makeKeyAndOrderFront(nil)
             if !NSApp.isActive {
                 NSApp.activate(ignoringOtherApps: true)
+            }
+            if let window = view.window {
+                WindowSpaceSafety.orderFront(window, .keyAndFront, from: .surfaceFocusRequest)
             }
         }
     }

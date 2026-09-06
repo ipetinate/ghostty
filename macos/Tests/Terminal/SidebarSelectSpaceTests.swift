@@ -20,21 +20,21 @@ struct SidebarSelectSpaceTests {
     /// The reader's own click: the app is active, so ordering front is what
     /// they asked for.
     @Test func aSelectFromInsideTheAppFetchesTheWindow() {
-        #expect(SidebarTabManager.mayOrderFront(appIsActive: true, isOnActiveSpace: true))
-        #expect(SidebarTabManager.mayOrderFront(appIsActive: true, isOnActiveSpace: false))
+        #expect(WindowSpaceSafety.mayOrderFront(appIsActive: true, isOnActiveSpace: true))
+        #expect(WindowSpaceSafety.mayOrderFront(appIsActive: true, isOnActiveSpace: false))
     }
 
     /// The window is already where the reader is looking, so ordering it front
     /// moves nothing between Spaces.
     @Test func aWindowOnTheActiveSpaceIsAlwaysFetched() {
-        #expect(SidebarTabManager.mayOrderFront(appIsActive: false, isOnActiveSpace: true))
+        #expect(WindowSpaceSafety.mayOrderFront(appIsActive: false, isOnActiveSpace: true))
     }
 
     /// **The refusal.** The reader is in another app, on another Space, and the
     /// window is not with them: fetching it takes the window out of the Space
     /// they keep it on, which is what was reported.
     @Test func anInactiveAppNeverFetchesAWindowFromAnotherSpace() {
-        #expect(!SidebarTabManager.mayOrderFront(appIsActive: false, isOnActiveSpace: false))
+        #expect(!WindowSpaceSafety.mayOrderFront(appIsActive: false, isOnActiveSpace: false))
     }
 
     /// The same distinction the rescue beside it needs. A window on another

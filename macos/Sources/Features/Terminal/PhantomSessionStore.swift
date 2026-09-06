@@ -773,20 +773,26 @@ final class PhantomSessionStore {
     /// And front without key is an app with a dead menu bar: inside the
     /// launch path activation used to hand key status over on its own; on
     /// the deferred turn nothing does, and every first-responder action —
-    /// the whole File menu included — lands on nobody.
+    /// the whole File menu included — lands on nobody. That holds only while
+    /// this app is the active one: a restore that lands while the reader is
+    /// in another app orders the window in behind them and takes no key. See
+    /// `WindowSpaceSafety`.
     ///
-    /// `queue` is injectable so a test can prove the deferral without a
-    /// window server; the default is the real one.
+    /// `queue` and `appIsActive` are injectable so a test can prove the
+    /// deferral, and both branches, without a window server; the defaults are
+    /// the real ones.
     static func scheduleReveal(
         of front: NSWindow,
         on queue: DispatchQueue = .main,
+        appIsActive: @escaping () -> Bool = { NSApp.isActive },
         then followUp: @escaping () -> Void = {}
     ) {
         queue.async {
-            WindowBreadcrumbs.note(
-                "restore reveal: front=\(front.windowNumber) appActive=\(NSApp.isActive)")
-            front.orderFrontRegardless()
-            front.makeKey()
+            let active = appIsActive()
+            if WindowSpaceSafety.orderFront(
+                front, .frontRegardless, from: .restoreReveal, appIsActive: active), active {
+                front.makeKey()
+            }
             followUp()
         }
     }
@@ -1186,7 +1192,7 @@ final class PhantomSessionStore {
             guard viewWindow == inWindow else { return }
             inWindow.makeFirstResponder(view)
             if viewWindow.isMainWindow {
-                viewWindow.orderFront(nil)
+                WindowSpaceSafety.orderFront(viewWindow, .front, from: .restoreFocus)
             }
         }
     }

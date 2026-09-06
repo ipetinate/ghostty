@@ -137,6 +137,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     /// Width constraints swapped when the sidebar collapses.
     private var sidebarExpandedConstraints: [NSLayoutConstraint] = []
+    private var sidebarPlacement: SidebarTabBarPlacement = SidebarWidthRule.placement()
     private var sidebarCollapsedConstraint: NSLayoutConstraint?
 
     /// The sidebar hosting view, tinted with the terminal's effective
@@ -176,7 +177,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// that needs truncation to be readable is the wrong default. This is
     /// only the fallback: `config.sidebarWidth` still wins, and so does any
     /// width dragged to since.
-    private var sidebarDefaultWidth: CGFloat = 280
+    private var sidebarDefaultWidth: CGFloat = SidebarWidthRule.defaultContent
 
     /// UserDefaults key holding the app-wide sidebar width. Shared by all
     /// windows so dragging the divider in one tab applies to every tab.
@@ -1599,13 +1600,18 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ])
         self.sidebarPane = sidebarPane
 
+        let placement = SidebarWidthRule.placement()
         let expanded = [
             /// Below this a group row is an icon and a truncation, which is
             /// not a sidebar. The name now outranks the chrome beside it —
             /// see `SidebarView.header` — so this is a floor on *legibility*
             /// rather than the thing preventing collapse.
-            sidebarPane.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
-            sidebarPane.widthAnchor.constraint(lessThanOrEqualToConstant: 480),
+            sidebarPane.widthAnchor.constraint(
+                greaterThanOrEqualToConstant: SidebarWidthRule.minimumPane(placement)
+            ),
+            sidebarPane.widthAnchor.constraint(
+                lessThanOrEqualToConstant: SidebarWidthRule.maximumPane(placement)
+            ),
         ]
         NSLayoutConstraint.activate(expanded)
         self.sidebarExpandedConstraints = expanded
@@ -1800,6 +1806,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self,
             selector: #selector(guiConfigDidApplyNotification(_:)),
             name: GuiConfigStore.didApply,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sidebarDefaultsDidChange(_:)),
+            name: UserDefaults.didChangeNotification,
             object: nil
         )
         // The window's own notifications rather than the fullscreen style's
@@ -2076,7 +2088,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// window, falling back to the config value.
     private var sharedSidebarWidth: CGFloat {
         let saved = UserDefaults.standard.double(forKey: Self.sidebarWidthDefaultsKey)
-        return saved > 0 ? CGFloat(saved) : sidebarDefaultWidth
+        let content = saved > 0 ? CGFloat(saved) : sidebarDefaultWidth
+        return SidebarWidthRule.pane(content: content, placement: SidebarWidthRule.placement())
     }
 
     /// Applied when this window becomes key so a drag done in another tab
@@ -2125,6 +2138,24 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self?.syncSidebarBackground()
             self?.sidebarSplitView?.needsDisplay = true
         }
+    }
+
+    /// The activity bar is a column beside the pane's content, so moving the
+    /// tabs there costs the content its width unless the pane grows by the
+    /// same amount. The stored width is the content's, and this re-reads it
+    /// whenever the placement changes.
+    @objc private func sidebarDefaultsDidChange(_ notification: Notification) {
+        let placement = SidebarWidthRule.placement()
+        guard placement != sidebarPlacement else { return }
+        sidebarPlacement = placement
+        applySidebarWidthLimits(placement)
+        applySharedSidebarWidth()
+    }
+
+    private func applySidebarWidthLimits(_ placement: SidebarTabBarPlacement) {
+        guard sidebarExpandedConstraints.count == 2 else { return }
+        sidebarExpandedConstraints[0].constant = SidebarWidthRule.minimumPane(placement)
+        sidebarExpandedConstraints[1].constant = SidebarWidthRule.maximumPane(placement)
     }
 
     private func applySharedSidebarWidth() {
@@ -2342,7 +2373,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
               let width = splitView.arrangedSubviews.first?.frame.width,
               width > 0
         else { return }
-        UserDefaults.standard.set(Double(width), forKey: Self.sidebarWidthDefaultsKey)
+        let content = SidebarWidthRule.content(pane: width, placement: SidebarWidthRule.placement())
+        UserDefaults.standard.set(Double(content), forKey: Self.sidebarWidthDefaultsKey)
     }
 
     /// Setup correct window frame before showing the window

@@ -520,7 +520,9 @@ private struct AppearanceStylePanel: View {
         Section {
             LabeledContent("Starting Width") {
                 HStack {
-                    Slider(value: $sidebarWidth, in: 180...480, step: 10) { editing in
+                    Slider(value: $sidebarWidth,
+                           in: SidebarWidthRule.minimumContent...SidebarWidthRule.maximumContent,
+                           step: 10) { editing in
                         if !editing {
                             store.set("sidebar-width", String(Int(sidebarWidth)))
                             store.apply(ghostty: ghostty)

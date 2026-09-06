@@ -18,7 +18,7 @@ struct SidebarActivityBar: View {
         }
         .padding(.horizontal, 6)
         .padding(.top, 8)
-        .frame(width: SidebarActivityBarMetrics.width + 12)
+        .frame(width: SidebarActivityBarMetrics.totalWidth)
         .contentShape(Rectangle())
         .sidebarPaneSwitcherMenu()
     }
@@ -57,4 +57,5 @@ enum SidebarActivityBarMetrics {
     static let width: CGFloat = 34
     static let height: CGFloat = 30
     static let iconSize: CGFloat = 16
+    static let totalWidth: CGFloat = width + 12
 }

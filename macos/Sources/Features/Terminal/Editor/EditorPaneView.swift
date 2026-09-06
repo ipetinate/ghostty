@@ -265,19 +265,19 @@ struct EditorPaneView: View {
 
 /// One document's text surface, plus the banner for a file that changed
 /// underneath it.
-/// What one attempt at Prettier came back with.
+/// What one attempt at a formatter came back with.
 ///
 /// Three answers rather than an optional and a thrown error, because the
-/// caller has to tell "Prettier does not own this file" from "Prettier looked
-/// and there was nothing to change" — the first falls through to the language
-/// server, the second must not. Collapsing them is how a `.kt` file ends up
-/// formatted by nobody.
+/// caller has to tell "no tool owns this file" from "the tool looked and there
+/// was nothing to change" — the first falls through to the language server,
+/// the second must not. Collapsing them is how a `.kt` file ends up formatted
+/// by nobody.
 ///
 /// The failure travels as a string: it crosses an actor boundary, and what the
 /// reader needs from it is a sentence, not an error to re-inspect.
 enum FormatAttempt: Sendable {
     case notOurs
-    case answered(PrettierEdit?)
+    case answered(FormatEdit?)
     case failed(String)
 }
 
@@ -288,8 +288,8 @@ enum FormatAttempt: Sendable {
 /// does not happen. ⇧⌘F is a question, and a question answered by nothing at
 /// all reads as a dead key. ⌘S is not a question about formatting: the reader
 /// asked for the file to be on disk and the tidying was the editor's own idea,
-/// so a project with no Prettier in it would otherwise raise the same dialog on
-/// every single write until the reader learned to dismiss alerts unread.
+/// so a project with no formatter in it would otherwise raise the same dialog
+/// on every single write until the reader learned to dismiss alerts unread.
 enum EditorFormatTrigger: Sendable {
     case command
     case save
@@ -308,7 +308,7 @@ extension FormatAttempt {
     /// - `.answered(nil)` — already formatted, or covered by an ignore rule.
     ///   This is the state ⇧⌘F is pressed to *reach*, so announcing it makes
     ///   the good case the loud one — and it is the common case, since most
-    ///   files in a Prettier project are already formatted.
+    ///   files in a formatted project are already formatted.
     /// - `.notOurs` — nothing has happened yet. The language server still gets
     ///   its turn below, and reports for itself.
     /// - `.failed` — the reader asked for something and did not get it, and the
@@ -318,8 +318,8 @@ extension FormatAttempt {
     ///
     /// The reason is passed through whole rather than wrapped in a sentence
     /// here. Which tool is speaking is known where the run happened and not
-    /// here — several can now — and "Prettier couldn't format this file: Ruff:
-    /// …" is what wrapping it produced.
+    /// here — several can — and a wrapper here names the wrong one, which is
+    /// what "Prettier couldn't format this file: Ruff: …" was.
     func notice(for trigger: EditorFormatTrigger) -> String? {
         guard trigger == .command, case .failed(let reason) = self else { return nil }
         return reason
@@ -398,7 +398,6 @@ private struct DocumentView: View {
     /// than only the next file to be opened.
     @ObservedObject private var shortcutStore: PhantomShortcutStore = .shared
 
-    @AppStorage(EditorSettings.usesPrettierKey) private var usesPrettier = true
     @AppStorage(EditorSettings.markdownSnippetsKey) private var markdownSnippets = true
     @AppStorage(EditorSettings.expandsTagsKey) private var expandsTags = true
     @AppStorage(EditorSettings.formatOnSaveKey) private var formatOnSave = false
@@ -1606,9 +1605,7 @@ private struct DocumentView: View {
         guard divergence?.isReadOnly != true else { return }
 
         let timedOut = await settleLanguageServer(trigger)
-        if await formatWithPrettier(trigger) { return }
-        if await formatWithPrettierFromPath(trigger, handshakeTimedOut: timedOut) { return }
-        if await formatWithExternalFormatter(trigger) { return }
+        if await formatWithExternalFormatter(trigger, handshakeTimedOut: timedOut) { return }
         if await formatWithLanguageServer(trigger) { return }
 
         /// The server was asked and had nothing. Shell is the case: with
@@ -1620,7 +1617,8 @@ private struct DocumentView: View {
         ///
         /// The same lesson Markdown taught: a server advertising a capability
         /// is not the same as a server having it.
-        if await formatWithExternalFormatter(trigger, serverReturnedNothing: true) { return }
+        if await formatWithExternalFormatter(
+            trigger, handshakeTimedOut: timedOut, serverReturnedNothing: true) { return }
 
         guard trigger == .command else { return }
         reportEmpty(
@@ -1664,7 +1662,7 @@ private struct DocumentView: View {
     /// Writes the file, tidying it first when the reader asked for that.
     ///
     /// **The save happens whatever the formatter does** — missing, broken,
-    /// slow or refusing. A ⌘S that quietly did not write because Prettier
+    /// slow or refusing. A ⌘S that quietly did not write because a formatter
     /// was not installed is a data-loss bug wearing a feature's clothes, and
     /// the reader would find out at the worst possible moment.
     private func saveWithFormatting() {
@@ -1675,120 +1673,66 @@ private struct DocumentView: View {
         }
     }
 
-    /// Whether Prettier answered for this file, and so the language server
-    /// must not also run.
+    /// Whether the tool this file's language uses answered, and so the
+    /// language server must not also run.
     ///
-    /// True covers both of Prettier's answers: it reformatted the file, and it
-    /// looked and found nothing to change. False means Prettier does not own
-    /// this file at all — a `.kt` in a repository that also has a `.prettierrc`
-    /// — which is the only case where falling through is right.
+    /// True covers both of the tool's answers: it reformatted the file, and it
+    /// looked and found nothing to change. False means no tool owns this file
+    /// — a `.kt` in a repository that also declares a JavaScript formatter —
+    /// which is the only case where falling through is right.
     ///
-    /// A failure does **not** fall through. Formatting a Prettier-owned file
-    /// with the language server instead would rewrite it in a style the
-    /// project rejected, and do it silently; changing nothing is the smaller
-    /// harm — and on ⇧⌘F it says why.
-    private func formatWithPrettier(_ trigger: EditorFormatTrigger) async -> Bool {
-        guard usesPrettier else { return false }
-
-        let revision = document.revision
-        let text = document.currentText
-        let path = document.url.path
-
-        /// Off the main actor: discovery walks directories and the run is a
-        /// subprocess reading a pipe, and both would otherwise hold the frame
-        /// on the keystroke that asked for them.
-        let outcome = await Task.detached(priority: .userInitiated) {
-            let project = PrettierProject.discover(forFile: path)
-            guard project.handles(fileNamed: (path as NSString).lastPathComponent)
-            else { return FormatAttempt.notOurs }
-
-            do {
-                return .answered(try PrettierFormatter.edit(for: text, at: path, in: project))
-            } catch {
-                return .failed("Prettier couldn't format this file: \(error.localizedDescription)")
-            }
-        }.value
-
-        return apply(outcome, trigger: trigger, at: path, to: text, since: revision)
-    }
-
-    /// Prettier when the project did not ask for it.
+    /// A failure does **not** fall through. Formatting a file the project
+    /// claimed with the language server instead would rewrite it in a style
+    /// the project rejected, and do it silently; changing nothing is the
+    /// smaller harm — and on ⇧⌘F it says why.
     ///
-    /// Returns false when this route does not apply, leaving the language
-    /// server to answer and to say what it has to say. See
-    /// `EditorFormatRoute.usesPrettierFromPath` for when it does.
-    private func formatWithPrettierFromPath(
-        _ trigger: EditorFormatTrigger,
-        handshakeTimedOut: Bool
-    ) async -> Bool {
-        guard usesPrettier else { return false }
-
-        let path = document.url.path
-        let name = (path as NSString).lastPathComponent
-        guard EditorFormatRoute.usesPrettierFromPath(
-            trigger: trigger,
-            prettierKnowsTheFile: PrettierProject.parserCanBeInferred(for: name),
-            server: lsp.status(forPath: path),
-            serverFormats: lsp.hasCapability("documentFormattingProvider", forPath: path),
-            handshakeTimedOut: handshakeTimedOut)
-        else { return false }
-
-        let revision = document.revision
-        let text = document.currentText
-
-        let outcome = await Task.detached(priority: .userInitiated) {
-            /// The project is still discovered, and still not asked to declare
-            /// Prettier: what it contributes here is the directory to run in
-            /// and, where there is one, the Prettier installed into it. A
-            /// project with neither falls through to the login shell's `PATH`,
-            /// which is what `PrettierFormatter.binary` already does.
-            let project = PrettierProject.discover(forFile: path)
-            do {
-                return FormatAttempt.answered(
-                    try PrettierFormatter.edit(for: text, at: path, in: project))
-            } catch {
-                return FormatAttempt.failed(
-                    "Prettier couldn't format this file: \(error.localizedDescription)")
-            }
-        }.value
-
-        return apply(outcome, trigger: trigger, at: path, to: text, since: revision)
-    }
-
-    /// The formatter for a language nothing else here formats: Ruff for
-    /// Python, shfmt for shell, StyLua for Lua, xmllint for XML.
-    ///
-    /// Unlike the Prettier fallback above, this runs on a save too. Prettier
-    /// is held back there because a stray global Prettier would claim files in
-    /// every JavaScript-adjacent repository, including ones formatted by
-    /// something else; these four are the only formatter their language has on
-    /// this machine, which is the same position the language server's own
-    /// formatter is in — and each is a switch in Settings.
+    /// One route for every command-shaped formatter. How much deference the
+    /// language server gets is decided by how much the project said about the
+    /// tool — see `EditorFormatRoute.usesFormatter`.
     private func formatWithExternalFormatter(
         _ trigger: EditorFormatTrigger,
+        handshakeTimedOut: Bool = false,
         serverReturnedNothing: Bool = false
     ) async -> Bool {
         let path = document.url.path
         let name = (path as NSString).lastPathComponent
 
         guard let known = LanguageResolver.shared.formatter(forFileNamed: name),
-              let formatter = ExternalFormatterStore.effective(known),
-              EditorFormatRoute.usesExternalFormatter(
-                server: lsp.status(forPath: path),
-                serverFormats: lsp.hasCapability("documentFormattingProvider", forPath: path),
-                serverReturnedNothing: serverReturnedNothing)
+              let formatter = ExternalFormatterStore.effective(known)
         else { return false }
 
         let revision = document.revision
         let text = document.currentText
 
+        /// Off the main actor: the walk stats directories and resolving the
+        /// login shell's `PATH` costs a login shell, and both would otherwise
+        /// hold the frame on the keystroke that asked for them.
+        let resolved = await Task.detached(priority: .userInitiated) {
+            let project = formatter.project(forFile: path)
+            let searchPath = LoginEnvironment.executableSearchPath()
+            return (
+                project,
+                searchPath,
+                ExternalFormatterRunner.locate(formatter, in: project, searchPath: searchPath)
+            )
+        }.value
+        let (project, searchPath, resolvedPath) = resolved
+
+        guard EditorFormatRoute.usesFormatter(
+            adoption: project.adoption,
+            trigger: trigger,
+            server: lsp.status(forPath: path),
+            serverFormats: lsp.hasCapability("documentFormattingProvider", forPath: path),
+            handshakeTimedOut: handshakeTimedOut,
+            serverReturnedNothing: serverReturnedNothing)
+        else { return false }
+
+        /// The trust gate reads the path that will actually be launched, and
+        /// the project's own copy of the tool is the one that makes it matter:
+        /// it is code from the folder the reader opened rather than from this
+        /// app.
         if formatter.provenance != nil {
-            let searchPath = await Task.detached(priority: .userInitiated) {
-                LoginEnvironment.executableSearchPath()
-            }.value
-            guard let resolvedPath = ExternalFormatterRunner.locate(
-                formatter.command, searchPath: searchPath)
-            else {
+            guard let resolvedPath else {
                 let missing = ExternalFormatterFailure.notFound(
                     tool: formatter.displayName, hint: formatter.installHint)
                 return apply(.failed(missing.reason), trigger: trigger, at: path, to: text, since: revision)
@@ -1810,11 +1754,11 @@ private struct DocumentView: View {
                     text,
                     filePath: path,
                     formatter: formatter,
-                    searchPath: LoginEnvironment.executableSearchPath(),
-                    workingDirectory: (path as NSString).deletingLastPathComponent,
+                    in: project,
+                    searchPath: searchPath,
                     environment: LoginEnvironment.executableEnvironment())
                 return FormatAttempt.answered(
-                    formatted.flatMap { PrettierEdit.minimal(from: text, to: $0) })
+                    formatted.flatMap { FormatEdit.minimal(from: text, to: $0) })
             } catch {
                 return FormatAttempt.failed(error.localizedDescription)
             }
@@ -1873,7 +1817,7 @@ private struct DocumentView: View {
         }
     }
 
-    /// What formatting was before Prettier: ask the language server.
+    /// What formatting was before the tools: ask the language server.
     /// - Returns: whether the server formatted the file. False means it was
     ///   asked and had nothing, which is a different answer from a failure and
     ///   is what lets an external formatter follow it.

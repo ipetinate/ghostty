@@ -44,14 +44,16 @@ struct ExternalFormatterSettingsSection: View {
         } footer: {
             Text("""
             These run the tools their languages actually use, for the files \
-            neither Prettier nor a language server formats. Each one takes the \
-            buffer on standard input and hands back the formatted text, and \
-            each is given the file's name so it can find the project's own \
-            configuration — a `pyproject.toml`, a `stylua.toml`.
+            no language server formats. Each one takes the buffer on standard \
+            input and hands back the formatted text, and each is given the \
+            file's name so it can find the project's own configuration — a \
+            `pyproject.toml`, a `stylua.toml`.
 
-            A language server that formats gets there first, so this never \
-            overrides what a project's own tooling would do. They run on ⇧⌘F, \
-            and on save when Format on Save is on.
+            A language server that formats gets there first, unless the \
+            project declares the tool itself — a configuration file, or the \
+            tool installed into the project — in which case the project has \
+            already answered. They run on ⇧⌘F, and on save when Format on \
+            Save is on.
 
             Point one at a different binary — a `ruff` inside a virtualenv, \
             say — by typing its full path. Clearing a field puts the default \

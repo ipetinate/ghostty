@@ -11,10 +11,11 @@ import Foundation
 /// a machine without `shfmt` has a server that says yes and does nothing. Lua
 /// and XML have no server here at all.
 ///
-/// Prettier is deliberately **not** in this table. It is not one command for
-/// one language — it resolves a project, a config and an ignore file, and
-/// `PrettierProject` exists to reason about all three. This is for the tools
-/// that are genuinely one process: text in, text out.
+/// What a tool asks of a project before it rewrites its files — a
+/// configuration that has to exist, a copy installed into the project, a
+/// directory to run in — is `projectRules`, and it is data an extension
+/// declares. This table holds none of it: these four are the tools that are
+/// genuinely one process, text in, text out.
 struct ExternalFormatter: Identifiable, Hashable, Sendable {
     /// The language, spelled as `LSPServerRegistry` spells it where there is
     /// a server for it. It is also the settings key, so it does not change.
@@ -49,8 +50,20 @@ struct ExternalFormatter: Identifiable, Hashable, Sendable {
 
     var provenance: ExtensionProvenance?
 
+    /// What the project has to say before this runs, and where it runs.
+    ///
+    /// Empty here means the tool asks for nothing, which is the answer for
+    /// every entry in the table below. A contributed formatter fills it in
+    /// from its manifest.
+    var projectRules = FormatterProjectRules()
+
     var origin: LSPServerOrigin {
         provenance.map(LSPServerOrigin.manifest) ?? .builtIn
+    }
+
+    /// What the project has to say before this tool rewrites its files.
+    func project(forFile path: String) -> FormatterProject {
+        FormatterProject.discover(forFile: path, rules: projectRules)
     }
 
     /// The arguments for one file: `$FILE` replaced, everything else as

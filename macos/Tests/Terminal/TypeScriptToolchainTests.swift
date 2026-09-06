@@ -137,7 +137,7 @@ struct LSPCommandCompatibilityTests {
             )
         }
 
-        for path in ["/p/a.ts", "/p/a.TSX", "/p/a.js", "/p/tsconfig.json"] {
+        for path in ["/p/a.ts", "/p/a.TSX", "/p/a.js", "/p/a.mjs", "/p/a.cjs", "/p/tsconfig.json"] {
             #expect(
                 LSPCommandCompatibility.accepts(
                     command: LSPCommandCompatibility.nativeTypeScriptCommand,

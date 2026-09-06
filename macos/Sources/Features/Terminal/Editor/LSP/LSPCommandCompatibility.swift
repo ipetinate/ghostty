@@ -33,7 +33,7 @@ enum LSPCommandCompatibility {
     /// `typescript-language-server` answers `Unexpected resource …`. If
     /// `typescript-go` fixes it, this list can grow.
     static let nativeTypeScriptExtensions: Set<String> = [
-        "ts", "tsx", "js", "jsx", "mts", "cts", "json",
+        "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "json",
     ]
 
     /// Whether a binary may be handed this file at all.

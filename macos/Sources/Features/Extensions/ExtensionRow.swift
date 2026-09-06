@@ -162,7 +162,11 @@ struct ExtensionRow: View {
                         .foregroundStyle(.red)
                 }
                 requirementsBadge
-                ExtensionActionButton(state: subject.state, onInstall: onInstall, onRemove: onRemove)
+                ExtensionActionButton(
+                    state: subject.state,
+                    style: .labelled,
+                    onInstall: onInstall,
+                    onRemove: onRemove)
                     .controlSize(controlSize)
             }
         }
@@ -182,18 +186,78 @@ struct ExtensionRow: View {
 }
 
 struct ExtensionActionButton: View {
+    enum Style {
+        case bare
+        case labelled
+    }
+
+    enum Action: String, CaseIterable, Equatable {
+        case install
+        case update
+        case uninstall
+
+        init(state: ExtensionState) {
+            switch state {
+            case .notInstalled: self = .install
+            case .installed: self = .uninstall
+            case .updateAvailable: self = .update
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .install: return "Install"
+            case .update: return "Update"
+            case .uninstall: return "Uninstall"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .install: return "arrow.down.circle"
+            case .update: return "arrow.triangle.2.circlepath"
+            case .uninstall: return "trash"
+            }
+        }
+
+        var isDestructive: Bool { self == .uninstall }
+    }
+
     let state: ExtensionState
+    var style: Style = .bare
     let onInstall: () -> Void
     let onRemove: () -> Void
 
+    @ObservedObject private var palette: ThemePalette = .shared
+    @State private var isHovered = false
+
+    private var action: Action { Action(state: state) }
+
+    private var tint: Color {
+        guard isHovered else { return .primary }
+        if action.isDestructive { return palette.danger ?? .red }
+        return palette.accent ?? .accentColor
+    }
+
     var body: some View {
-        switch state {
-        case .notInstalled:
-            Button("Install", action: onInstall)
-        case .installed:
-            Button("Uninstall", action: onRemove)
-        case .updateAvailable:
-            Button("Update", action: onInstall)
+        switch style {
+        case .bare:
+            Button(action.title, action: run)
+        case .labelled:
+            Button(action: run) {
+                Label(action.title, systemImage: action.systemImage)
+                    .foregroundStyle(tint)
+            }
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+        }
+    }
+
+    private func run() {
+        if action.isDestructive {
+            onRemove()
+        } else {
+            onInstall()
         }
     }
 }

@@ -57,10 +57,27 @@ struct CodeTextView: NSViewRepresentable {
 
     /// How this file is lexed, base language included.
     ///
-    /// The language an installed extension gave this file, or nil. The
-    /// coordinator turns it into a grammar; the view carries only the name so
-    /// that SwiftUI rebuilding it does not rebuild the tokenizer.
+    /// The language an installed extension gave this file, or nil. The name
+    /// alone, because it is what the storage compares to decide whether the
+    /// grammar beside it has to be swapped — a comparison of highlighters
+    /// would rebuild the tokenizer on every SwiftUI update.
     let languageID: String?
+
+    /// The grammar `languageID` names.
+    ///
+    /// Resolved by the host and handed in, because which grammar a language
+    /// id names is a fact about what the host installed, and the engine may
+    /// not ask — see `FenceHighlighting` and `EditorEngineBoundaryTests`.
+    ///
+    /// No default, so that a caller supplying a language cannot forget to say
+    /// what colours it and get a silently uncoloured file.
+    let highlighter: GrammarHighlighter
+
+    /// How a fenced code block inside a hover card is coloured.
+    ///
+    /// Carried here rather than resolved at the card, because `CodeHoverPanel`
+    /// is made by this view and so has no host of its own to ask.
+    let fences: FenceHighlighting
 
     /// Which markup this file is. Beside `language` rather than inside the
     /// configuration, because it describes the file and not the editor — see
@@ -313,7 +330,7 @@ struct CodeTextView: NSViewRepresentable {
         Coordinator(
             storage: CodeTextStorage(
                 languageID: languageID,
-                highlighter: LanguageResolver.shared.highlighter(forLanguageID: languageID),
+                highlighter: highlighter,
                 theme: theme,
                 configuration: configuration
             ),
@@ -567,6 +584,7 @@ struct CodeTextView: NSViewRepresentable {
             code.onRunCodeAction = onRunCodeAction
             code.completionOffersDocumentation = completionOffersDocumentation
             code.completionIconFont = completionIconFont
+            code.hoverFences = fences
         }
         /// Reapplied every update, like the closures above it: a document can
         /// stop being writable while it is on screen — its terminal moves to
@@ -582,10 +600,7 @@ struct CodeTextView: NSViewRepresentable {
         context.coordinator.applyUnderlines(underlines)
 
         if context.coordinator.storage.languageID != languageID {
-            context.coordinator.storage.setHighlighter(
-                LanguageResolver.shared.highlighter(forLanguageID: languageID),
-                languageID: languageID
-            )
+            context.coordinator.storage.setHighlighter(highlighter, languageID: languageID)
         }
         context.coordinator.applyAppearance(
             theme: theme,
@@ -2452,6 +2467,11 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     var lineHighlighter: GrammarHighlighter = .plain
     var lineLanguageID: String?
 
+    /// How a fenced block inside the hover card is coloured. Set by the
+    /// coordinator for the same reason `hoverTheme` is: this object makes the
+    /// card, and only the host knows which grammars are installed.
+    var hoverFences: FenceHighlighting = .plain
+
     /// The three auto-closing switches, mirrored from the configuration.
     ///
     /// Held here rather than read from a shared configuration because this is
@@ -2777,6 +2797,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
             info,
             theme: hoverTheme,
             font: font ?? .monospacedSystemFont(ofSize: 12, weight: .regular),
+            fences: hoverFences,
             anchor: anchor,
             over: self
         )

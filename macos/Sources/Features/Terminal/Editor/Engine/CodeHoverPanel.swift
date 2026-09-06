@@ -230,13 +230,14 @@ final class CodeHoverPanel: NSPanel {
         _ info: CodeHoverInfo,
         theme: CodeTheme,
         font: NSFont,
+        fences: FenceHighlighting,
         anchor: NSRect,
         over view: NSView
     ) {
         guard !info.isEmpty, let parentWindow = view.window else { return }
         let screen = parentWindow.screen ?? NSScreen.main
 
-        fill(info, theme: theme, font: font, on: screen)
+        fill(info, theme: theme, font: font, fences: fences, on: screen)
         position(near: anchor, on: screen)
 
         if parent == nil { parentWindow.addChildWindow(self, ordered: .above) }
@@ -262,6 +263,7 @@ final class CodeHoverPanel: NSPanel {
         _ info: CodeHoverInfo,
         theme: CodeTheme,
         font: NSFont,
+        fences: FenceHighlighting,
         on screen: NSScreen?
     ) {
         container.views.forEach { $0.removeFromSuperview() }
@@ -291,7 +293,9 @@ final class CodeHoverPanel: NSPanel {
 
         for block in [info.signature].compactMap({ $0 }) + info.documentation {
             container.addView(
-                Self.label(Self.text(for: block, theme: theme, font: font), width: width),
+                Self.label(
+                    Self.text(for: block, theme: theme, font: font, fences: fences),
+                    width: width),
                 in: .top
             )
         }
@@ -377,11 +381,12 @@ final class CodeHoverPanel: NSPanel {
     private static func text(
         for block: CodeHoverInfo.Block,
         theme: CodeTheme,
-        font: NSFont
+        font: NSFont,
+        fences: FenceHighlighting
     ) -> NSAttributedString {
         switch block {
         case .code(let source, let language):
-            return codeText(source, language: language, theme: theme, font: font)
+            return codeText(source, language: language, theme: theme, font: font, fences: fences)
 
         case .prose(let markdown):
             return proseText(
@@ -414,13 +419,14 @@ final class CodeHoverPanel: NSPanel {
         _ source: String,
         language: String?,
         theme: CodeTheme,
-        font: NSFont
+        font: NSFont,
+        fences: FenceHighlighting
     ) -> NSAttributedString {
         let result = NSMutableAttributedString(string: source, attributes: [
             .font: font,
             .foregroundColor: theme.foreground,
         ])
-        let highlighter = LanguageResolver.highlighter(forFenceLabel: language, in: LanguageResolver.snapshot)
+        let highlighter = fences.highlighter(forFenceLabel: language)
         guard !highlighter.isPlain else { return result }
 
         let full = NSRange(location: 0, length: (source as NSString).length)

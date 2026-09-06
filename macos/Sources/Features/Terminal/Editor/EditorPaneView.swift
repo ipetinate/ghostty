@@ -822,7 +822,14 @@ private struct DocumentView: View {
     /// The editable text, which every document has and every presentation
     /// either is or sits beside.
     private var sourcePane: some View {
-        CodeTextView(
+        /// Resolved here rather than inside the engine, which may not name
+        /// the resolver — see `EditorEngineBoundaryTests`. Both of the values
+        /// below come off the same name, so they cannot disagree about which
+        /// language the file is.
+        let languageID = LanguageResolver.shared.languageID(
+            forFileName: document.url.lastPathComponent)
+
+        return CodeTextView(
             text: document.currentText,
             textRevision: document.revision,
             replacementName: document.replacementName,
@@ -831,7 +838,9 @@ private struct DocumentView: View {
             /// die with this view, which is the whole failure the timeline
             /// exists to remove. The lookup is a dictionary hit.
             undoTimeline: EditorUndoCenter.shared.timeline(forPath: document.url.path),
-            languageID: LanguageResolver.shared.languageID(forFileName: document.url.lastPathComponent),
+            languageID: languageID,
+            highlighter: LanguageResolver.shared.highlighter(forLanguageID: languageID),
+            fences: .installed,
             /// From the file's name, not its language: `.ts` and `.tsx`
             /// are the same `CodeLanguage`, and a tag closed in `.ts` is
             /// always wrong because a `<` there can only be a generic.

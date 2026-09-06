@@ -325,3 +325,20 @@ final class LanguageResolver: ObservableObject {
         )
     }
 }
+
+extension FenceHighlighting {
+    /// The grammars the installed extensions ship, which is what the app
+    /// draws fences with.
+    ///
+    /// This side of the seam rather than the engine's, because the engine may
+    /// not name `LanguageResolver` — see `EditorEngineBoundaryTests`. Every
+    /// engine surface that colours a fence gets it from here.
+    ///
+    /// The snapshot is read once and captured, so every fence in one document
+    /// is coloured by the same set of grammars even if an extension is
+    /// installed while the document renders.
+    static var installed: FenceHighlighting {
+        let snapshot = LanguageResolver.snapshot
+        return FenceHighlighting { LanguageResolver.highlighter(forFenceLabel: $0, in: snapshot) }
+    }
+}

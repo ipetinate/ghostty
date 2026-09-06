@@ -166,8 +166,11 @@ struct MarkdownRendererTests {
         ```
         """)
 
-        let coloured = MarkdownRenderer(style: style, snapshot: try FixtureGrammar.snapshot())
-            .render(document).text
+        let installed = try FixtureGrammar.snapshot()
+        let coloured = MarkdownRenderer(
+            style: style,
+            fences: FenceHighlighting { LanguageResolver.highlighter(forFenceLabel: $0, in: installed) }
+        ).render(document).text
         let drawn = Set(foregroundColors(in: coloured).map(\.description))
 
         for kind in [TokenKind.comment, .keyword, .string] {
@@ -180,8 +183,7 @@ struct MarkdownRendererTests {
         /// The same document with nothing installed, which is what every
         /// fence gets on a machine with no extensions: one colour, and the
         /// text still there.
-        let plain = MarkdownRenderer(style: style, snapshot: FixtureGrammar.emptySnapshot())
-            .render(document).text
+        let plain = MarkdownRenderer(style: style, fences: .plain).render(document).text
         #expect(Set(foregroundColors(in: plain).map(\.description)).count == 1)
         #expect(plain.string.contains("let x = \"hi\""))
     }

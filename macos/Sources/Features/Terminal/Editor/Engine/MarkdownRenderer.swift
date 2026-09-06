@@ -59,15 +59,19 @@ struct MarkdownRenderer {
     /// The directory the document lives in, for resolving `./docs/a.png`.
     var baseURL: URL?
 
-    /// The grammars a fenced code block is coloured with, taken once when
-    /// the renderer is built rather than read at each fence.
+    /// How a fenced code block is coloured, handed in by whoever built the
+    /// renderer.
     ///
-    /// A parameter for the reason `GitDiffHighlight.make(for:file:source:snapshot:)`
-    /// takes one: the shared snapshot is built by reloading the installed
-    /// extensions off disk, so a caller that cannot do that — a test — has no
-    /// way to put a grammar where this can find it, and every fence in every
-    /// assertion would come back plain whatever the renderer did with it.
-    var snapshot: LanguageResolver.Snapshot = LanguageResolver.snapshot
+    /// Handed in for two reasons that arrive at the same seam. The engine may
+    /// not name the thing that knows which grammars are installed, which is
+    /// `EditorEngineBoundaryTests`; and a caller that cannot reload the
+    /// installed extensions off disk — a test — otherwise has no way to put a
+    /// grammar where this could find it, so every fence in every assertion
+    /// came back plain whatever the renderer did with it.
+    ///
+    /// The default leaves every fence uncoloured, which is what a host that
+    /// supplies nothing gets.
+    var fences: FenceHighlighting = .plain
 
     /// One level of list or quote indentation.
     private static let indentStep: CGFloat = 22
@@ -367,7 +371,7 @@ struct MarkdownRenderer {
     /// pane — and it is the difference between a preview that looks like a
     /// document and one that looks unfinished.
     private func highlight(_ source: String, language: String, in body: NSMutableAttributedString) {
-        let highlighter = LanguageResolver.highlighter(forFenceLabel: language, in: snapshot)
+        let highlighter = fences.highlighter(forFenceLabel: language)
         guard !highlighter.isPlain else { return }
         let full = NSRange(location: 0, length: (source as NSString).length)
         for token in highlighter.tokens(in: source, range: full) {

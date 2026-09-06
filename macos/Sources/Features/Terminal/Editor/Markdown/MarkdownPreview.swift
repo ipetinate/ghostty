@@ -209,7 +209,10 @@ struct MarkdownPreviewView: NSViewRepresentable {
         coordinator.fingerprint = fingerprint
 
         let document = Self.document(text: text, fileURL: fileURL)
-        let renderer = MarkdownRenderer(style: style, baseURL: fileURL?.deletingLastPathComponent())
+        let renderer = MarkdownRenderer(
+            style: style,
+            baseURL: fileURL?.deletingLastPathComponent(),
+            fences: .installed)
         let output = renderer.render(document)
 
         coordinator.output = output

@@ -76,11 +76,12 @@ struct CodeHoverInfo: Equatable {
     /// signature in the next, and taking only the first put the module path
     /// in the code font and the real signature into the prose.
     ///
-    /// **Every fence keeps the language its info string names**, resolved
-    /// to a grammar by `LanguageResolver.highlighter(forFenceLabel:)` — the
-    /// same rule the markdown preview uses, so a ```` ```css ```` fence is
-    /// coloured by the same grammar in both places. The declaration takes the language of the
-    /// *first* leading fence, since the later ones are continuations of it.
+    /// **Every fence keeps the language its info string names**, resolved to
+    /// a grammar by the `FenceHighlighting` the host handed in — the same one
+    /// the markdown preview is given, so a ```` ```css ```` fence is coloured
+    /// by the same grammar in both places. The declaration takes the language
+    /// of the *first* leading fence, since the later ones are continuations
+    /// of it.
     ///
     /// Documentation is also **reflowed**: a doc comment arrives wrapped to
     /// whatever column its author's editor used, and wrapping it again at the

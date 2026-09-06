@@ -9,11 +9,17 @@ import Foundation
 /// caller instead of a second copy — the settings form keeps its own until
 /// somebody has a reason to touch it, and then the change is a deletion.
 ///
-/// **Every command that reaches here is a compiled-in literal.** The language
-/// servers' come from `LSPServerRegistry`, the agents' from
-/// `AgentInstallPlan`, and neither is assembled from anything a file on disk
-/// said. Nothing here quotes or escapes, because nothing here is given
-/// somebody else's string to run.
+/// **Nothing here quotes or escapes, so every caller owes the check.** The
+/// language servers' commands come from `LSPServerRegistry` and the agents'
+/// from `AgentInstallPlan`; both are compiled-in literals, and neither is
+/// assembled from anything a file on disk said.
+///
+/// An extension's are the one exception, and they pay for it at the parse.
+/// `ExtensionInstallPlan` reads them out of a manifest this app did not
+/// write, and hands over only a command whose first word is a package manager
+/// this build named and which carries no fragment that could start a second
+/// command. A string that fails either test never becomes an Install button,
+/// so it never reaches this `-lic`.
 @MainActor
 final class PackageInstallRun: ObservableObject {
     /// What is running, if anything. `nil` is also what a finished run leaves

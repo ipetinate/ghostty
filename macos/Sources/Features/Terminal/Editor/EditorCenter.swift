@@ -63,6 +63,8 @@ final class EditorCenter: ObservableObject {
     /// cannot take it.
     @Published private(set) var media: [String: MediaDocument] = [:]
 
+    @Published private(set) var extensions: [String: ExtensionDocument] = [:]
+
     /// What the terminal's own tab is labelled with.
     ///
     /// Kept here rather than read from the window at render time because the
@@ -135,6 +137,7 @@ final class EditorCenter: ObservableObject {
     enum OpenPane {
         case text(EditorDocument)
         case media(MediaDocument)
+        case extensionDocument(ExtensionDocument)
 
         var text: EditorDocument? {
             if case .text(let document) = self { return document } else { return nil }
@@ -143,12 +146,21 @@ final class EditorCenter: ObservableObject {
         var media: MediaDocument? {
             if case .media(let document) = self { return document } else { return nil }
         }
+
+        var extensionDocument: ExtensionDocument? {
+            if case .extensionDocument(let document) = self { return document } else { return nil }
+        }
     }
 
     var selected: OpenPane? {
         guard let path = tabs.selectedPath else { return nil }
+        return pane(at: path)
+    }
+
+    private func pane(at path: String) -> OpenPane? {
         if let document = documents[path] { return .text(document) }
         if let document = media[path] { return .media(document) }
+        if let document = extensions[path] { return .extensionDocument(document) }
         return nil
     }
 
@@ -161,7 +173,14 @@ final class EditorCenter: ObservableObject {
         let group = EditorGroup(hostsTerminal: true)
         tree = .leaf(group)
         activeGroupID = group.id
+
+        ExtensionStore.shared.$index
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.retitleExtensions() }
+            .store(in: &storeObservers)
     }
+
+    private var storeObservers: Set<AnyCancellable> = []
 
     // MARK: Routing a change to a cell
 
@@ -269,9 +288,7 @@ final class EditorCenter: ObservableObject {
     /// What a particular cell is showing, if it is showing a file.
     func selected(in id: EditorGroup.ID) -> OpenPane? {
         guard let path = tabs(in: id).selectedPath else { return nil }
-        if let document = documents[path] { return .text(document) }
-        if let document = media[path] { return .media(document) }
-        return nil
+        return pane(at: path)
     }
 
     func selectedDocument(in id: EditorGroup.ID) -> EditorDocument? {
@@ -568,6 +585,50 @@ final class EditorCenter: ObservableObject {
         return true
     }
 
+    /// The name the tab wears for an extension.
+    ///
+    /// A restored tab is opened before the registry has been fetched, so the
+    /// installed set is the only source there is at that moment and an
+    /// extension browsed but never installed is in neither. Falling back to
+    /// the identifier put `phantom.go` on the tab; the last component of the
+    /// identifier, spelled as words, reads as the name until the index lands
+    /// and ``retitleExtensions()`` replaces it with the real one.
+    static func restoredExtensionTitle(_ extensionID: String) -> String {
+        if let installed = ExtensionStore.shared.installed.first(where: { $0.id == extensionID }) {
+            return installed.name
+        }
+        if let entry = ExtensionStore.shared.index?.extensions.first(where: { $0.id == extensionID }) {
+            return entry.card?.title ?? entry.name
+        }
+        return readableExtensionName(extensionID)
+    }
+
+    static func readableExtensionName(_ extensionID: String) -> String {
+        let name = extensionID.split(separator: ".").last.map(String.init) ?? extensionID
+        guard !name.isEmpty else { return extensionID }
+        return name
+            .split(whereSeparator: { $0 == "-" || $0 == "_" })
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    /// Puts the real name on every extension tab once the registry answers.
+    func retitleExtensions() {
+        for (path, document) in extensions {
+            let title = Self.restoredExtensionTitle(document.extensionID)
+            guard title != document.title else { continue }
+            extensions[path] = ExtensionDocument(extensionID: document.extensionID, title: title)
+            mutateHolder(of: path) { $0.setTitle(title, for: path) }
+        }
+    }
+
+    func openExtension(_ document: ExtensionDocument) {
+        extensions[document.path] = document
+        activeGroupID = tree.open(document.tab, in: activeGroupID)
+        lastSelectedFile = document.path
+        refreshPaneVisibility()
+    }
+
     /// A tab the reader tried to close while it still had edits.
     ///
     /// Raised instead of acting, so the *view* asks and this stays testable
@@ -815,6 +876,7 @@ final class EditorCenter: ObservableObject {
         documents.removeValue(forKey: path)
         documentObservers.removeValue(forKey: path)
         media.removeValue(forKey: path)
+        extensions.removeValue(forKey: path)
         mutateHolder(of: path) { $0.close(path) }
     }
 
@@ -928,6 +990,7 @@ final class EditorCenter: ObservableObject {
         documents.removeAll()
         documentObservers.removeAll()
         media.removeAll()
+        extensions.removeAll()
         tree.closeAllFiles()
         activeGroupID = tree.terminalHost ?? tree.groupIDs[0]
         refreshPaneVisibility()
@@ -954,7 +1017,13 @@ final class EditorCenter: ObservableObject {
     /// sources of truth for them.
     func restore(_ state: EditorGridState) {
         var opened: Set<String> = []
-        for path in state.paths where FileManager.default.fileExists(atPath: path) {
+        for path in state.paths {
+            if let extensionID = ExtensionDocument.extensionID(fromPath: path) {
+                openExtension(ExtensionDocument(extensionID: extensionID, title: Self.restoredExtensionTitle(extensionID)))
+                opened.insert(path)
+                continue
+            }
+            guard FileManager.default.fileExists(atPath: path) else { continue }
             if open(URL(fileURLWithPath: path)) { opened.insert(path) }
         }
 

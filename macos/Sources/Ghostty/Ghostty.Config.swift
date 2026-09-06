@@ -136,8 +136,8 @@ extension Ghostty {
         }
 
         var sidebarWidth: CGFloat {
-            guard let config = self.config else { return 240 }
-            var v: UInt32 = 240
+            guard let config = self.config else { return SidebarWidthRule.defaultContent }
+            var v: UInt32 = UInt32(SidebarWidthRule.defaultContent)
             let key = "sidebar-width"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return CGFloat(v)

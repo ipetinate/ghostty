@@ -20,11 +20,27 @@ import Foundation
 enum LoginEnvironment {
     /// A login shell has to source the user's rc files to build `PATH`, and
     /// people put slow things in those.
-    private static let resolveTimeout: TimeInterval = 5
+    private static let resolveTimeout: TimeInterval = 12
+
+    /// How long a failed resolution is believed before another login shell
+    /// is worth its cost.
+    ///
+    /// A success is kept for the life of the process; a failure is not. The
+    /// shell that answers in two seconds on an idle machine can pass the
+    /// timeout while a session restores and a dozen of them start at once,
+    /// and a failure cached forever leaves the whole process searching a
+    /// `PATH` without Homebrew in it — every tool reported missing, every
+    /// package manager reported absent, until the app is restarted.
+    static let failureRetryAfter: TimeInterval = 30
 
     private static let lock = NSLock()
     private static var cachedPath: String?
-    private static var didResolve = false
+    private static var resolvedAt: Date?
+
+    static func retriesAfterFailure(resolvedAt: Date?, now: Date) -> Bool {
+        guard let resolvedAt else { return true }
+        return now.timeIntervalSince(resolvedAt) >= failureRetryAfter
+    }
 
     /// Serializes the resolution itself, so concurrent callers share one
     /// login shell rather than each starting their own. Separate from
@@ -67,7 +83,7 @@ enum LoginEnvironment {
     /// expected should invalidate and try once more.
     static func invalidate() {
         lock.lock()
-        didResolve = false
+        resolvedAt = nil
         cachedPath = nil
         lock.unlock()
     }
@@ -78,7 +94,7 @@ enum LoginEnvironment {
     /// Callers that arrive while a resolution is in flight wait for it
     /// rather than starting their own. The lock only ever guarded the
     /// *cache*, not the work: everyone who asked before the first answer
-    /// landed saw `didResolve == false` and ran their own login shell.
+    /// landed saw no cached answer and ran their own login shell.
     /// Restoring a session asks all at once — every surface and every
     /// language server wants the path — so a dozen interactive shells
     /// started together, each sourcing the whole of `.zshrc`. The machine
@@ -97,7 +113,7 @@ enum LoginEnvironment {
 
             lock.lock()
             cachedPath = resolved
-            didResolve = true
+            resolvedAt = Date()
             lock.unlock()
 
             return resolved
@@ -106,13 +122,15 @@ enum LoginEnvironment {
 
     /// The cached path, or nil when nothing has been resolved yet.
     ///
-    /// A resolution that *failed* is still a resolution: it is cached as a
-    /// nil path with `didResolve` set, so a machine where the login shell
+    /// A resolution that *failed* is cached as a nil path with the time it
+    /// was made, and believed for `failureRetryAfter`, so a machine where
+    /// the login shell
     /// cannot answer does not pay for it again on every call.
     private static func cachedResult() -> String?? {
         lock.lock()
         defer { lock.unlock() }
-        return didResolve ? .some(cachedPath) : nil
+        if let cachedPath { return .some(cachedPath) }
+        return retriesAfterFailure(resolvedAt: resolvedAt, now: Date()) ? nil : .some(nil)
     }
 
     /// Search path for tools installed outside the login shell's PATH.

@@ -536,6 +536,7 @@ final class SidebarTabManager: ObservableObject {
     ) {
         guard let view = notification.object as? Ghostty.SurfaceView,
               let model = models.first(where: { $0.surfaceId == view.id })
+                ?? models.first(where: { $0.window != nil && $0.window === view.window })
         else { return }
         applyCommandRun(model, signal: signal)
     }
@@ -688,21 +689,6 @@ final class SidebarTabManager: ObservableObject {
     /// window arriving from nowhere instead of the tab they asked for. A row
     /// that has outlived its window is stale rather than actionable, so the
     /// list is re-formed instead and the row goes away.
-    /// Whether a select may fetch its window, as a rule rather than as an
-    /// expression inside a method — the shape `WindowGhostRescue.shouldRescue`
-    /// established for the same reason: the interesting part is when the answer
-    /// is *no*, and no is the answer nobody sees happen.
-    ///
-    /// - Parameters:
-    ///   - appIsActive: `NSApp.isActive`. True for every select the reader
-    ///     makes, because their click landed in this app.
-    ///   - isOnActiveSpace: `NSWindow.isOnActiveSpace`. False when the window
-    ///     is on a Space other than the one in front — where ordering it front
-    ///     moves it rather than switching to it.
-    static func mayOrderFront(appIsActive: Bool, isOnActiveSpace: Bool) -> Bool {
-        appIsActive || isOnActiveSpace
-    }
-
     func select(_ model: SidebarTabModel) {
         guard let w = model.window, Self.isLiveTab(w) else {
             WindowBreadcrumbs.note(
@@ -732,7 +718,8 @@ final class SidebarTabManager: ObservableObject {
         /// the tab is selected *inside its group* and nothing is ordered
         /// anywhere. The reader finds it selected when they come back, which is
         /// what a select is for; being yanked across Spaces is not.
-        guard Self.mayOrderFront(appIsActive: NSApp.isActive, isOnActiveSpace: w.isOnActiveSpace)
+        guard WindowSpaceSafety.mayOrderFront(
+            appIsActive: NSApp.isActive, isOnActiveSpace: w.isOnActiveSpace)
         else {
             WindowBreadcrumbs.note(
                 "sidebar select: deferred — app inactive and window=\(w.windowNumber) "
@@ -784,11 +771,9 @@ final class SidebarTabManager: ObservableObject {
                 return
             }
             guard !Self.windowServerShowsOnScreen(w) else { return }
-            WindowBreadcrumbs.note(
-                "select rescue: window=\(w.windowNumber) key but offscreen "
-                + "per WindowServer (visible=\(w.isVisible)) — re-showing")
-            w.orderFrontRegardless()
-            w.makeKey()
+            if WindowSpaceSafety.orderFront(w, .frontRegardless, from: .selectRescue) {
+                w.makeKey()
+            }
         }
     }
 

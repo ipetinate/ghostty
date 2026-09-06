@@ -585,11 +585,31 @@ class TerminalWindow: NSWindow {
         }
     }
 
-    // Find the NSTextField responsible for displaying the titlebar's title.
+    private weak var foundTitlebarTextField: NSTextField?
+
+    /// The NSTextField the titlebar draws its title in.
+    ///
+    /// Held weakly between lookups rather than searched every time. Finding
+    /// it means a depth-first walk of the whole view tree comparing
+    /// `String(describing: type(of:))` on every view, and `title.didset`
+    /// asks for it — so a shell that reports a title on each prompt walked a
+    /// tree that, with the sidebar and the editor grid in it, is thousands of
+    /// views deep. It was the single hottest path in a startup profile.
+    ///
+    /// The reference is proof of its own validity: AppKit rebuilds the
+    /// titlebar on a theme change and on entering fullscreen, and a field
+    /// from the old one has been taken out of the window by then, so a
+    /// cached field that no longer belongs to this window is discarded and
+    /// the search runs again.
     private var titlebarTextField: NSTextField? {
-        titlebarContainer?
+        if let found = foundTitlebarTextField, found.window === self, found.superview != nil {
+            return found
+        }
+        let found = titlebarContainer?
             .firstDescendant(withClassName: "NSTitlebarView")?
             .firstDescendant(withClassName: "NSTextField") as? NSTextField
+        foundTitlebarTextField = found
+        return found
     }
 
     // Return a styled representation of our title property.

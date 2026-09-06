@@ -1,0 +1,453 @@
+import AppKit
+import SwiftUI
+
+struct ExtensionRow: View {
+    enum Style {
+        case form
+        case compact
+    }
+
+    enum Subject {
+        case entry(ExtensionIndex.Entry, state: ExtensionState)
+        case orphan(InstalledExtension)
+
+        var id: String {
+            switch self {
+            case .entry(let entry, _): return entry.id
+            case .orphan(let installed): return installed.id
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .entry(let entry, _): return entry.card?.title ?? entry.name
+            case .orphan(let installed): return installed.name
+            }
+        }
+
+        var author: String {
+            switch self {
+            case .entry(let entry, _): return entry.card?.author.name ?? entry.publisher
+            case .orphan(let installed): return installed.publisher.isEmpty ? installed.id : installed.publisher
+            }
+        }
+
+        var versionText: String {
+            switch self {
+            case .entry(let entry, let state): return ExtensionRow.versionText(entry, state: state)
+            case .orphan(let installed): return installed.version
+            }
+        }
+
+        var state: ExtensionState {
+            switch self {
+            case .entry(_, let state): return state
+            case .orphan(let installed): return .installed(version: installed.version)
+            }
+        }
+    }
+
+    let subject: Subject
+    let style: Style
+    let icon: ExtensionIconSource?
+    let activity: ExtensionActivity?
+    let error: String?
+    var isSelected = false
+    let onOpen: () -> Void
+    let onInstall: () -> Void
+    let onRemove: () -> Void
+
+    @ObservedObject private var palette: ThemePalette = .shared
+    @ObservedObject private var store: ExtensionStore = .shared
+    @State private var isHovered = false
+
+    var body: some View {
+        switch style {
+        case .form:
+            formBody
+        case .compact:
+            compactBody
+        }
+    }
+
+    static func versionText(_ entry: ExtensionIndex.Entry, state: ExtensionState) -> String {
+        if case .updateAvailable(let installed, let available) = state {
+            return "\(installed) \u{2192} \(available)"
+        }
+        return entry.version
+    }
+
+    // MARK: Form
+
+    private var formBody: some View {
+        LabeledContent {
+            trailing(controlSize: .regular)
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                ExtensionIconView(source: icon, size: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(verbatim: subject.title)
+                            .lineLimit(1)
+                        ExtensionTagView(text: subject.versionText)
+                    }
+                    Text(verbatim: subject.author)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if let error {
+                        Text(verbatim: error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .help(subject.id)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+    }
+
+    // MARK: Compact
+
+    private var compactBody: some View {
+        HStack(spacing: 12) {
+            ExtensionIconView(source: icon, size: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(verbatim: subject.title)
+                        .font(palette.font(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    ExtensionTagView(text: subject.versionText)
+                }
+                Text(verbatim: subject.author)
+                    .font(palette.font(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            trailing(controlSize: .regular)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(compactBackground)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .onHover { isHovered = $0 }
+        .help(error ?? subject.id)
+    }
+
+    private var compactBackground: Color {
+        if isSelected { return (palette.accent ?? .accentColor).opacity(0.18) }
+        return isHovered ? Color.primary.opacity(0.06) : .clear
+    }
+
+    // MARK: Shared
+
+    @ViewBuilder
+    private func trailing(controlSize: ControlSize) -> some View {
+        if let activity {
+            ExtensionActivityView(activity: activity, compact: controlSize == .small)
+        } else {
+            HStack(spacing: 6) {
+                if error != nil, controlSize == .small {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
+                }
+                requirementsBadge
+                ExtensionActionButton(
+                    state: subject.state,
+                    style: .labelled,
+                    onInstall: onInstall,
+                    onRemove: onRemove)
+                    .controlSize(controlSize)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var requirementsBadge: some View {
+        if let missing = store.pendingRequirements[subject.id],
+           let text = ExtensionStore.requirementsBadge(missing) {
+            Text(verbatim: text)
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .help(missing.map(\.program).joined(separator: ", "))
+        }
+    }
+}
+
+struct ExtensionActionButton: View {
+    enum Style {
+        case bare
+        case labelled
+    }
+
+    enum Action: String, CaseIterable, Equatable {
+        case install
+        case update
+        case uninstall
+
+        init(state: ExtensionState) {
+            switch state {
+            case .notInstalled: self = .install
+            case .installed: self = .uninstall
+            case .updateAvailable: self = .update
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .install: return "Install"
+            case .update: return "Update"
+            case .uninstall: return "Uninstall"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .install: return "arrow.down.circle"
+            case .update: return "arrow.triangle.2.circlepath"
+            case .uninstall: return "trash"
+            }
+        }
+
+        var isDestructive: Bool { self == .uninstall }
+    }
+
+    let state: ExtensionState
+    var style: Style = .bare
+    let onInstall: () -> Void
+    let onRemove: () -> Void
+
+    @ObservedObject private var palette: ThemePalette = .shared
+    @State private var isHovered = false
+
+    private var action: Action { Action(state: state) }
+
+    private var tint: Color {
+        guard isHovered else { return .primary }
+        if action.isDestructive { return palette.danger ?? .red }
+        return palette.accent ?? .accentColor
+    }
+
+    var body: some View {
+        switch style {
+        case .bare:
+            Button(action.title, action: run)
+        case .labelled:
+            Button(action: run) {
+                Label(action.title, systemImage: action.systemImage)
+                    .foregroundStyle(tint)
+            }
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+        }
+    }
+
+    private func run() {
+        if action.isDestructive {
+            onRemove()
+        } else {
+            onInstall()
+        }
+    }
+}
+
+struct ExtensionStateBadge: View {
+    let state: ExtensionState
+
+    var body: some View {
+        switch state {
+        case .notInstalled:
+            EmptyView()
+        case .installed:
+            badge("Installed", color: .green)
+        case .updateAvailable:
+            badge("Update available", color: .orange)
+        }
+    }
+
+    private func badge(_ title: LocalizedStringKey, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct ExtensionActivityView: View {
+    let activity: ExtensionActivity
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: compact ? 5 : 8) {
+            if case .downloading(let fraction?) = activity, !compact {
+                ProgressView(value: fraction)
+                    .progressViewStyle(.linear)
+                    .frame(width: 100)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(compact ? 0.6 : 1)
+                    .frame(width: compact ? 12 : nil, height: compact ? 12 : nil)
+            }
+            if !compact {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .help(label)
+    }
+
+    private var label: LocalizedStringKey {
+        switch activity {
+        case .downloading: return "Downloading…"
+        case .verifying: return "Verifying…"
+        case .installing: return "Installing…"
+        case .removing: return "Removing…"
+        }
+    }
+}
+
+struct ExtensionTagView: View {
+    let text: String
+
+    var body: some View {
+        Text(verbatim: text)
+            .font(.caption2.weight(.semibold).monospacedDigit())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(
+                Capsule().fill(Color.secondary.opacity(0.15))
+            )
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+}
+
+struct ExtensionIconView: View {
+    let source: ExtensionIconSource?
+    var size: CGFloat = 28
+
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+                    .overlay(
+                        Image(systemName: ExtensionDocument.symbol)
+                            .font(.system(size: size * 0.45, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    )
+            }
+        }
+        .frame(width: size, height: size)
+        .task(id: source?.key) {
+            image = await Self.resolve(source)
+        }
+    }
+
+    @MainActor
+    static func resolve(_ source: ExtensionIconSource?) async -> NSImage? {
+        guard let source else { return nil }
+        let key = source.key
+        let cache = ExtensionIconCache.shared
+        if cache.knows(key) { return cache.image(forKey: key) }
+        let image = Self.image(from: await bytes(of: source))
+        cache.remember(image, forKey: key)
+        return image
+    }
+
+    static func bytes(of source: ExtensionIconSource) async -> Data? {
+        switch source {
+        case .inline(_, let data):
+            return data
+        case .file(let url):
+            return await Task.detached(priority: .utility) { () -> Data? in
+                guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+                      size <= ExtensionMediaGate.maxImageBytes
+                else { return nil }
+                return try? Data(contentsOf: url)
+            }.value
+        }
+    }
+
+    static func image(from data: Data?) -> NSImage? {
+        guard let data, let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else {
+            return nil
+        }
+        return image
+    }
+}
+
+struct ExtensionContributionChips: View {
+    let entry: ExtensionIndex.Entry
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(entry.contributes, id: \.self) { kind in
+                ExtensionChipView(chip: ExtensionContributionChip.of(kind))
+                    .help(kind == "languages" && !entry.languages.isEmpty
+                        ? entry.languages.joined(separator: ", ")
+                        : ExtensionContributionChip.of(kind).title)
+            }
+        }
+    }
+}
+
+struct ExtensionChipView: View {
+    let chip: ExtensionContributionChip
+
+    var body: some View {
+        Label(chip.title, systemImage: chip.systemImage)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(
+                Capsule().fill(Color.secondary.opacity(0.15))
+            )
+            .foregroundStyle(.secondary)
+    }
+}
+
+struct ExtensionContributionChip: Equatable {
+    let title: String
+    let systemImage: String
+
+    static func of(_ kind: String) -> ExtensionContributionChip {
+        switch kind {
+        case "languages":
+            return ExtensionContributionChip(
+                title: "Languages", systemImage: "chevron.left.forwardslash.chevron.right")
+        case "formatters":
+            return ExtensionContributionChip(title: "Formatters", systemImage: "text.alignleft")
+        case "themes":
+            return ExtensionContributionChip(title: "Themes", systemImage: "paintpalette")
+        case "iconThemes":
+            return ExtensionContributionChip(title: "Icon Themes", systemImage: "photo.on.rectangle")
+        default:
+            return ExtensionContributionChip(title: kind, systemImage: "puzzlepiece")
+        }
+    }
+}

@@ -8,10 +8,10 @@ import Foundation
 /// means the thing on disk has to carry an identity (`id`), a version, and
 /// a publisher long before anything verifies them, because a format that
 /// gains identity later cannot be retrofitted onto files already published.
-/// `contributes` is the same bet: v1 reads `contributes.languages` and
-/// nothing else, and every other key is counted and ignored rather than
-/// rejected, so a file written for a later build still installs the half
-/// this one understands.
+/// `contributes` is the same bet: v1 reads `contributes.languages`,
+/// `formatters`, `themes`, `iconThemes` and `agents`, and every other key is counted
+/// and ignored rather than rejected, so a file written for a later build
+/// still installs the half this one understands.
 ///
 /// Parsing is lenient in the shape of `IconTheme`, and for the same reason:
 /// these are files we don't control. A missing key, a string where an array
@@ -56,8 +56,9 @@ struct LanguageManifest: Equatable, Sendable {
         /// and it is the security-relevant call in the format.** The
         /// language half of an unknown schema is kept: extensions,
         /// keywords and comment markers are additive and their meaning is
-        /// stable, and a keyword cannot hurt anybody. The server half is
-        /// discarded, because a later schema is free to change what
+        /// stable, and a keyword cannot hurt anybody. The server half — and
+        /// every formatter, which is a program the same way — is discarded,
+        /// because a later schema is free to change what
         /// `command` *means* — it becomes an array, it gains a flag that
         /// says how to interpret the rest — and reinterpreting a field you
         /// cannot parse under the rules of a version you do not have is
@@ -81,6 +82,12 @@ struct LanguageManifest: Equatable, Sendable {
     let publisher: String
     let eligibility: ServerEligibility
     let languages: [LanguageContribution]
+    let formatters: [FormatterContribution]
+    let themes: [ThemeContribution]
+    let iconThemes: [IconThemeContribution]
+    let agents: [AgentDescriptor]
+
+    let agentInstallPlans: [String: ExtensionInstallPlan]
 
     /// Keys this build ignored, top-level and under `contributes`, so
     /// Settings can say how much of the file it did not understand.
@@ -124,7 +131,10 @@ struct LanguageManifest: Equatable, Sendable {
     /// Whether this manifest contributes anything at all. An empty file
     /// parses cleanly and lands here, the same way a font-based icon theme
     /// parses cleanly and reports itself unsupported.
-    var isUsable: Bool { !languages.isEmpty }
+    var isUsable: Bool {
+        !languages.isEmpty || !formatters.isEmpty || !themes.isEmpty || !iconThemes.isEmpty
+            || !agents.isEmpty
+    }
 
     /// A short reason to show beside an entry that isn't fully in force, or
     /// nil when there is nothing to say.
@@ -174,8 +184,11 @@ struct LanguageManifest: Equatable, Sendable {
     /// the file this build ignored.
     private static let knownTopLevelKeys: Set<String> = [
         "schemaVersion", "id", "name", "version", "publisher", "contributes",
+        "description", "homepage", "phantom",
     ]
-    private static let knownContributesKeys: Set<String> = ["languages"]
+    private static let knownContributesKeys: Set<String> = [
+        "languages", "formatters", "themes", "iconThemes", "agents",
+    ]
 
     /// Builds the value from an already-decoded object and a digest taken
     /// over the bytes it was decoded from.
@@ -211,6 +224,26 @@ struct LanguageManifest: Equatable, Sendable {
                 LanguageContribution.parse(json: $0, root: root, eligibility: eligibility)
             }
 
+        let formatters: [FormatterContribution]
+        let agents: [AgentDescriptor]
+        let agentInstallPlans: [String: ExtensionInstallPlan]
+        switch eligibility {
+        case .eligible:
+            formatters = objects(contributes["formatters"], limit: FormatterContribution.maxFormatters)
+                .compactMap(FormatterContribution.parse(json:))
+            let rawAgents = objects(contributes["agents"], limit: AgentContribution.maxAgents)
+            agents = rawAgents.compactMap { AgentContribution.parse(json: $0, root: root) }
+            agentInstallPlans = installPlans(in: rawAgents)
+        case .needsNewerApp, .unidentified:
+            formatters = []
+            agents = []
+            agentInstallPlans = [:]
+        }
+        let themes = objects(contributes["themes"], limit: ThemeContribution.maxThemes)
+            .compactMap { ThemeContribution.parse(json: $0, root: root) }
+        let iconThemes = objects(contributes["iconThemes"], limit: IconThemeContribution.maxIconThemes)
+            .compactMap { IconThemeContribution.parse(json: $0, root: root) }
+
         return LanguageManifest(
             id: id,
             name: displayString(json["name"]) ?? root.lastPathComponent,
@@ -218,6 +251,11 @@ struct LanguageManifest: Equatable, Sendable {
             publisher: displayString(json["publisher"]) ?? "",
             eligibility: eligibility,
             languages: dedupedByLanguageID(languages),
+            formatters: deduped(formatters, by: \.id),
+            themes: deduped(themes, by: \.name),
+            iconThemes: deduped(iconThemes, by: \.name),
+            agents: deduped(agents, by: \.id),
+            agentInstallPlans: agentInstallPlans,
             unrecognizedFields: unrecognized.sorted(),
             digest: digest,
             manifestURL: url,
@@ -226,14 +264,39 @@ struct LanguageManifest: Equatable, Sendable {
         )
     }
 
+    private static func installPlans(in rawAgents: [[String: Any]]) -> [String: ExtensionInstallPlan] {
+        var plans: [String: ExtensionInstallPlan] = [:]
+        for entry in rawAgents {
+            guard let id = AgentContribution.validAgentID(entry["agentId"]),
+                  plans[id] == nil,
+                  let plan = ExtensionInstallPlan.parse(entry["install"])
+            else { continue }
+            plans[id] = plan
+        }
+        return plans
+    }
+
     /// One extension contributing the same `languageId` twice is a mistake
     /// in the file, and the deterministic reading is that the first entry
     /// wins — the same rule `LSPServerRegistry` applies to its own table.
     private static func dedupedByLanguageID(
         _ languages: [LanguageContribution]
     ) -> [LanguageContribution] {
+        deduped(languages, by: \.languageID)
+    }
+
+    private static func deduped<Item>(
+        _ items: [Item],
+        by key: KeyPath<Item, String>
+    ) -> [Item] {
         var seen: Set<String> = []
-        return languages.filter { seen.insert($0.languageID).inserted }
+        return items.filter { seen.insert($0[keyPath: key]).inserted }
+    }
+
+    private static func objects(_ value: Any?, limit: Int) -> [[String: Any]] {
+        (value as? [Any] ?? [])
+            .prefix(limit)
+            .compactMap { $0 as? [String: Any] }
     }
 
     /// More than this in one extension is not a language pack, and each one
@@ -360,6 +423,7 @@ struct LanguageContribution: Equatable, Sendable {
 
     let lineComment: String?
     let blockComment: LanguageSyntax.BlockComment?
+    let patterns: SyntaxContribution
     let category: LSPServerCategory
 
     /// The compiled-in language this one is lexed like.
@@ -380,7 +444,8 @@ struct LanguageContribution: Equatable, Sendable {
             base: base,
             keywords: keywords,
             lineComment: lineComment,
-            blockComment: blockComment
+            blockComment: blockComment,
+            patterns: patterns
         )
     }
 
@@ -426,6 +491,7 @@ struct LanguageContribution: Equatable, Sendable {
             keywords: keywords(from: json["keywords"]),
             lineComment: lineComment,
             blockComment: blockComment,
+            patterns: SyntaxContribution.parse(json: json["syntax"]),
             category: LSPServerCategory(rawValue: LanguageManifest.string(json["category"]) ?? "")
                 ?? .script,
             base: base(
@@ -546,10 +612,17 @@ struct LanguageContribution: Equatable, Sendable {
     }
 
     static func blockComment(_ value: Any?) -> LanguageSyntax.BlockComment? {
-        guard let pair = value as? [Any], pair.count == 2,
-              let open = commentMarker(pair[0]),
-              let close = commentMarker(pair[1])
-        else { return nil }
+        let markers: (open: Any?, close: Any?)
+        if let pair = value as? [Any], pair.count == 2 {
+            markers = (pair[0], pair[1])
+        } else if let object = value as? [String: Any] {
+            markers = (object["open"], object["close"])
+        } else {
+            return nil
+        }
+        guard let open = commentMarker(markers.open), let close = commentMarker(markers.close) else {
+            return nil
+        }
         return LanguageSyntax.BlockComment(open: open, close: close)
     }
 
@@ -566,6 +639,10 @@ struct LanguageContribution: Equatable, Sendable {
     /// traversal in the path and a symlink inside the extension pointing out
     /// of it have to fail it.
     static func iconURL(_ value: Any?, root: URL) -> URL? {
+        containedURL(value, root: root)
+    }
+
+    static func containedURL(_ value: Any?, root: URL) -> URL? {
         guard let raw = LanguageManifest.string(value) else { return nil }
         guard !raw.hasPrefix("/"), !raw.hasPrefix("~") else { return nil }
         guard !raw.unicodeScalars.contains(where: isUnsafeScalar) else { return nil }
@@ -638,14 +715,16 @@ struct LanguageServerContribution: Equatable, Sendable {
 
     let arguments: [String]
 
-    /// **Display and copy only.** This string never reaches the Install
-    /// button in Settings, and that restriction is not stylistic: the
-    /// Install button is the one place in this app where a string becomes
-    /// `$SHELL -lic`, and a manifest-supplied string arriving there would
-    /// turn "run this named binary, once you approve it" into "run this
-    /// sentence". The button is not offered for contributed languages at
-    /// all; this is the text beside it.
+    /// **Display and copy only.** This sentence never reaches a shell, and
+    /// that restriction is not stylistic: the one place in this app where a
+    /// string becomes `$SHELL -lic` is an Install button, and a free-text
+    /// string arriving there would turn "run this named binary, once you
+    /// approve it" into "run this sentence". A manifest that wants a button
+    /// says so in `installPlan`, whose commands are checked word by word;
+    /// this is the text beside it.
     let installHint: String
+
+    let installPlan: ExtensionInstallPlan?
 
     /// Only `http`/`https` with a host, decided by `UntrustedURL` rather
     /// than by a fresh guess — a documentation link is dispatched to Launch
@@ -691,6 +770,7 @@ struct LanguageServerContribution: Equatable, Sendable {
             command: rawCommand,
             arguments: arguments,
             installHint: installHint(json["installHint"]),
+            installPlan: ExtensionInstallPlan.parse(json["install"]),
             documentationURL: documentationURL(json["documentationURL"]),
             initializationOptionsJSON: initializationOptionsJSON(json["initializationOptions"])
         )

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 @testable import Ghostty
 import Testing
 
@@ -95,6 +96,68 @@ struct SidebarPaneTests {
             RunLoop.main.run(until: Date() + 0.05)
             #expect(visibility.isEnabled(.git))
         }
+    }
+
+    @Test @MainActor func theVisibilityBindingWritesAndReadsThePaneKey() {
+        withPanes([:]) {
+            let visibility = SidebarPaneVisibility.shared
+            for pane in SidebarPane.allCases.filter(\.canBeHidden) {
+                guard let key = pane.defaultsKey else { continue }
+                let binding = visibility.binding(for: pane)
+                #expect(binding.wrappedValue)
+
+                binding.wrappedValue = false
+                #expect(UserDefaults.standard.object(forKey: key) as? Bool == false)
+                #expect(!binding.wrappedValue)
+
+                binding.wrappedValue = true
+                #expect(UserDefaults.standard.object(forKey: key) as? Bool == true)
+                #expect(binding.wrappedValue)
+            }
+        }
+    }
+
+    @Test @MainActor func theTerminalsBindingHasNoKeyToWrite() {
+        withPanes(everyExtraOff) {
+            let binding = SidebarPaneVisibility.shared.binding(for: .terminals)
+            #expect(binding.wrappedValue)
+            binding.wrappedValue = false
+            #expect(binding.wrappedValue)
+        }
+    }
+
+    @Test func theSwitcherMenuOffersBothPlacementsThenEveryPane() {
+        #expect(SidebarPaneSwitcherMenu.entries == [
+            .placement(.top),
+            .placement(.side),
+            .separator,
+            .pane(.terminals, canToggle: false),
+            .pane(.files, canToggle: true),
+            .pane(.git, canToggle: true),
+            .pane(.worktrees, canToggle: true),
+            .pane(.extensions, canToggle: true),
+        ])
+    }
+
+    @Test func theSwitcherMenuNamesEveryPaneOnce() {
+        let panes = SidebarPaneSwitcherMenu.entries.compactMap { entry -> SidebarPane? in
+            guard case .pane(let pane, _) = entry else { return nil }
+            return pane
+        }
+        #expect(panes == SidebarPane.allCases)
+    }
+
+    @Test func onlyTerminalsIsUntoggleableInTheSwitcherMenu() {
+        let locked = SidebarPaneSwitcherMenu.entries.compactMap { entry -> SidebarPane? in
+            guard case .pane(let pane, let canToggle) = entry, !canToggle else { return nil }
+            return pane
+        }
+        #expect(locked == [.terminals])
+    }
+
+    @Test func everySwitcherMenuEntryHasItsOwnIdentity() {
+        let ids = SidebarPaneSwitcherMenu.entries.map(\.id)
+        #expect(Set(ids).count == ids.count)
     }
 
     @Test func everyHideablePaneHasItsOwnDefaultsKey() {

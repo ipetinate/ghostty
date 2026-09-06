@@ -19,6 +19,8 @@ struct SidebarActivityBar: View {
         .padding(.horizontal, 6)
         .padding(.top, 8)
         .frame(width: SidebarActivityBarMetrics.width + 12)
+        .contentShape(Rectangle())
+        .sidebarPaneSwitcherMenu()
     }
 
     private func chip(for pane: SidebarPane) -> some View {
@@ -47,6 +49,7 @@ struct SidebarActivityBar: View {
                     .padding(.vertical, 7)
             }
         }
+        .sidebarPaneSwitcherMenu()
     }
 }
 

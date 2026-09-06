@@ -28,6 +28,8 @@ struct SidebarPaneTabBar: View {
         .padding(.horizontal, 8)
         .padding(.top, 6)
         .padding(.bottom, 4)
+        .contentShape(Rectangle())
+        .sidebarPaneSwitcherMenu()
     }
 
     private func tab(for pane: SidebarPane) -> some View {
@@ -62,5 +64,6 @@ struct SidebarPaneTabBar: View {
         }
         .buttonStyle(.plain)
         .help(pane.title)
+        .sidebarPaneSwitcherMenu()
     }
 }

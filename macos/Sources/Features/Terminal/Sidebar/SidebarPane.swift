@@ -87,6 +87,13 @@ enum SidebarTabBarPlacement: String, CaseIterable, Identifiable {
         }
     }
 
+    var menuTitle: String {
+        switch self {
+        case .top: return "Tabs at the Top"
+        case .side: return "Tabs at the Side"
+        }
+    }
+
     init(raw: String?) {
         self = raw.flatMap(Self.init(rawValue:)) ?? .top
     }
@@ -146,5 +153,67 @@ final class SidebarPaneVisibility: ObservableObject {
     private func update(_ panes: [SidebarPane]) {
         guard enabled != panes else { return }
         enabled = panes
+    }
+}
+
+struct SidebarPaneSwitcherMenu: View {
+    enum Entry: Equatable, Identifiable {
+        case placement(SidebarTabBarPlacement)
+        case separator
+        case pane(SidebarPane, canToggle: Bool)
+
+        var id: String {
+            switch self {
+            case .placement(let placement): return "placement." + placement.rawValue
+            case .separator: return "separator"
+            case .pane(let pane, _): return "pane." + pane.rawValue
+            }
+        }
+    }
+
+    static var entries: [Entry] {
+        SidebarTabBarPlacement.allCases.map(Entry.placement)
+            + [.separator]
+            + SidebarPane.allCases.map { .pane($0, canToggle: $0.canBeHidden) }
+    }
+
+    @ObservedObject private var visibility: SidebarPaneVisibility = .shared
+
+    @AppStorage(SidebarTabBarPlacement.defaultsKey)
+    private var placementRaw = SidebarTabBarPlacement.top.rawValue
+
+    var body: some View {
+        ForEach(Self.entries) { entry in
+            item(entry)
+        }
+    }
+
+    @ViewBuilder
+    private func item(_ entry: Entry) -> some View {
+        switch entry {
+        case .placement(let placement):
+            Toggle(placement.menuTitle, isOn: placementBinding(placement))
+        case .separator:
+            Divider()
+        case .pane(let pane, let canToggle):
+            Toggle(pane.title, isOn: visibility.binding(for: pane))
+                .disabled(!canToggle)
+        }
+    }
+
+    private func placementBinding(_ placement: SidebarTabBarPlacement) -> Binding<Bool> {
+        Binding(
+            get: { SidebarTabBarPlacement(raw: placementRaw) == placement },
+            set: { isOn in
+                guard isOn else { return }
+                placementRaw = placement.rawValue
+            }
+        )
+    }
+}
+
+extension View {
+    func sidebarPaneSwitcherMenu() -> some View {
+        contextMenu { SidebarPaneSwitcherMenu() }
     }
 }

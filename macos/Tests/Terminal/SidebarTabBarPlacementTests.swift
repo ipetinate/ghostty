@@ -26,4 +26,14 @@ struct SidebarTabBarPlacementTests {
     @Test func theDefaultsKeyIsStable() {
         #expect(SidebarTabBarPlacement.defaultsKey == "SidebarTabBarPlacement")
     }
+
+    @Test func eachPlacementNamesItselfInTheContextMenu() {
+        #expect(SidebarTabBarPlacement.top.menuTitle == "Tabs at the Top")
+        #expect(SidebarTabBarPlacement.side.menuTitle == "Tabs at the Side")
+    }
+
+    @Test func noTwoPlacementsShareAMenuTitle() {
+        let titles = SidebarTabBarPlacement.allCases.map(\.menuTitle)
+        #expect(Set(titles).count == titles.count)
+    }
 }

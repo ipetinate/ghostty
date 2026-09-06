@@ -83,7 +83,8 @@ enum ExternalFormatterStore {
             extensions: formatter.extensions,
             installHint: formatter.installHint,
             note: formatter.note,
-            provenance: formatter.provenance)
+            provenance: formatter.provenance,
+            projectRules: formatter.projectRules)
     }
 
     /// A typed argument line, split the way a shell would split the simple

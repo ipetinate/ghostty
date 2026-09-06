@@ -20,20 +20,20 @@ import Foundation
 /// every *other* replacement a host makes — a language server's formatting, a
 /// rename, a reload — and two copies of a surrogate-pair rule is one copy too
 /// many.
-struct PrettierEdit: Equatable, Sendable {
+struct FormatEdit: Equatable, Sendable {
     /// UTF-16 offsets into the *old* text, which is what `NSTextStorage`
     /// indexes by.
     var range: NSRange
     var newText: String
 }
 
-extension PrettierEdit {
+extension FormatEdit {
     /// The minimal edit between two texts, or nil when there is nothing to do.
     /// See ``CodeTextEdit/minimal(from:to:)`` for why it counts UTF-16 units
     /// and why it refuses to split a surrogate pair.
-    static func minimal(from old: String, to new: String) -> PrettierEdit? {
+    static func minimal(from old: String, to new: String) -> FormatEdit? {
         guard let edit = CodeTextEdit.minimal(from: old, to: new) else { return nil }
-        return PrettierEdit(range: edit.range, newText: edit.newText)
+        return FormatEdit(range: edit.range, newText: edit.newText)
     }
 
     /// Applies the edit to the text it was computed from.

@@ -4,7 +4,7 @@ import Foundation
 /// caret ends up once it has been applied.
 ///
 /// Lives on `CodeTextEdit` because two unrelated callers need exactly this
-/// arithmetic and neither may own it. ``PrettierEdit`` reduces a reformat to
+/// arithmetic and neither may own it. ``FormatEdit`` reduces a reformat to
 /// a splice so the reader keeps their place; `CodeTextView.Coordinator`
 /// reduces *any* host replacement — a language server's formatting, a rename,
 /// a file reloaded from disk — to the same splice, so the buffer is edited

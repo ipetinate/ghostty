@@ -229,8 +229,9 @@ enum ShellCommand {
         /// A launch failure and a kill at the deadline both leave `status`
         /// nil, and they are not the same news: one is a binary that isn't
         /// there, the other is a binary that never answered. A caller that
-        /// reports them differently — `PrettierRunner`, whose failure type
-        /// has a case for each — has nothing else to tell them apart by.
+        /// reports them differently — `ExternalFormatterRunner`, whose
+        /// failure type has a case for each — has nothing else to tell them
+        /// apart by.
         var launchFailure: String?
 
         var succeeded: Bool { status == 0 }

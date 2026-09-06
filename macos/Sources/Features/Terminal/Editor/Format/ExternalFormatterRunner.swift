@@ -29,24 +29,93 @@ extension ExternalFormatterFailure: LocalizedError {
         case .timedOut(let tool, let seconds):
             return "\(tool) didn't answer within \(Int(seconds))s"
         case .failed(let tool, _, let message):
-            return "\(tool): \(message)"
+            return "\(tool): \(Self.banner(from: message))"
         }
     }
 
+    /// The conformance exists for one reason: `localizedDescription`.
+    ///
+    /// A Swift enum that is only an `Error` bridges to an `NSError` whose
+    /// description is *"The operation couldn't be completed."* followed by
+    /// the runtime's own tag for the case — a number that decodes to nothing.
+    /// Any presenter reaching for `localizedDescription`, which is the obvious
+    /// thing to reach for, would therefore replace the tool's diagnosis with
+    /// it. Answering here means no call site has to know that.
     var errorDescription: String? { reason }
+}
+
+extension ExternalFormatterFailure {
+    /// An alert can hold a diagnosis. It cannot hold a terminal.
+    ///
+    /// Measured against a real refusal rather than assumed. Around the
+    /// sentence that says what is actually wrong, a formatter prints two
+    /// kinds of padding: the code frame under a parse error, and — when a
+    /// configuration asks for a plugin that will not load — a stack trace,
+    /// twenty frames of the tool's own bundle. Both are shaped by a
+    /// monospaced column that an alert does not have, and the trace is long
+    /// enough to push the sentence out of sight entirely.
+    ///
+    /// What survives is kept whole rather than cut to the first line, because
+    /// a bad configuration announces itself across three: `Invalid
+    /// configuration for file "…":` on its own names no fault. The cap is
+    /// there for the case nobody has measured yet — a plugin free to print an
+    /// essay.
+    static var maximumBannerLines: Int { 4 }
+
+    static func banner(from message: String) -> String {
+        let kept = message
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(Self.withoutErrorMarker)
+            .filter { !$0.allSatisfy(\.isWhitespace) && !Self.isFrame($0) }
+            .prefix(maximumBannerLines)
+
+        /// Nothing left means the shape was one this has never seen, and a
+        /// wall of text beats an empty banner.
+        return kept.isEmpty
+            ? message.trimmingCharacters(in: .whitespacesAndNewlines)
+            : kept.joined(separator: "\n")
+    }
+
+    /// The `[error] ` prefix a tool puts on every line it writes, including
+    /// continuation and blank ones.
+    static func withoutErrorMarker(_ line: Substring) -> Substring {
+        guard line.hasPrefix("[error]") else { return line }
+        let rest = line.dropFirst("[error]".count)
+        return rest.hasPrefix(" ") ? rest.dropFirst() : rest
+    }
+
+    /// A line that is scaffolding rather than sentence: a code frame's
+    /// gutter (`  1 | const a = 1`, `> 3 | }`, `    | ^`) or a stack frame.
+    static func isFrame(_ line: Substring) -> Bool {
+        let indented = line.first == " " || line.first == "\t"
+        var rest = line.drop { $0 == " " || $0 == "\t" }
+        if indented, rest.hasPrefix("at ") { return true }
+
+        if rest.hasPrefix(">") { rest = rest.dropFirst().drop { $0 == " " } }
+        if rest.hasPrefix("|") { return true }
+
+        let gutter = rest.prefix(while: \.isNumber)
+        guard !gutter.isEmpty else { return false }
+        return rest.dropFirst(gutter.count).drop { $0 == " " }.hasPrefix("|")
+    }
 }
 
 /// Runs one external formatter over a buffer.
 ///
-/// stdin rather than the file on disk, for the reason `PrettierRunner` gives:
-/// the buffer is what the reader is looking at and it may never have been
-/// saved in this state. The path still goes along as an argument, because it
-/// is how these tools find their own configuration.
+/// stdin rather than the file on disk: the buffer is what the reader is
+/// looking at and it may never have been saved in this state. The path still
+/// goes along as an argument, because it is how these tools find their own
+/// configuration.
 enum ExternalFormatterRunner {
-    /// Shorter than Prettier's ten seconds. None of these is a Node program
-    /// loading a plugin tree — they are single static binaries, and one that
-    /// has not answered in five seconds is not about to.
-    static let defaultTimeout: TimeInterval = 5
+    /// Generous, because a contributed formatter can be a whole runtime
+    /// starting cold — the project's own copy, loading every plugin its
+    /// configuration asks for, on the first save after the editor opened.
+    /// Bounded, because this sits between ⌘S and the file being written.
+    ///
+    /// It used to be five, on the grounds that every tool here was a single
+    /// static binary. That stopped being true when a formatter became
+    /// something an extension contributes.
+    static let defaultTimeout: TimeInterval = 10
 
     /// The formatted text, or nil when nothing should change.
     ///
@@ -67,6 +136,54 @@ enum ExternalFormatterRunner {
                 tool: formatter.displayName, hint: formatter.installHint)
         }
 
+        return try run(
+            text,
+            filePath: filePath,
+            formatter: formatter,
+            binary: binary,
+            workingDirectory: workingDirectory,
+            environment: environment,
+            timeout: timeout)
+    }
+
+    /// The same run, told where the project wants it: the tool the project
+    /// installed into itself when there is one, in the directory the tool
+    /// asked for.
+    ///
+    /// - Throws: `ExternalFormatterFailure`.
+    static func format(
+        _ text: String,
+        filePath: String,
+        formatter: ExternalFormatter,
+        in project: FormatterProject,
+        searchPath: String,
+        environment: [String: String]? = nil,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> String? {
+        guard let binary = locate(formatter, in: project, searchPath: searchPath) else {
+            throw ExternalFormatterFailure.notFound(
+                tool: formatter.displayName, hint: formatter.installHint)
+        }
+
+        return try run(
+            text,
+            filePath: filePath,
+            formatter: formatter,
+            binary: binary,
+            workingDirectory: project.workingDirectory,
+            environment: environment,
+            timeout: timeout)
+    }
+
+    private static func run(
+        _ text: String,
+        filePath: String,
+        formatter: ExternalFormatter,
+        binary: String,
+        workingDirectory: String? = nil,
+        environment: [String: String]? = nil,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> String? {
         let run = ShellCommand.runResult(
             binary,
             formatter.arguments(for: filePath),
@@ -89,6 +206,21 @@ enum ExternalFormatterRunner {
             timeout: timeout)
     }
 
+    /// Which copy of the tool to run, and by a wide margin the project's own.
+    ///
+    /// A repository pins a version in its lockfile precisely so that
+    /// everyone's saves produce the same diff, and reformatting with whatever
+    /// major version happens to be on this machine's `PATH` would put a
+    /// stranger's line breaks into every file the reader touches.
+    static func locate(
+        _ formatter: ExternalFormatter,
+        in project: FormatterProject,
+        searchPath: String
+    ) -> String? {
+        if let local = project.localBinaryPath { return local }
+        return locate(formatter.command, searchPath: searchPath)
+    }
+
     /// An absolute path is taken as written — a reader who typed one is
     /// pointing at a binary the `PATH` may not hold. Everything else is looked
     /// up the way the language servers are.
@@ -102,8 +234,7 @@ enum ExternalFormatterRunner {
     /// Reads a finished run, with `status == nil` meaning it was killed at the
     /// deadline.
     ///
-    /// **The order is the whole of it, and it is the same order and the same
-    /// reason as `PrettierRunner.result`:** the status is checked first, and
+    /// **The order is the whole of it:** the status is checked first, and
     /// only then whether anything came back. A formatter handed a file with a
     /// syntax error in it — which is what a buffer is halfway through a
     /// function — exits non-zero and prints nothing on stdout. An

@@ -56,7 +56,7 @@ struct WelcomeBasicsStep: View {
         Row(
             symbol: "text.alignleft",
             title: "Formatters",
-            detail: "The project's own Prettier, its language server, or the language's tool.",
+            detail: "The tool the project declares, its language server, or the language's own.",
             section: .files),
         Row(
             symbol: "paintpalette",

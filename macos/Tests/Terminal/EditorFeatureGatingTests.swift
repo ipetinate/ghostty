@@ -36,7 +36,7 @@ struct EditorFeatureGatingTests {
         let textView = CodeNSTextView()
         textView.string = "let a = 1\nlet b = 2\n"
         let coordinator = CodeTextView.Coordinator(
-            storage: CodeTextStorage(language: .swift, theme: theme, configuration: .default),
+            storage: CodeTextStorage(languageID: nil, highlighter: .plain, theme: theme, configuration: .default),
             onEdit: { _ in }
         )
         coordinator.textView = textView

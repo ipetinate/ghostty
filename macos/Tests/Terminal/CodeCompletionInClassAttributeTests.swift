@@ -56,7 +56,6 @@ struct CodeCompletionInClassAttributeTests {
         textView.completionEnabled = true
         textView.completesInsideClassAttribute = completesInsideClassAttribute
         textView.completionTriggers = ["."]
-        textView.hoverLanguage = .javascript
         textView.completionFetchDelay = .milliseconds(1)
         textView.setSelectedRange(NSRange(location: caret, length: 0))
 

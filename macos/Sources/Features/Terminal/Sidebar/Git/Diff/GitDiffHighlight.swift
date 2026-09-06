@@ -96,15 +96,20 @@ struct GitDiffHighlight: Equatable {
     static func make(
         for rows: [GitDiffRow],
         file: GitFileDiff,
-        source: GitDiffSource = .none
+        source: GitDiffSource = .none,
+        snapshot: LanguageResolver.Snapshot = LanguageResolver.snapshot
     ) -> GitDiffHighlight {
         GitDiffHighlight(
             left: spans(
                 in: rows,
                 side: .left,
-                path: file.previousPath ?? file.path,
+                highlighter: highlighter(forPath: file.previousPath ?? file.path, in: snapshot),
                 whole: source.old),
-            right: spans(in: rows, side: .right, path: file.path, whole: source.new)
+            right: spans(
+                in: rows,
+                side: .right,
+                highlighter: highlighter(forPath: file.path, in: snapshot),
+                whole: source.new)
         )
     }
 
@@ -123,10 +128,13 @@ struct GitDiffHighlight: Equatable {
     /// expands, so this is paid per opened card, off the main actor, in the
     /// same background task that already ran `git diff` and `git log` for
     /// that row.
-    static func needsWholeFile(_ file: GitFileDiff) -> Bool {
+    static func needsWholeFile(
+        _ file: GitFileDiff,
+        snapshot: LanguageResolver.Snapshot = LanguageResolver.snapshot
+    ) -> Bool {
         guard file.status != .added, file.status != .deleted else { return false }
         return [file.previousPath ?? file.path, file.path].contains {
-            !highlighter(forPath: $0).isPlain
+            !highlighter(forPath: $0, in: snapshot).isPlain
         }
     }
 
@@ -136,20 +144,22 @@ struct GitDiffHighlight: Equatable {
     /// The last component and not the path, because a name that carries its
     /// own language — `Makefile`, `go.mod` — is matched whole, and
     /// `src/go.mod` matches nothing.
-    static func highlighter(forPath path: String) -> GrammarHighlighter {
+    static func highlighter(
+        forPath path: String,
+        in snapshot: LanguageResolver.Snapshot = LanguageResolver.snapshot
+    ) -> GrammarHighlighter {
         LanguageResolver.highlighter(
             forFileName: (path as NSString).lastPathComponent,
-            in: LanguageResolver.snapshot
+            in: snapshot
         )
     }
 
     private static func spans(
         in rows: [GitDiffRow],
         side: GitDiffPaneSide,
-        path: String,
+        highlighter: GrammarHighlighter,
         whole: String?
     ) -> [[Span]] {
-        let highlighter = highlighter(forPath: path)
         guard !highlighter.isPlain else { return [] }
 
         if let whole, !whole.isEmpty, (whole as NSString).length <= textBudget {

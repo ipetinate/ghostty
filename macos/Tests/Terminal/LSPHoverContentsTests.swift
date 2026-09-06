@@ -39,7 +39,7 @@ struct LSPHoverContentsTests {
         let (signature, documentation) = CodeHoverInfo.split(markdown: markdown)
 
         #expect(
-            signature == .code(".flex {\n  display: flex;\n}", language: .css),
+            signature == .code(".flex {\n  display: flex;\n}", language: "css"),
             "\(String(describing: signature))"
         )
         #expect(documentation.isEmpty, "\(documentation)")

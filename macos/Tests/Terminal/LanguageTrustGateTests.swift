@@ -86,10 +86,9 @@ struct UntrustedLanguageDegradationTests {
             sourceLocation: sourceLocation
         )
 
-        let syntax = byExtension.language.syntax
-        #expect(syntax.id == "elixir", sourceLocation: sourceLocation)
-        #expect(syntax.keywords == ["defmodule", "defp"], sourceLocation: sourceLocation)
-        #expect(syntax.lineComment == "#", sourceLocation: sourceLocation)
+        let language = byExtension.language
+        #expect(language.languageID == "elixir", sourceLocation: sourceLocation)
+        #expect(language.lineComment == "#", sourceLocation: sourceLocation)
         #expect(!syntax.isBuiltIn, sourceLocation: sourceLocation)
     }
 
@@ -214,7 +213,7 @@ struct UntrustedLanguageDegradationTests {
         /// The language is untouched by any of that: it still claims its
         /// files and still lexes.
         #expect(catalog.contribution(forFileName: "app.ex")?.language.languageID == "elixir")
-        #expect(contributed.language.syntax.keywords == ["defmodule", "defp"])
+        #expect(contributed.language.lineComment == "#")
     }
 
     /// The install hint is shown beside a "not installed" banner and can be

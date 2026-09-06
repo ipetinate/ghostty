@@ -319,12 +319,12 @@ struct CodeCompletionDocPanelTests {
 
     /// The declaration is coloured by the same highlighter the file is, which is
     /// what makes the card look like it belongs to the code under it.
-    @Test func theDeclarationIsSyntaxColoured() {
+    @Test func theDeclarationIsSyntaxColoured() throws {
         let text = CodeCompletionDocPanel.signatureText(
-            "func connect() -> Socket",
+            "let connect = \"socket\"",
             theme: theme,
             font: font,
-            language: .swift
+            highlighter: try FixtureGrammar.highlighter()
         )
 
         var colors: Set<String> = []
@@ -363,7 +363,7 @@ struct CodeCompletionDocPanelTests {
             .init(state: .unsupported),
             theme: theme,
             font: font,
-            language: .kotlin,
+            highlighter: .plain,
             beside: list,
             over: view
         )

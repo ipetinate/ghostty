@@ -62,10 +62,14 @@ struct JSONSchemaAssociationsTests {
         }
     }
 
-    /// Every name the two language tables agreed to call JSON has a schema,
-    /// so the pair added in one change cannot half-rot in the next.
+    /// The rc files an extension may call JSON each have a schema, so the
+    /// pair added in one change cannot half-rot in the next.
+    static let jsonRCFiles = [
+        ".prettierrc", ".babelrc", ".eslintrc", ".jscsrc", ".jshintrc", ".swcrc",
+    ]
+
     @Test func everyNamedJSONFileHasASchema() {
-        for name in LanguageByFileNameTests.jsonRCFiles {
+        for name in Self.jsonRCFiles {
             #expect(Self.schemaPattern(matching: name) != nil, "\(name) has no schema")
         }
     }

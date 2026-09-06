@@ -18,7 +18,7 @@ struct CodeHoverInfoTests {
         Writes the buffer to disk.
         """)
 
-        #expect(signature == .code("func save() throws", language: .swift))
+        #expect(signature == .code("func save() throws", language: "swift"))
         #expect(documentation == [.prose("Writes the buffer to disk.")], "\(documentation)")
     }
 
@@ -65,9 +65,9 @@ struct CodeHoverInfoTests {
         ```
         """)
 
-        #expect(signature == .code("func start()", language: .swift))
+        #expect(signature == .code("func start()", language: "swift"))
         #expect(
-            documentation == [.prose("See also:"), .code("worker.start()", language: .swift)],
+            documentation == [.prose("See also:"), .code("worker.start()", language: "swift")],
             "\(documentation)"
         )
     }
@@ -91,7 +91,7 @@ struct CodeHoverInfoTests {
         ```
         """)
 
-        #expect(signature == .code("func apply(\n    theme: CodeTheme\n)", language: .swift))
+        #expect(signature == .code("func apply(\n    theme: CodeTheme\n)", language: "swift"))
     }
 
     /// Nothing to say is different from an empty card: the engine checks
@@ -99,7 +99,7 @@ struct CodeHoverInfoTests {
     /// code is what happens when it lies.
     @Test func emptinessCountsProblemsAsWellAsText() {
         #expect(CodeHoverInfo().isEmpty)
-        #expect(CodeHoverInfo(signature: .code("func f()", language: .swift)).isEmpty == false)
+        #expect(CodeHoverInfo(signature: .code("func f()", language: "swift")).isEmpty == false)
         #expect(CodeHoverInfo(documentation: [.prose("A note.")]).isEmpty == false)
         #expect(CodeHoverInfo(
             problems: [.init(message: "unresolved", source: nil, color: .systemRed)]
@@ -156,7 +156,7 @@ struct CodeHoverInfoTests {
         #expect(
             documentation == [
                 .prose("Uses the value."),
-                .code("const a = 1", language: .javascript),
+                .code("const a = 1", language: "javascript"),
                 .prose("And then some more."),
             ],
             "\(documentation)"
@@ -197,7 +197,7 @@ struct CodeHoverInfoTests {
         #expect(
             documentation == [
                 .prose("Example:"),
-                .code("let a = 1\nlet b = 2", language: .swift),
+                .code("let a = 1\nlet b = 2", language: "swift"),
             ],
             "\(documentation)"
         )
@@ -216,7 +216,7 @@ struct CodeHoverInfoTests {
         #expect(
             documentation == [
                 .prose("Docs here."),
-                .code(".a { color: red; }", language: .css),
+                .code(".a { color: red; }", language: "css"),
             ],
             "\(documentation)"
         )
@@ -247,24 +247,24 @@ struct CodeHoverFenceLanguageTests {
     /// implied.
     @Test func aCSSFenceIsColouredAsCSS() {
         let block = declaration("```css\n.flex {\n  display: flex;\n}\n```")
-        #expect(block == .code(".flex {\n  display: flex;\n}", language: .css), "\(String(describing: block))")
+        #expect(block == .code(".flex {\n  display: flex;\n}", language: "css"), "\(String(describing: block))")
     }
 
     /// The tag decides, never the file the pointer is in — the CSS above is
     /// hovered inside a `.tsx`, and colouring it with TypeScript's rules is
     /// the bug this replaced.
     @Test func everyTagThisBuildKnowsResolves() {
-        #expect(declaration("```swift\nlet a = 1\n```") == .code("let a = 1", language: .swift))
-        #expect(declaration("```typescript\nconst a = 1\n```") == .code("const a = 1", language: .javascript))
-        #expect(declaration("```rust\nlet a = 1;\n```") == .code("let a = 1;", language: .rust))
-        #expect(declaration("```scss\n.a {}\n```") == .code(".a {}", language: .css))
+        #expect(declaration("```swift\nlet a = 1\n```") == .code("let a = 1", language: "swift"))
+        #expect(declaration("```typescript\nconst a = 1\n```") == .code("const a = 1", language: "javascript"))
+        #expect(declaration("```rust\nlet a = 1;\n```") == .code("let a = 1;", language: "rust"))
+        #expect(declaration("```scss\n.a {}\n```") == .code(".a {}", language: "css"))
     }
 
     /// The info string can carry more than a language — `ts title="app.ts"`
     /// is a real fence in a docs site — and only its first word is the tag.
     @Test func onlyTheFirstWordOfTheInfoStringIsTheLanguage() {
         let block = declaration("```ts title=\"app.ts\"\nconst a = 1\n```")
-        #expect(block == .code("const a = 1", language: .javascript), "\(String(describing: block))")
+        #expect(block == .code("const a = 1", language: "javascript"), "\(String(describing: block))")
     }
 
     /// Nil rather than a guess, which is what draws the block monospaced and
@@ -294,7 +294,7 @@ struct CodeHoverFenceLanguageTests {
         #expect(
             signature == .code(
                 "core::iter::traits::iterator\n\nfn map<B, F>(self, f: F) -> Map<Self, F>",
-                language: .rust
+                language: "rust"
             ),
             "\(String(describing: signature))"
         )

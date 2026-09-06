@@ -148,13 +148,6 @@ struct ContributedFormatterTests {
         #expect(LanguageResolver.formatter(forFileNamed: "Makefile", catalog: catalog) == nil)
     }
 
-    @Test func aCompiledFormatterCarriesNoProvenance() {
-        for formatter in ExternalFormatterRegistry.all {
-            #expect(formatter.provenance == nil, "\(formatter.id)")
-            #expect(formatter.origin == .builtIn, "\(formatter.id)")
-        }
-    }
-
     @Test func theReadersSettingsKeepTheProvenance() throws {
         let catalog = LanguageCatalog.resolve(
             manifests: [manifest(directory: "acme.zig", id: "acme.zig", formatters: Self.zigfmt)],

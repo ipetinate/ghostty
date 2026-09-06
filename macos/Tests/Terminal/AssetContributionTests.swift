@@ -48,115 +48,6 @@ struct AssetContributionTests {
 
     """
 
-    // MARK: Syntax
-
-    @Test func everySyntaxKeyParsesAndPresetsResolve() throws {
-        let contribution = try #require(language(#"""
-        "syntax": {
-          "string": "\\[=*\\[[\\s\\S]*?\\]=*\\]|\"(?:[^\"\\\\]|\\\\.)*\"",
-          "number": "preset:number",
-          "type": "preset:capitalizedType",
-          "function": "preset:callBeforeParenOrGeneric",
-          "attribute": "::[A-Za-z_][A-Za-z0-9_]*::"
-        }
-        """#))
-
-        #expect(contribution.patterns.string == #"\[=*\[[\s\S]*?\]=*\]|"(?:[^"\\]|\\.)*""#)
-        #expect(contribution.patterns.number == SyntaxRules.number)
-        #expect(contribution.patterns.type == SyntaxRules.capitalizedType)
-        #expect(contribution.patterns.function == SyntaxRules.callBeforeParenOrGeneric)
-        #expect(contribution.patterns.attribute == "::[A-Za-z_][A-Za-z0-9_]*::")
-        #expect(contribution.syntax.patterns == contribution.patterns)
-    }
-
-    @Test func theOtherTwoPresetsResolveToTheirConstants() {
-        #expect(SyntaxContribution.pattern("preset:cStyleString") == SyntaxRules.cStyleString)
-        #expect(SyntaxContribution.pattern("preset:callBeforeParen") == SyntaxRules.callBeforeParen)
-    }
-
-    @Test func noSyntaxBlockMeansNoPatterns() throws {
-        let contribution = try #require(language(#""extensions": ["lua"]"#))
-        #expect(contribution.patterns.isEmpty)
-        #expect(contribution.patterns == SyntaxContribution())
-    }
-
-    @Test func anUnknownPresetCostsOnlyItsKey() throws {
-        let contribution = try #require(language(#"""
-        "syntax": { "number": "preset:hashComment", "type": "preset:capitalizedType" }
-        """#))
-        #expect(contribution.patterns.number == nil)
-        #expect(contribution.patterns.type == SyntaxRules.capitalizedType)
-    }
-
-    @Test func aPatternThatDoesNotCompileIsDropped() throws {
-        let contribution = try #require(language(#"""
-        "syntax": { "string": "(unclosed", "number": "[a-", "type": "\\p{Nope}", "attribute": "@\\w+" }
-        """#))
-        #expect(contribution.patterns.string == nil)
-        #expect(contribution.patterns.number == nil)
-        #expect(contribution.patterns.type == nil)
-        #expect(contribution.patterns.attribute == #"@\w+"#)
-    }
-
-    @Test func aPatternOverTheCeilingIsDropped() {
-        let atCeiling = String(repeating: "a", count: SyntaxContribution.maxPatternLength)
-        let overCeiling = atCeiling + "a"
-        #expect(SyntaxContribution.pattern(atCeiling) == atCeiling)
-        #expect(SyntaxContribution.pattern(overCeiling) == nil)
-    }
-
-    @Test func backreferencesAndNamedGroupsAreRefused() {
-        let refused = [
-            #"(['"])(?:(?!\1).)*\1"#,
-            #"(a)\1"#,
-            #"(?<quote>['"]).*?\k<quote>"#,
-            #"(?<name>[A-Z]\w*)"#,
-            #"x(?<n>y)"#,
-            #"trailing\"#,
-        ]
-        for pattern in refused {
-            #expect(SyntaxContribution.pattern(pattern) == nil, "\(pattern) was accepted")
-            #expect(!SyntaxContribution.isSafePattern(pattern), "\(pattern) read as safe")
-        }
-    }
-
-    @Test func lookbehindAndEscapedBackslashesAreFine() {
-        let accepted = [
-            #"(?<=\s)@\w+"#,
-            #"(?<!\w)\$\w+"#,
-            #"\\1"#,
-            #"\d+"#,
-            #"(?i)\bselect\b"#,
-        ]
-        for pattern in accepted {
-            #expect(SyntaxContribution.pattern(pattern) == pattern, "\(pattern) was refused")
-        }
-    }
-
-    @Test func aFullyContributedSyntaxJoinsIntoOneCompilablePattern() throws {
-        let contribution = try #require(language(#"""
-        "lineComment": "--",
-        "keywords": ["local", "function", "end"],
-        "syntax": {
-          "string": "\\[=*\\[[\\s\\S]*?\\]=*\\]|\"(?:[^\"\\\\]|\\\\.)*\"",
-          "number": "preset:number",
-          "type": "preset:capitalizedType",
-          "function": "preset:callBeforeParen",
-          "attribute": "::[A-Za-z_][A-Za-z0-9_]*::"
-        }
-        """#))
-        let pattern = try #require(SyntaxHighlighter.pattern(for: contribution.syntax))
-        #expect(throws: Never.self) {
-            try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
-        }
-    }
-
-    @Test func aSyntaxBlockThatIsNotAnObjectCostsOnlyTheBlock() throws {
-        let contribution = try #require(language(#""syntax": ["preset:number"], "keywords": ["local"]"#))
-        #expect(contribution.patterns.isEmpty)
-        #expect(contribution.keywords == ["local"])
-    }
-
     // MARK: Formatters
 
     @Test func aFormatterParsesWhole() throws {
@@ -452,7 +343,7 @@ struct AssetContributionTests {
     @Test func aBlockCommentReadsAsAnObjectOrAPair() throws {
         let object = try #require(language(#""blockComment": { "open": "--[[", "close": "]]" }"#))
         let pair = try #require(language(#""blockComment": ["--[[", "]]"]"#))
-        let expected = LanguageSyntax.BlockComment(open: "--[[", close: "]]")
+        let expected = BlockComment(open: "--[[", close: "]]")
         #expect(object.blockComment == expected)
         #expect(pair.blockComment == expected)
         #expect(language(#""blockComment": { "open": "--[[" }"#)?.blockComment == nil)

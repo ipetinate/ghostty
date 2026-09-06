@@ -37,7 +37,7 @@ struct CodeTextViewReplaceTests {
         scrollView.documentView = textView
 
         let coordinator = CodeTextView.Coordinator(
-            storage: CodeTextStorage(language: .javascript, theme: theme, configuration: .default),
+            storage: CodeTextStorage(languageID: nil, highlighter: .plain, theme: theme, configuration: .default),
             onEdit: { _ in })
         coordinator.textView = textView
         return (textView, coordinator)

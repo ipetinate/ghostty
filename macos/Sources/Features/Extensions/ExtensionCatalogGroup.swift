@@ -117,12 +117,14 @@ enum ExtensionCatalogGrouping {
     /// files under Languages rather than being guessed at — there is no
     /// compiled-in table of language families left to guess from, and a
     /// heading is not worth inventing one for.
+    /// **The first one declared, in the order the manifest declared it.**
+    /// Sorting them and taking the first files an extension under whichever
+    /// family happens to sort earliest, which is arbitrary and was wrong:
+    /// Elixir contributes Elixir, EEx and HEEx, so it declares script and
+    /// markup, and "Markup" sorts before "Script" — the Elixir extension
+    /// appeared under Markup. An extension's first language is what it is.
     static func category(for entry: ExtensionIndex.Entry) -> LSPServerCategory? {
-        ordered(entry.categories.compactMap(LSPServerCategory.init(rawValue:))).first
-    }
-
-    private static func ordered(_ categories: [LSPServerCategory]) -> [LSPServerCategory] {
-        categories.sorted { $0.title < $1.title }
+        entry.categories.compactMap(LSPServerCategory.init(rawValue:)).first
     }
 
     static func groups(_ entries: [ExtensionIndex.Entry]) -> [Group] {

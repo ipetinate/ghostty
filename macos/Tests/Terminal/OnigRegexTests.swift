@@ -78,9 +78,11 @@ struct OnigRegexTests {
     /// stops somebody reading a byte offset as a UTF-16 one later.
     @Test func countsInBytesNotInCharacters() throws {
         let regex = try #require(OnigRegex(pattern: "fim"))
-        let groups = try #require(regex.firstMatch(in: "acentuação fim"))
-        #expect(groups[0] == 12..<15)
-        #expect(("acentuação fim" as NSString).range(of: "fim").location == 11)
+        let subject = "acentuação fim"
+        let groups = try #require(regex.firstMatch(in: subject))
+        #expect(groups[0] == 13..<16)
+        #expect(subject.utf8.count == 16)
+        #expect((subject as NSString).range(of: "fim").location == 11)
     }
 
     @Test func reusesOneHandleAcrossSearches() throws {

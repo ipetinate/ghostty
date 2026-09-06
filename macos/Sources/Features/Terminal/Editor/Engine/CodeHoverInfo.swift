@@ -37,8 +37,8 @@ struct CodeHoverInfo: Equatable {
         /// `mermaid` — both mean "draw this monospaced and do not pretend
         /// to know what it is". Guessing the document's language instead
         /// colours a fence of shell output as if it were the file around
-        /// it. See `CodeLanguage.resolve(fenceInfo:)`.
-        case code(String, language: CodeLanguage?)
+        /// it. The label is resolved to a grammar when the card is drawn.
+        case code(String, language: String?)
     }
 
     var problems: [Problem] = []
@@ -77,9 +77,9 @@ struct CodeHoverInfo: Equatable {
     /// in the code font and the real signature into the prose.
     ///
     /// **Every fence keeps the language its info string names**, resolved
-    /// through `CodeLanguage.resolve(fenceInfo:)` — the same table the
-    /// markdown preview uses, so a ```` ```css ```` fence is coloured by the
-    /// same rules in both places. The declaration takes the language of the
+    /// to a grammar by `LanguageResolver.highlighter(forFenceLabel:)` — the
+    /// same rule the markdown preview uses, so a ```` ```css ```` fence is
+    /// coloured by the same grammar in both places. The declaration takes the language of the
     /// *first* leading fence, since the later ones are continuations of it.
     ///
     /// Documentation is also **reflowed**: a doc comment arrives wrapped to
@@ -104,7 +104,7 @@ struct CodeHoverInfo: Equatable {
     /// on its own.
     static func split(markdown: String) -> (signature: Block?, documentation: [Block]) {
         var signature: [String] = []
-        var signatureLanguage: CodeLanguage?
+        var signatureLanguage: String?
         var hasOpenedSignatureFence = false
 
         var documentation: [Block] = []
@@ -113,7 +113,7 @@ struct CodeHoverInfo: Equatable {
         var listItem: [String]?
 
         var example: [String] = []
-        var exampleLanguage: CodeLanguage?
+        var exampleLanguage: String?
 
         var isInFence = false
         var isQuoting = false
@@ -277,11 +277,10 @@ struct CodeHoverInfo: Equatable {
     /// Both halves are borrowed rather than rewritten: `MarkdownCodeBlock`
     /// already defines what the *first word* of an info string is — `ts
     /// title="app.ts"` is a real fence and its language is `ts` — and
-    /// `CodeLanguage.resolve(fenceInfo:)` already maps that word onto the
-    /// highlighter. A second copy of either rule here is a second copy that
-    /// drifts.
-    private static func language(ofFence info: String) -> CodeLanguage? {
-        CodeLanguage.resolve(fenceInfo: MarkdownCodeBlock(info: info, code: "").languageHint)
+    /// the resolver already maps that word onto a grammar. A second copy of
+    /// either rule here is a second copy that drifts.
+    private static func language(ofFence info: String) -> String? {
+        MarkdownCodeBlock(info: info, code: "").languageHint
     }
 
     /// The text of an ATX heading, or nil when the line is not one.

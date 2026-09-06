@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The formatters that are a command, as a section of the Editor pane.
 ///
-/// One row per `ExternalFormatterRegistry.all`, built from the table rather
+/// One row per formatter an installed extension contributes, built rather
 /// than written out again here: a fifth tool added there arrives here with
 /// nothing to change. A formatter an installed extension contributes gets the
 /// same row after them, marked with where it came from.
@@ -31,7 +31,7 @@ struct ExternalFormatterSettingsSection: View {
     @ObservedObject private var resolver: LanguageResolver = .shared
 
     private var formatters: [ExternalFormatter] {
-        ExternalFormatterRegistry.all + resolver.catalog.formatters.compactMap(\.externalFormatter)
+        resolver.catalog.formatters.compactMap(\.externalFormatter)
     }
 
     var body: some View {

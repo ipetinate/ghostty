@@ -85,6 +85,7 @@ struct LanguageManifest: Equatable, Sendable {
     let formatters: [FormatterContribution]
     let themes: [ThemeContribution]
     let iconThemes: [IconThemeContribution]
+    let grammars: [GrammarContribution]
     let agents: [AgentDescriptor]
 
     let agentInstallPlans: [String: ExtensionInstallPlan]
@@ -132,7 +133,7 @@ struct LanguageManifest: Equatable, Sendable {
     /// parses cleanly and lands here, the same way a font-based icon theme
     /// parses cleanly and reports itself unsupported.
     var isUsable: Bool {
-        !languages.isEmpty || !formatters.isEmpty || !themes.isEmpty || !iconThemes.isEmpty
+        !languages.isEmpty || !formatters.isEmpty || !themes.isEmpty || !iconThemes.isEmpty || !grammars.isEmpty
             || !agents.isEmpty
     }
 
@@ -187,7 +188,7 @@ struct LanguageManifest: Equatable, Sendable {
         "description", "homepage", "phantom",
     ]
     private static let knownContributesKeys: Set<String> = [
-        "languages", "formatters", "themes", "iconThemes", "agents",
+        "languages", "formatters", "themes", "iconThemes", "grammars", "agents",
     ]
 
     /// Builds the value from an already-decoded object and a digest taken
@@ -243,6 +244,8 @@ struct LanguageManifest: Equatable, Sendable {
             .compactMap { ThemeContribution.parse(json: $0, root: root) }
         let iconThemes = objects(contributes["iconThemes"], limit: IconThemeContribution.maxIconThemes)
             .compactMap { IconThemeContribution.parse(json: $0, root: root) }
+        let grammars = objects(contributes["grammars"], limit: GrammarContribution.maxGrammars)
+            .compactMap { GrammarContribution.parse(json: $0, root: root) }
 
         return LanguageManifest(
             id: id,
@@ -254,6 +257,7 @@ struct LanguageManifest: Equatable, Sendable {
             formatters: deduped(formatters, by: \.id),
             themes: deduped(themes, by: \.name),
             iconThemes: deduped(iconThemes, by: \.name),
+            grammars: deduped(grammars, by: \.scopeName),
             agents: deduped(agents, by: \.id),
             agentInstallPlans: agentInstallPlans,
             unrecognizedFields: unrecognized.sorted(),
@@ -418,16 +422,9 @@ struct LanguageContribution: Equatable, Sendable {
     /// not decide anything — `mix.lock`, `go.mod`.
     let fileNames: [String]
 
-    /// Identifier-shaped words only. See `LanguageContribution.keywords(from:)`.
-    let keywords: [String]
-
     let lineComment: String?
-    let blockComment: LanguageSyntax.BlockComment?
-    let patterns: SyntaxContribution
+    let blockComment: BlockComment?
     let category: LSPServerCategory
-
-    /// The compiled-in language this one is lexed like.
-    let base: CodeLanguage
 
     /// Artwork for the settings row, already proven to be inside the
     /// extension's own directory, or nil.
@@ -435,19 +432,6 @@ struct LanguageContribution: Equatable, Sendable {
 
     let server: LanguageServerContribution?
     let serverRejection: ServerRejection?
-
-    /// The value the engine gets. The manifest itself never crosses that
-    /// boundary; this does.
-    var syntax: LanguageSyntax {
-        .contributed(
-            id: languageID,
-            base: base,
-            keywords: keywords,
-            lineComment: lineComment,
-            blockComment: blockComment,
-            patterns: patterns
-        )
-    }
 
     /// Every claim this contribution makes on a file, as opaque tokens. The
     /// catalog resolves conflicts on these and nothing else, so extensions,
@@ -488,17 +472,10 @@ struct LanguageContribution: Equatable, Sendable {
             displayName: LanguageManifest.displayString(json["name"]) ?? languageID,
             fileExtensions: fileExtensions,
             fileNames: fileNames,
-            keywords: keywords(from: json["keywords"]),
             lineComment: lineComment,
             blockComment: blockComment,
-            patterns: SyntaxContribution.parse(json: json["syntax"]),
             category: LSPServerCategory(rawValue: LanguageManifest.string(json["category"]) ?? "")
                 ?? .script,
-            base: base(
-                fileExtensions: fileExtensions,
-                lineComment: lineComment,
-                blockComment: blockComment
-            ),
             iconURL: iconURL(json["icon"], root: root),
             server: server,
             serverRejection: rejection
@@ -556,32 +533,10 @@ struct LanguageContribution: Equatable, Sendable {
         .map { $0 }
     }
 
-    /// The most keywords a language gets to add.
     ///
     /// They are joined into one regex alternation that the highlighter runs
     /// over the viewport on every keystroke, so the list is a cost paid per
     /// character typed. The largest list this build ships is under eighty.
-    static let maxKeywords = 1024
-
-    /// Keywords, keeping only the ones that are identifier-shaped.
-    ///
-    /// The first of two independent defences against a keyword that is
-    /// really a regex — the second is `SyntaxRules.words(escaping:)`. What
-    /// makes this filter cheap to accept is that it discards nothing
-    /// useful: the pattern is `\b(?:…)\b`, and a "keyword" with no word
-    /// characters at its edges could never match inside those boundaries
-    /// anyway. So `->>` is dropped because it would never have painted
-    /// anything, not only because `|` and `(` are dangerous.
-    static func keywords(from value: Any?) -> [String] {
-        let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
-        var seen: Set<String> = []
-        return raw.compactMap { candidate -> String? in
-            guard isIdentifierShaped(candidate) else { return nil }
-            return seen.insert(candidate).inserted ? candidate : nil
-        }
-        .prefix(maxKeywords)
-        .map { $0 }
-    }
 
     static func isIdentifierShaped(_ candidate: String) -> Bool {
         guard !candidate.isEmpty, candidate.count <= 64 else { return false }
@@ -611,7 +566,7 @@ struct LanguageContribution: Equatable, Sendable {
         return raw
     }
 
-    static func blockComment(_ value: Any?) -> LanguageSyntax.BlockComment? {
+    static func blockComment(_ value: Any?) -> BlockComment? {
         let markers: (open: Any?, close: Any?)
         if let pair = value as? [Any], pair.count == 2 {
             markers = (pair[0], pair[1])
@@ -623,7 +578,7 @@ struct LanguageContribution: Equatable, Sendable {
         guard let open = commentMarker(markers.open), let close = commentMarker(markers.close) else {
             return nil
         }
-        return LanguageSyntax.BlockComment(open: open, close: close)
+        return BlockComment(open: open, close: close)
     }
 
     /// An icon path, resolved against the extension's own directory and
@@ -669,40 +624,6 @@ struct LanguageContribution: Equatable, Sendable {
 
     // MARK: Base language
 
-    /// The compiled-in language a contribution is lexed like.
-    ///
-    /// Tried in the order the signals are trustworthy. First, whatever this
-    /// build already resolves one of the claimed extensions to — right for
-    /// the common case of a contribution that adds a *server* for a
-    /// language the highlighter can already read. Then the comment markers,
-    /// which are the only other honest statement a manifest makes about how
-    /// the language is written; they decide the shape of strings and
-    /// numbers, which is all a base is really for once the keywords and the
-    /// comment pattern have been replaced. Failing both, `.plain`: keywords
-    /// and comments, nothing else. Dull, never wrong.
-    ///
-    /// Never `.vue`: a single-file component is a container the highlighter
-    /// splits into three other languages, and a contribution cannot be one.
-    static func base(
-        fileExtensions: [String],
-        lineComment: String?,
-        blockComment: LanguageSyntax.BlockComment?
-    ) -> CodeLanguage {
-        for candidate in fileExtensions {
-            let resolved = CodeLanguage.resolve(fileName: "f." + candidate)
-            guard resolved != .plain else { continue }
-            return resolved == .vue ? .html : resolved
-        }
-
-        switch (lineComment, blockComment?.open) {
-        case ("//", _): return .go
-        case ("#", _): return .python
-        case ("--", _): return .sql
-        case (_, "<!--"): return .html
-        case (_, "/*"): return .go
-        default: return .plain
-        }
-    }
 }
 
 /// The `server` half of a language contribution: how to start it, and what

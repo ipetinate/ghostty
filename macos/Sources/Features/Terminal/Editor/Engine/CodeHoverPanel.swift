@@ -412,7 +412,7 @@ final class CodeHoverPanel: NSPanel {
     /// keeps for the same reason.
     private static func codeText(
         _ source: String,
-        language: CodeLanguage?,
+        language: String?,
         theme: CodeTheme,
         font: NSFont
     ) -> NSAttributedString {
@@ -420,10 +420,11 @@ final class CodeHoverPanel: NSPanel {
             .font: font,
             .foregroundColor: theme.foreground,
         ])
-        guard let language else { return result }
+        let highlighter = LanguageResolver.highlighter(forFenceLabel: language, in: LanguageResolver.snapshot)
+        guard !highlighter.isPlain else { return result }
 
         let full = NSRange(location: 0, length: (source as NSString).length)
-        for token in SyntaxHighlighter(language: language).tokens(in: source, range: full) {
+        for token in highlighter.tokens(in: source, range: full) {
             guard NSMaxRange(token.range) <= result.length else { continue }
             result.addAttribute(
                 .foregroundColor,

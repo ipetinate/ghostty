@@ -403,7 +403,7 @@ final class CodeCompletionDocPanel: NSPanel {
         _ content: Content,
         theme: CodeTheme,
         font: NSFont,
-        language: CodeLanguage,
+        highlighter: GrammarHighlighter,
         beside list: NSRect,
         over view: NSView
     ) {
@@ -414,7 +414,7 @@ final class CodeCompletionDocPanel: NSPanel {
         }
         let screen = parentWindow.screen ?? NSScreen.main
 
-        fill(rendering, theme: theme, font: font, language: language, on: screen)
+        fill(rendering, theme: theme, font: font, highlighter: highlighter, on: screen)
         setFrameOrigin(Self.origin(
             beside: list,
             size: frame.size,
@@ -441,7 +441,7 @@ final class CodeCompletionDocPanel: NSPanel {
         _ rendering: Rendering,
         theme: CodeTheme,
         font: NSFont,
-        language: CodeLanguage,
+        highlighter: GrammarHighlighter,
         on screen: NSScreen?
     ) {
         container.views.forEach { $0.removeFromSuperview() }
@@ -454,7 +454,7 @@ final class CodeCompletionDocPanel: NSPanel {
         if let signature = rendering.signature {
             container.addView(
                 CodeHoverPanel.label(
-                    Self.signatureText(signature, theme: theme, font: font, language: language),
+                    Self.signatureText(signature, theme: theme, font: font, highlighter: highlighter),
                     width: width
                 ),
                 in: .top
@@ -494,14 +494,14 @@ final class CodeCompletionDocPanel: NSPanel {
         _ text: String,
         theme: CodeTheme,
         font: NSFont,
-        language: CodeLanguage
+        highlighter: GrammarHighlighter
     ) -> NSAttributedString {
         let result = NSMutableAttributedString(string: text, attributes: [
             .font: font,
             .foregroundColor: theme.foreground,
         ])
         let full = NSRange(location: 0, length: (text as NSString).length)
-        for token in SyntaxHighlighter(language: language).tokens(in: text, range: full) {
+        for token in highlighter.tokens(in: text, range: full) {
             result.addAttribute(.foregroundColor, value: theme.color(for: token.kind), range: token.range)
         }
         return result

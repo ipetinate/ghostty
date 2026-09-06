@@ -19,6 +19,34 @@ final class LanguageResolver: ObservableObject {
 
     @Published private(set) var catalog: LanguageCatalog = .empty
 
+    /// Every grammar the installed extensions ship, built once per reload and
+    /// handed out by reference. Readers off the main actor take the reference
+    /// and keep it for the duration of one job; a reload builds a new store
+    /// rather than mutating this one under them.
+    private(set) var grammars = GrammarStore()
+
+    /// The catalog and grammars as of the last reload, readable from any
+    /// thread. A diff pane lexes off the main actor and a markdown renderer
+    /// is a plain struct; both take this rather than the actor.
+    final class Snapshot: @unchecked Sendable {
+        let catalog: LanguageCatalog
+        let grammars: GrammarStore
+
+        init(catalog: LanguageCatalog, grammars: GrammarStore) {
+            self.catalog = catalog
+            self.grammars = grammars
+        }
+    }
+
+    private static let snapshotLock = NSLock()
+    nonisolated(unsafe) private static var latestSnapshot = Snapshot(catalog: .empty, grammars: GrammarStore())
+
+    nonisolated static var snapshot: Snapshot {
+        snapshotLock.lock()
+        defer { snapshotLock.unlock() }
+        return latestSnapshot
+    }
+
     private init() {
         reload()
     }
@@ -38,21 +66,98 @@ final class LanguageResolver: ObservableObject {
             user: GuiConfigStore.shared.extensionsDirURL,
             promotions: LanguagePromotionStore.all
         )
+        grammars = Self.buildGrammars(from: catalog)
+        let snapshot = Snapshot(catalog: catalog, grammars: grammars)
+        Self.snapshotLock.lock()
+        Self.latestSnapshot = snapshot
+        Self.snapshotLock.unlock()
         AgentRegistry.shared.setExtensionAgents(catalog.activeAgentDescriptors)
     }
 
-    // MARK: Resolution
-
-    /// How to lex a file.
-    ///
-    /// The engine is handed this value; the manifest it came from never
-    /// crosses that boundary.
-    func syntax(forFileName fileName: String) -> LanguageSyntax {
-        if let contributed = catalog.contribution(forFileName: fileName) {
-            return contributed.language.syntax
+    nonisolated static func buildGrammars(from catalog: LanguageCatalog) -> GrammarStore {
+        let store = GrammarStore()
+        for contributed in catalog.grammars {
+            guard let size = (try? contributed.grammar.fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+                  size <= GrammarContribution.maxBytes,
+                  let grammar = Grammar.parse(contentsOf: contributed.grammar.fileURL)
+            else { continue }
+            store.add(grammar, languageId: contributed.grammar.languageID)
         }
-        return .builtIn(CodeLanguage.resolve(fileName: fileName))
+        return store
     }
+
+    /// The highlighter for a file, which is plain text when no installed
+    /// extension claims the file or the one that does ships no grammar.
+    func highlighter(forFileName fileName: String) -> GrammarHighlighter {
+        Self.highlighter(forFileName: fileName, in: Self.snapshot)
+    }
+
+    func highlighter(forLanguageID languageID: String?) -> GrammarHighlighter {
+        Self.highlighter(forLanguageID: languageID, in: Self.snapshot)
+    }
+
+    func highlighter(forFenceLabel label: String?) -> GrammarHighlighter {
+        Self.highlighter(forFenceLabel: label, in: Self.snapshot)
+    }
+
+    /// The language id an installed extension gives a file name, or nil.
+    func languageID(forFileName fileName: String) -> String? {
+        catalog.contribution(forFileName: fileName)?.language.languageID
+    }
+
+    /// The comment markers the extension claiming a file declared.
+    func commentMarkers(forFileName fileName: String) -> CommentMarkers {
+        Self.commentMarkers(forFileName: fileName, in: Self.snapshot)
+    }
+
+    nonisolated static func highlighter(forFileName fileName: String, in snapshot: Snapshot) -> GrammarHighlighter {
+        let languageID = snapshot.catalog.contribution(forFileName: fileName)?.language.languageID
+        return highlighter(forLanguageID: languageID, in: snapshot)
+    }
+
+    nonisolated static func highlighter(forLanguageID languageID: String?, in snapshot: Snapshot) -> GrammarHighlighter {
+        guard let languageID, let grammar = snapshot.grammars.grammar(language: languageID) else { return .plain }
+        return GrammarHighlighter(tokenizer: GrammarTokenizer(store: snapshot.grammars, grammar: grammar))
+    }
+
+    /// The highlighter for a fenced code block, whose label is whatever the
+    /// author typed: a language id, a file extension, a nickname like `golang`
+    /// or `console`, or a word naming no source language at all — `text`,
+    /// `diff`, `mermaid` — for which the answer is plain, not a guess.
+    nonisolated static func highlighter(forFenceLabel label: String?, in snapshot: Snapshot) -> GrammarHighlighter {
+        guard let label else { return .plain }
+        let trimmed = label.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !trimmed.isEmpty else { return .plain }
+        let name = fenceAliases[trimmed] ?? trimmed
+        let store = snapshot.grammars
+        if let grammar = store.grammar(language: name) ?? store.grammar(fileType: name) {
+            return GrammarHighlighter(tokenizer: GrammarTokenizer(store: store, grammar: grammar))
+        }
+        return highlighter(forFileName: "fence." + name, in: snapshot)
+    }
+
+    nonisolated static func commentMarkers(forFileName fileName: String, in snapshot: Snapshot) -> CommentMarkers {
+        guard let language = snapshot.catalog.contribution(forFileName: fileName)?.language else { return .none }
+        return CommentMarkers(line: language.lineComment, block: language.blockComment)
+    }
+
+    /// The names authors write on a fence that no language id or file
+    /// extension is spelled as. A convention of markdown, not a fact about
+    /// any language, which is why it lives here and not in an extension.
+    nonisolated static let fenceAliases: [String: String] = [
+        "js": "javascript", "node": "javascript", "mjs": "javascript", "cjs": "javascript",
+        "ts": "typescript", "golang": "go", "rs": "rust", "py": "python", "rb": "ruby",
+        "sh": "shellscript", "bash": "shellscript", "zsh": "shellscript", "shell": "shellscript",
+        "fish": "shellscript", "console": "shellscript", "terminal": "shellscript",
+        "dockerfile": "shellscript", "make": "shellscript",
+        "yml": "yaml", "md": "markdown", "mdx": "markdown",
+        "postgres": "sql", "postgresql": "sql", "mysql": "sql",
+        "c++": "cpp", "objc": "objective-c", "objective-c": "objective-c",
+        "tf": "terraform", "hcl": "terraform", "kt": "kotlin", "kts": "kotlin",
+        "jsonc": "json", "json5": "json", "vue-html": "html",
+    ]
+
+    // MARK: Resolution
 
     /// The LSP language id for a path, or nil when nothing claims it.
     func languageID(forPath path: String) -> String? {
@@ -129,8 +234,7 @@ final class LanguageResolver: ObservableObject {
         forFileNamed name: String,
         catalog: LanguageCatalog
     ) -> ExternalFormatter? {
-        if let compiled = ExternalFormatterRegistry.formatter(forFileNamed: name) { return compiled }
-        return catalog.formatter(forFileName: name)?.externalFormatter
+        catalog.formatter(forFileName: name)?.externalFormatter
     }
 
     /// `initializationOptions` a contribution supplied, as JSON text — the

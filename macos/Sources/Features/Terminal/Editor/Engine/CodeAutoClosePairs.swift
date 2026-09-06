@@ -64,13 +64,7 @@ struct CodeAutoClosePairs: Equatable, Sendable {
         quotes: ["\"", "`"]
     )
 
-    static func resolve(_ language: CodeLanguage) -> CodeAutoClosePairs {
-        switch language {
-        case .rust: return withoutTheSingleQuote
-        case .javascript, .vue, .swift, .kotlin, .go, .python, .ruby, .shell,
-             .json, .yaml, .toml, .markdown, .html, .css, .sql, .zig, .c, .php,
-             .terraform, .plain:
-            return standard
-        }
+    static func resolve(languageID: String?) -> CodeAutoClosePairs {
+        languageID == "rust" ? withoutTheSingleQuote : standard
     }
 }

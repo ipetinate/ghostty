@@ -124,6 +124,14 @@ struct LanguageCatalog: Equatable {
         var id: String { listIdentity + "#iconTheme:" + iconTheme.name }
     }
 
+    struct ContributedGrammar: Equatable, Sendable, Identifiable {
+        let listIdentity: String
+        let extensionName: String
+        let grammar: GrammarContribution
+
+        var id: String { listIdentity + "#grammar:" + grammar.scopeName }
+    }
+
     struct ContributedAgent: Equatable, Sendable, Identifiable {
         let listIdentity: String
         let extensionName: String
@@ -157,6 +165,7 @@ struct LanguageCatalog: Equatable {
     let formatters: [ContributedFormatter]
     let themes: [ContributedTheme]
     let iconThemes: [ContributedIconTheme]
+    let grammars: [ContributedGrammar]
     let agents: [ContributedAgent]
 
     static let empty = LanguageCatalog(
@@ -165,6 +174,7 @@ struct LanguageCatalog: Equatable {
         formatters: [],
         themes: [],
         iconThemes: [],
+        grammars: [],
         agents: []
     )
 
@@ -246,10 +256,9 @@ struct LanguageCatalog: Equatable {
 
     // MARK: Resolution
 
-    /// Precedence, lowest number first. The registry's own rank is between
-    /// promoted and unpromoted contributions, which is the entire policy in
-    /// one integer.
-    private static let registryRank = 2
+    /// Precedence, lowest number first: a contribution the reader promoted
+    /// outranks one they did not, and the user's directory outranks the
+    /// bundle. Nothing is compiled in for either to yield to.
 
     private static func rank(scope: LanguageManifest.Scope, promoted: Bool) -> Int {
         switch (scope, promoted) {
@@ -311,16 +320,10 @@ struct LanguageCatalog: Equatable {
         var contributed: [Contributed] = []
 
         for pair in ordered {
-            let outranksRegistry = pair.rank < registryRank
-
             var resolution = Resolution.active
             for claim in pair.language.claims {
                 if let owner = claimed[claim] {
                     resolution = .shadowed(by: .extensionID(owner), claim: claim)
-                    break
-                }
-                if !outranksRegistry, builtInOwns(claim) {
-                    resolution = .shadowed(by: .builtIn, claim: claim)
                     break
                 }
             }
@@ -353,6 +356,7 @@ struct LanguageCatalog: Equatable {
             formatters: resolveFormatters(manifests: manifests),
             themes: resolveThemes(manifests: manifests),
             iconThemes: resolveIconThemes(manifests: manifests),
+            grammars: resolveGrammars(manifests: manifests),
             agents: resolveAgents(manifests: manifests)
         )
     }
@@ -387,6 +391,22 @@ struct LanguageCatalog: Equatable {
         }
     }
 
+    /// One grammar per scope name, the highest-ranked extension's winning.
+    /// Rank is the same order every other contribution uses, so an extension
+    /// the reader promoted also wins the grammar for a scope two extensions
+    /// both ship.
+    static func resolveGrammars(manifests: [LanguageManifest]) -> [ContributedGrammar] {
+        var seen: Set<String> = []
+        return ordered(\.grammars, in: manifests, by: \.scopeName).compactMap { manifest, grammar in
+            guard seen.insert(grammar.scopeName).inserted else { return nil }
+            return ContributedGrammar(
+                listIdentity: manifest.listIdentity,
+                extensionName: manifest.name,
+                grammar: grammar
+            )
+        }
+    }
+
     static func resolveIconThemes(manifests: [LanguageManifest]) -> [ContributedIconTheme] {
         var seen: Set<String> = []
         return ordered(\.iconThemes, in: manifests, by: \.name).compactMap { manifest, iconTheme in
@@ -406,10 +426,6 @@ struct LanguageCatalog: Equatable {
             for ext in formatter.fileExtensions {
                 if let owner = claimed[ext] {
                     resolution = .shadowed(by: .extensionID(owner), claim: "ext:" + ext)
-                    break
-                }
-                if ExternalFormatterRegistry.formatter(forFileNamed: "f." + ext) != nil {
-                    resolution = .shadowed(by: .builtIn, claim: "ext:" + ext)
                     break
                 }
             }
@@ -449,30 +465,6 @@ struct LanguageCatalog: Equatable {
                 resolution: resolution
             )
         }
-    }
-
-    /// Whether this build already owns a claim.
-    ///
-    /// Both compiled-in tables count, because both are "a language the user
-    /// already had": `LSPServerRegistry` decides which server starts, and
-    /// `CodeLanguage` decides how the file is coloured. An extension that
-    /// took `.svelte` from the highlighter without taking a server from
-    /// anybody would still have changed something the user did not ask to
-    /// change.
-    static func builtInOwns(_ claim: String) -> Bool {
-        if let languageID = claim.dropPrefixIfPresent("lang:") {
-            return LSPServerRegistry.server(forLanguage: languageID) != nil
-        }
-        if let ext = claim.dropPrefixIfPresent("ext:") {
-            let sample = "f." + ext
-            return LSPServerRegistry.languageID(forPath: sample) != nil
-                || CodeLanguage.resolve(fileName: sample) != .plain
-        }
-        if let name = claim.dropPrefixIfPresent("name:") {
-            return LSPServerRegistry.languageID(forPath: name) != nil
-                || CodeLanguage.namedFiles.contains(name)
-        }
-        return false
     }
 }
 

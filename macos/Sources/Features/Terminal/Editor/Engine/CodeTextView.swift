@@ -57,10 +57,10 @@ struct CodeTextView: NSViewRepresentable {
 
     /// How this file is lexed, base language included.
     ///
-    /// Not a bare `CodeLanguage`: a language an extension contributed has no
-    /// case of its own, and passing only the base is what left such a file
-    /// with a server but no colour.
-    let syntax: LanguageSyntax
+    /// The language an installed extension gave this file, or nil. The
+    /// coordinator turns it into a grammar; the view carries only the name so
+    /// that SwiftUI rebuilding it does not rebuild the tokenizer.
+    let languageID: String?
 
     /// Which markup this file is. Beside `language` rather than inside the
     /// configuration, because it describes the file and not the editor — see
@@ -312,7 +312,8 @@ struct CodeTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             storage: CodeTextStorage(
-                syntax: syntax,
+                languageID: languageID,
+                highlighter: LanguageResolver.shared.highlighter(forLanguageID: languageID),
                 theme: theme,
                 configuration: configuration
             ),
@@ -580,7 +581,12 @@ struct CodeTextView: NSViewRepresentable {
         context.coordinator.apply(assistance: assistance, revision: assistanceRevision)
         context.coordinator.applyUnderlines(underlines)
 
-        context.coordinator.storage.setSyntax(syntax)
+        if context.coordinator.storage.languageID != languageID {
+            context.coordinator.storage.setHighlighter(
+                LanguageResolver.shared.highlighter(forLanguageID: languageID),
+                languageID: languageID
+            )
+        }
         context.coordinator.applyAppearance(
             theme: theme,
             configuration: configuration,
@@ -1020,7 +1026,7 @@ struct CodeTextView: NSViewRepresentable {
                 for: NSRange(location: lower, length: upper - lower),
                 in: textStorage.string as NSString
             )
-            storage.highlight(textStorage, in: region)
+            storage.highlight(textStorage, in: region, seedWhenBehind: highlightsOnDemand)
             colorBrackets(in: region)
         }
 
@@ -1052,8 +1058,7 @@ struct CodeTextView: NSViewRepresentable {
             let text = textStorage.string as NSString
             // The tokens the highlighter already produced, so a brace inside
             // a string or a comment doesn't open a level that never closes.
-            let skipped = SyntaxHighlighter(syntax: storage.syntax)
-                .tokens(in: textStorage.string, range: region)
+            let skipped = storage.tokens(in: textStorage.string, range: region, seedWhenBehind: highlightsOnDemand)
                 .filter { $0.kind == .string || $0.kind == .comment }
                 .map(\.range)
 
@@ -1175,8 +1180,7 @@ struct CodeTextView: NSViewRepresentable {
                 in: text,
                 padding: BracketMatch.searchLimit
             )
-            let skipped = SyntaxHighlighter(syntax: storage.syntax)
-                .tokens(in: textStorage.string, range: window)
+            let skipped = storage.tokens(in: textStorage.string, range: window, seedWhenBehind: highlightsOnDemand)
                 .filter { $0.kind == .string || $0.kind == .comment }
                 .map(\.range)
 
@@ -1628,8 +1632,7 @@ struct CodeTextView: NSViewRepresentable {
         func refreshMinimap() {
             guard let minimap, minimap.isHidden == false, let textView else { return }
             let text = textView.string
-            let tokens = SyntaxHighlighter(syntax: storage.syntax)
-                .tokens(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+            let tokens = storage.tokens(in: text, range: NSRange(location: 0, length: (text as NSString).length))
             minimap.setRows(CodeMinimapView.rows(for: text, tokens: tokens))
         }
 
@@ -1837,7 +1840,8 @@ struct CodeTextView: NSViewRepresentable {
             // guard about what gets drawn.
             if let code = textView as? CodeNSTextView {
                 code.hoverTheme = theme
-                code.hoverLanguage = storage.language
+                code.lineHighlighter = storage.highlighter
+                code.lineLanguageID = storage.languageID
                 code.closesBrackets = configuration.closesBrackets
                 code.closesQuotes = configuration.closesQuotes
                 code.closesTags = configuration.closesTags
@@ -2134,11 +2138,12 @@ struct CodeTextView: NSViewRepresentable {
             else { return }
 
             let edited = textView.selectedRange()
+            storage.invalidate(from: edited.location)
             let region = CodeTextStorage.invalidationRange(
                 for: edited,
                 in: textStorage.string as NSString
             )
-            storage.highlight(textStorage, in: region)
+            storage.highlight(textStorage, in: region, seedWhenBehind: highlightsOnDemand)
             // Typing a brace changes the depth of everything after it, so
             // the whole document's colours are stale — but recolouring all of
             // it per keystroke is the cost this editor exists to avoid. The
@@ -2444,7 +2449,8 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// How the card paints itself. Set by the coordinator, the only thing here
     /// that knows the file's colours and language.
     var hoverTheme: CodeTheme = .fallback
-    var hoverLanguage: CodeLanguage = .plain
+    var lineHighlighter: GrammarHighlighter = .plain
+    var lineLanguageID: String?
 
     /// The three auto-closing switches, mirrored from the configuration.
     ///
@@ -2503,7 +2509,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
 
     /// Which markup this file is, which the language cannot answer.
     ///
-    /// `.ts` and `.tsx` are one `CodeLanguage`, and that is right for lexing
+    /// `.ts` and `.tsx` share one language id, and that is right for lexing
     /// and wrong here: JSX is legal in one and a syntax error in the other,
     /// so `<` means a tag in the first and only ever a generic in the second.
     /// Kept beside the language rather than inside `CodeEditorConfiguration`
@@ -3217,37 +3223,6 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
         requestCompletions(explicitly: false, immediate: true)
     }
 
-    /// Which language the caret's line is actually written in.
-    ///
-    /// A container language answers nothing useful about a single line, and
-    /// that was a real bug rather than a hypothetical one: `.vue` routes to
-    /// `SFCRegions`, which needs the whole document to find `^<script>` and
-    /// `^</script>`, so a lone line came back with **no tokens at all** and
-    /// the caller's string-and-comment suppression silently never fired in a
-    /// Vue file. Measured — the same line yields `[keyword, string]` as
-    /// `.javascript` and `[]` as `.vue`.
-    ///
-    /// The obvious repair is to hand over the whole document and scope the
-    /// range to the line, and that is correct and unaffordable: 2.7 ms per
-    /// keystroke on a 5000-line component, growing linearly with the file,
-    /// because `SFCRegions` compiles three expressions and scans everything
-    /// three times per call with no cache. Resolving the language instead
-    /// costs a bounded backwards literal search and leaves the tokenizing
-    /// scoped to one line, which is ~12 µs.
-    ///
-    /// Only a container needs resolving. Everything else — including `.jsx`,
-    /// which is JavaScript that happens to carry tags — is already the
-    /// language its lines are written in.
-    static func effectiveLanguage(
-        _ language: CodeLanguage,
-        in content: NSString,
-        at caret: Int,
-        dialect: CodeTagDialect
-    ) -> CodeLanguage {
-        guard language == .vue else { return language }
-        return CodeTagClose.isInMarkup(content, caret: caret, dialect: dialect) ? .html : .javascript
-    }
-
     /// The trigger policy, asked over the caret's line only — a per-keystroke
     /// path cannot afford to tokenize the document to find out whether it is
     /// inside a string.
@@ -3258,12 +3233,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
         let line = content.substring(with: lineRange)
         let caretInLine = caret - lineRange.location
 
-        let suppressed = SyntaxHighlighter(language: Self.effectiveLanguage(
-            hoverLanguage,
-            in: content,
-            at: caret,
-            dialect: tagDialect
-        ))
+        let suppressed = lineHighlighter
             .tokens(in: line, range: NSRange(location: 0, length: (line as NSString).length))
             .contains { token in
                 (token.kind == .string || token.kind == .comment)
@@ -3474,10 +3444,9 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// those files offered nothing at all.
     ///
     /// **Keywords are not here, and that is a cut rather than an oversight.**
-    /// A built-in language has no keyword *list* — `LanguageSyntax.builtIn`
-    /// carries an empty one and the highlighter matches keywords by pattern —
-    /// so offering them would mean writing fourteen lists beside a table that
-    /// already encodes the same words, and watching the two drift. In a file
+    /// A grammar has no keyword *list* — it matches keywords by pattern — so
+    /// offering them would mean writing a list per language beside a grammar
+    /// that already encodes the same words, and watching the two drift. In a file
     /// that has used a keyword even once it is already in the buffer and comes
     /// back through here anyway. A *contributed* language does carry a list,
     /// and this is where it would attach.
@@ -3857,7 +3826,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
             CodeCompletionDocPanel.Content(state: documentationState, detail: detail),
             theme: hoverTheme,
             font: font ?? .monospacedSystemFont(ofSize: 12, weight: .regular),
-            language: hoverLanguage,
+            highlighter: lineHighlighter,
             beside: list.frame,
             over: self
         )
@@ -4261,7 +4230,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
             forLine: line.trimmingTrailingNewline,
             caretInLine: caret - lineRange.location,
             indentUnit: indentUnit,
-            continuesLists: hoverLanguage == .markdown
+            continuesLists: lineLanguageID == "markdown"
         )
 
         /// Nothing but the newline and nothing removed is what

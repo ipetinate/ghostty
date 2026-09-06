@@ -43,13 +43,13 @@ struct GitDiffSource: Equatable {
 /// the row above, and it is the editor's job.
 ///
 /// **Except for a document made of blocks, where the missing context is not
-/// a shade of colour but all of it.** ``SFCRegions`` finds a `.vue` file's
+/// a shade of colour but all of it.** A grammar that carries state finds a `.vue` file's
 /// `<script>`, `<template>` and `<style>` by their tags, so a hunk from the
 /// middle of one carries nothing to say which block it is in: it falls
 /// outside every region and lexes to nothing, and the card drew flat text
 /// until the reader expanded the file far enough to bring a tag into the
 /// fragment. Guessing `.javascript` for a tagless fragment is the wrong
-/// answer and `SFCRegions` says why — the same bytes are a keyword in one
+/// answer and the grammar says why — the same bytes are a keyword in one
 /// block and an attribute in another. So the whole version of the file is
 /// lexed instead and its tokens are mapped onto the diff's lines by line
 /// number. ``needsWholeFile(_:)`` names the files that pay for it.
@@ -111,31 +111,36 @@ struct GitDiffHighlight: Equatable {
     /// Whether the diff's own text is enough to lex this file, or whether the
     /// loader has to read both versions of it.
     ///
-    /// True only for a document made of blocks — `.vue` and `.html`, the two
-    /// ``SFCRegions/Container`` cases — and only where the diff is a change
-    /// rather than a whole file arriving or leaving. A file added or deleted
-    /// has every one of its lines in the hunks already, which is the case a
-    /// branch of new work is mostly made of.
+    /// True for any file a grammar colours, and only where the diff is a
+    /// change rather than a whole file arriving or leaving. A grammar carries
+    /// state across lines — a block comment or a heredoc opened above the
+    /// hunk changes what the hunk's lines are — and the hunks alone cannot
+    /// say what was open above them. A file added or deleted has every one of
+    /// its lines in the hunks already.
     ///
     /// **The cost is two `git show` calls, on a card the reader opened.** A
     /// review holds up to 449 files and loads a diff only when its card
-    /// expands, so this is paid per opened `.vue`, off the main actor, in the
+    /// expands, so this is paid per opened card, off the main actor, in the
     /// same background task that already ran `git diff` and `git log` for
     /// that row.
     static func needsWholeFile(_ file: GitFileDiff) -> Bool {
         guard file.status != .added, file.status != .deleted else { return false }
         return [file.previousPath ?? file.path, file.path].contains {
-            SFCRegions.container(of: language(forPath: $0)) != nil
+            !highlighter(forPath: $0).isPlain
         }
     }
 
-    /// The language a path is drawn in.
+    /// The highlighter a path is drawn with, from whatever extension claims
+    /// its name. Plain when nothing does.
     ///
-    /// The last component and not the path, because the table that answers
-    /// for a name carrying its own language — `Makefile`, `go.mod` — is
-    /// matched whole, and `src/go.mod` matches nothing in it.
-    static func language(forPath path: String) -> CodeLanguage {
-        CodeLanguage.resolve(fileName: (path as NSString).lastPathComponent)
+    /// The last component and not the path, because a name that carries its
+    /// own language — `Makefile`, `go.mod` — is matched whole, and
+    /// `src/go.mod` matches nothing.
+    static func highlighter(forPath path: String) -> GrammarHighlighter {
+        LanguageResolver.highlighter(
+            forFileName: (path as NSString).lastPathComponent,
+            in: LanguageResolver.snapshot
+        )
     }
 
     private static func spans(
@@ -144,30 +149,30 @@ struct GitDiffHighlight: Equatable {
         path: String,
         whole: String?
     ) -> [[Span]] {
-        let language = language(forPath: path)
-        guard language != .plain else { return [] }
+        let highlighter = highlighter(forPath: path)
+        guard !highlighter.isPlain else { return [] }
 
         if let whole, !whole.isEmpty, (whole as NSString).length <= textBudget {
-            let mapped = spans(in: rows, side: side, language: language, whole: whole)
+            let mapped = spans(in: rows, side: side, highlighter: highlighter, whole: whole)
             /// Empty means the mapping failed rather than that the file has
             /// no tokens — a blob that is not the version the diff was taken
             /// against. The diff's own text is still an answer.
             if !mapped.isEmpty { return mapped }
         }
 
-        return spans(in: rows, side: side, language: language)
+        return spans(in: rows, side: side, highlighter: highlighter)
     }
 
     private static func spans(
         in rows: [GitDiffRow],
         side: GitDiffPaneSide,
-        language: CodeLanguage
+        highlighter: GrammarHighlighter
     ) -> [[Span]] {
         let joined = join(rows, side: side)
         guard !joined.lines.isEmpty else { return [] }
 
         var spans = [[Span]](repeating: [], count: rows.count)
-        let tokens = SyntaxHighlighter(language: language).tokens(
+        let tokens = highlighter.tokens(
             in: joined.text,
             range: NSRange(location: 0, length: (joined.text as NSString).length)
         )
@@ -191,7 +196,7 @@ struct GitDiffHighlight: Equatable {
     private static func spans(
         in rows: [GitDiffRow],
         side: GitDiffPaneSide,
-        language: CodeLanguage,
+        highlighter: GrammarHighlighter,
         whole text: String
     ) -> [[Span]] {
         var rowByNumber: [Int: (id: Int, length: Int)] = [:]
@@ -220,7 +225,7 @@ struct GitDiffHighlight: Equatable {
         guard !lines.isEmpty else { return [] }
 
         var spans = [[Span]](repeating: [], count: rows.count)
-        let tokens = SyntaxHighlighter(language: language).tokens(
+        let tokens = highlighter.tokens(
             in: text,
             range: NSRange(location: 0, length: ns.length)
         )
@@ -267,7 +272,7 @@ struct GitDiffHighlight: Equatable {
     /// literal and a heredoc are all one token over several lines, and the
     /// pane draws a line at a time.
     private static func distribute(
-        _ token: SyntaxHighlighter.Token,
+        _ token: GrammarHighlighter.Token,
         over lines: [Line],
         into spans: inout [[Span]]
     ) {

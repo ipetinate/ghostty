@@ -121,10 +121,6 @@ final class EditorDocument: ObservableObject, Identifiable {
 
     var id: String { url.path }
 
-    var language: CodeLanguage {
-        CodeLanguage.resolve(fileName: url.lastPathComponent)
-    }
-
     /// What was last read from or written to disk. Compared against the
     /// file to tell "somebody else changed this" from "I changed this",
     /// which a modification date alone can't do — saving moves the date too.

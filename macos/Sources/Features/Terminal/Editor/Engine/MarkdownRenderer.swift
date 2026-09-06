@@ -147,7 +147,7 @@ struct MarkdownRenderer {
                 caption: document.flavor == .mdx && isComponent(source)
                     ? "component — shown as source, not rendered"
                     : nil,
-                language: .html,
+                language: "html",
                 to: out,
                 indent: indent,
                 containers: containers
@@ -157,7 +157,7 @@ struct MarkdownRenderer {
             appendSource(
                 source,
                 caption: "module — not evaluated",
-                language: .javascript,
+                language: "javascript",
                 to: out,
                 indent: indent,
                 containers: containers
@@ -167,7 +167,7 @@ struct MarkdownRenderer {
             appendSource(
                 source,
                 caption: "front matter",
-                language: .yaml,
+                language: "yaml",
                 to: out,
                 indent: indent,
                 containers: containers
@@ -286,7 +286,7 @@ struct MarkdownRenderer {
             /// the document stopped being prose, and without the note the
             /// preview just looks broken.
             caption: code.isClosed ? nil : "unclosed fence",
-            language: CodeLanguage.resolve(fenceInfo: code.languageHint),
+            language: code.languageHint,
             to: out,
             indent: indent,
             containers: containers
@@ -302,7 +302,7 @@ struct MarkdownRenderer {
     private func appendSource(
         _ source: String,
         caption: String?,
-        language: CodeLanguage?,
+        language: String?,
         to out: NSMutableAttributedString,
         indent: CGFloat,
         containers: [NSTextBlock]
@@ -356,9 +356,11 @@ struct MarkdownRenderer {
     /// language, and already the thing colouring the file in the other
     /// pane — and it is the difference between a preview that looks like a
     /// document and one that looks unfinished.
-    private func highlight(_ source: String, language: CodeLanguage, in body: NSMutableAttributedString) {
+    private func highlight(_ source: String, language: String, in body: NSMutableAttributedString) {
+        let highlighter = LanguageResolver.highlighter(forFenceLabel: language, in: LanguageResolver.snapshot)
+        guard !highlighter.isPlain else { return }
         let full = NSRange(location: 0, length: (source as NSString).length)
-        for token in SyntaxHighlighter(language: language).tokens(in: source, range: full) {
+        for token in highlighter.tokens(in: source, range: full) {
             guard NSMaxRange(token.range) <= body.length else { continue }
             body.addAttribute(.foregroundColor, value: style.theme.color(for: token.kind), range: token.range)
         }

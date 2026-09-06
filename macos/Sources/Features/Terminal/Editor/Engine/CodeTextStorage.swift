@@ -12,53 +12,57 @@ import AppKit
 /// `/*` and everything below it becomes a comment — so a repaint has to
 /// cover more than the characters that changed.
 final class CodeTextStorage {
-    /// How this file is lexed.
-    ///
-    /// A `LanguageSyntax` rather than a `CodeLanguage`, because a language
-    /// contributed by an extension has no `CodeLanguage` case of its own —
-    /// it lexes as some base with its own keywords and comment markers laid
-    /// over the top. Holding only the base is what made a contributed
-    /// language get a language server and no colour: the server side already
-    /// resolved through the catalogue while this side still asked the
-    /// filename.
-    private(set) var syntax: LanguageSyntax
+    /// The language an installed extension gave this file, or nil for a file
+    /// nothing claims. It is a name and nothing more: how the file is coloured
+    /// is decided by the grammar that extension ships, and there is no
+    /// compiled-in fallback to reach for when it ships none.
+    private(set) var languageID: String?
 
-    /// The base the syntax lexes as, for the callers that genuinely mean the
-    /// family — a hover card, the choice of markup dialect — rather than
-    /// this file's exact rules.
-    var language: CodeLanguage { syntax.base }
-
-    private var highlighter: SyntaxHighlighter
+    private(set) var highlighter: GrammarHighlighter
+    private var cache: LineTokenizationCache?
     var theme: CodeTheme
     var configuration: CodeEditorConfiguration
 
     init(
-        syntax: LanguageSyntax,
+        languageID: String?,
+        highlighter: GrammarHighlighter,
         theme: CodeTheme,
         configuration: CodeEditorConfiguration
     ) {
-        self.syntax = syntax
-        self.highlighter = SyntaxHighlighter(syntax: syntax)
+        self.languageID = languageID
+        self.highlighter = highlighter
+        self.cache = highlighter.initialState.map(LineTokenizationCache.init(initialState:))
         self.theme = theme
         self.configuration = configuration
     }
 
-    convenience init(
-        language: CodeLanguage,
-        theme: CodeTheme,
-        configuration: CodeEditorConfiguration
-    ) {
-        self.init(syntax: .builtIn(language), theme: theme, configuration: configuration)
+    func setHighlighter(_ highlighter: GrammarHighlighter, languageID: String?) {
+        guard highlighter !== self.highlighter || languageID != self.languageID else { return }
+        self.languageID = languageID
+        self.highlighter = highlighter
+        self.cache = highlighter.initialState.map(LineTokenizationCache.init(initialState:))
     }
 
-    func setSyntax(_ syntax: LanguageSyntax) {
-        guard syntax != self.syntax else { return }
-        self.syntax = syntax
-        self.highlighter = SyntaxHighlighter(syntax: syntax)
+    /// Forgets the tokenizer state from the line holding `location` onwards.
+    /// Called before the recolour that follows an edit, so the lines below it
+    /// are lexed again from what the edited line now ends in.
+    func invalidate(from location: Int) {
+        cache?.invalidate(from: location)
     }
 
-    func setLanguage(_ language: CodeLanguage) {
-        setSyntax(.builtIn(language))
+    /// The tokens in `range`, from the same cache the recolour uses.
+    ///
+    /// `seedWhenBehind` is for a document too large to lex from the top: the
+    /// first visible line starts from a clean state instead. See
+    /// ``LineTokenizationCache/tokens(in:range:highlighter:seedWhenBehind:)``.
+    func tokens(in text: String, range: NSRange, seedWhenBehind: Bool = false) -> [GrammarHighlighter.Token] {
+        guard let cache else { return [] }
+        return cache.tokens(
+            in: text as NSString,
+            range: range,
+            highlighter: highlighter,
+            seedWhenBehind: seedWhenBehind
+        )
     }
 
     /// Applies colors to `range` of `storage`.
@@ -91,7 +95,8 @@ final class CodeTextStorage {
             .codeDiagnosticUnderline,
             .underlineStyle,
             .underlineColor,
-        ]
+        ],
+        seedWhenBehind: Bool = false
     ) {
         let safe = NSIntersectionRange(range, NSRange(location: 0, length: storage.length))
         guard safe.length > 0 else { return }
@@ -107,8 +112,7 @@ final class CodeTextStorage {
             range: safe
         )
 
-        let text = storage.string
-        for token in highlighter.tokens(in: text, range: safe) {
+        for token in tokens(in: storage.string, range: safe, seedWhenBehind: seedWhenBehind) {
             let clipped = NSIntersectionRange(token.range, safe)
             guard clipped.length > 0 else { continue }
             storage.addAttribute(

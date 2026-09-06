@@ -26,7 +26,7 @@ struct ExternalFormatterSetting: Codable, Equatable {
 /// formatter is one language and one tool, and the command is the thing being
 /// edited — an identity that changes when the setting changes is no identity.
 ///
-/// `ExternalFormatterRegistry` stays pure data with no `UserDefaults` in it.
+/// The contributed formatters stay pure data with no `UserDefaults` in them.
 /// This is the layer above where a reader's choices live, and `effective`
 /// is where the two meet.
 enum ExternalFormatterStore {

@@ -61,29 +61,25 @@ struct ContributedFormatterTests {
         #expect(external.origin == .manifest(contributed.provenance))
     }
 
-    @Test func theCompiledTableWinsTheExtensionsItNames() throws {
+    /// Shadowing is all-or-nothing across a formatter's extensions. Only
+    /// `zig` is contested here; `py` is the extension nobody else wants, and
+    /// it goes down with it — half a formatter, running on one file type and
+    /// not the one beside it, is not something a reader could work out.
+    @Test func aFormatterIsShadowedWholeWhenOneExtensionIsTaken() {
         let catalog = LanguageCatalog.resolve(
-            manifests: [manifest(directory: "acme.lua", id: "acme.lua", formatters: Self.stylua)],
+            manifests: [
+                manifest(directory: "aaa.zig", id: "aaa.zig", formatters: Self.zigfmt),
+                manifest(
+                    directory: "zzz.mixed",
+                    id: "zzz.mixed",
+                    formatters: #"{ "id": "t", "name": "T", "command": "t", "extensions": ["zig", "py"] }"#
+                ),
+            ],
             promotions: []
         )
-
-        let contributed = try #require(catalog.formatters.first)
-        #expect(contributed.resolution == .shadowed(by: .builtIn, claim: "ext:lua"))
-        #expect(contributed.externalFormatter == nil)
-        #expect(catalog.formatter(forFileName: "init.lua") == nil)
-    }
-
-    @Test func aFormatterIsShadowedWholeWhenOneExtensionIsTaken() throws {
-        let catalog = LanguageCatalog.resolve(
-            manifests: [manifest(
-                directory: "acme.mixed",
-                id: "acme.mixed",
-                formatters: #"{ "id": "t", "name": "T", "command": "t", "extensions": ["zig", "py"] }"#
-            )],
-            promotions: []
-        )
-        #expect(catalog.formatters.first?.resolution == .shadowed(by: .builtIn, claim: "ext:py"))
-        #expect(catalog.formatter(forFileName: "main.zig") == nil)
+        #expect(catalog.formatters.last?.resolution
+            == .shadowed(by: .extensionID("aaa.zig"), claim: "ext:zig"))
+        #expect(catalog.formatter(forFileName: "main.py") == nil)
     }
 
     @Test func twoExtensionsClaimingTheSameFilesResolveLexicographically() throws {
@@ -125,7 +121,10 @@ struct ContributedFormatterTests {
 
     // MARK: Resolution order
 
-    @Test func theResolverAsksTheCompiledTableFirst() throws {
+    /// The resolver answers out of the installed extensions and out of
+    /// nothing else. A file no manifest claims has no formatter, which is the
+    /// normal case rather than a gap.
+    @Test func theResolverAnswersOnlyFromWhatIsInstalled() throws {
         let catalog = LanguageCatalog.resolve(
             manifests: [manifest(
                 directory: "acme.pack",
@@ -136,9 +135,9 @@ struct ContributedFormatterTests {
         )
 
         let lua = try #require(LanguageResolver.formatter(forFileNamed: "init.lua", catalog: catalog))
-        #expect(lua.id == "lua")
-        #expect(lua.provenance == nil)
-        #expect(lua.origin == .builtIn)
+        #expect(lua.id == "acme.pack#formatter:stylua")
+        #expect(lua.provenance?.extensionID == "acme.pack")
+        #expect(lua.origin == .manifest(try #require(lua.provenance)))
 
         let zig = try #require(LanguageResolver.formatter(forFileNamed: "main.zig", catalog: catalog))
         #expect(zig.id == "acme.pack#formatter:zigfmt")
@@ -146,6 +145,7 @@ struct ContributedFormatterTests {
 
         #expect(LanguageResolver.formatter(forFileNamed: "main.rs", catalog: catalog) == nil)
         #expect(LanguageResolver.formatter(forFileNamed: "Makefile", catalog: catalog) == nil)
+        #expect(LanguageResolver.formatter(forFileNamed: "init.lua", catalog: .empty) == nil)
     }
 
     @Test func theReadersSettingsKeepTheProvenance() throws {

@@ -55,15 +55,28 @@ struct LSPServerDependencyTests {
         return try #require(catalog.contributed.first?.serverDefinition)
     }
 
-    private func vue() throws -> LSPServerDefinition {
-        try #require(LSPServerRegistry.server(forLanguage: "vue"))
+    /// A definition carrying no provenance, which is the only kind
+    /// `dependencyPlan` will answer for.
+    ///
+    /// Built here rather than looked up, because after 0.17.0 nothing this
+    /// build ships has a `.builtIn` origin — the guard and the table it
+    /// guards both outlived the servers that used to reach them, and a test
+    /// is the only thing left that exercises the allowing branch.
+    private func builtIn(command: String) -> LSPServerDefinition {
+        LSPServerDefinition(
+            languageID: command,
+            displayName: command,
+            command: command,
+            arguments: ["--stdio"],
+            installHint: "npm i -g " + command
+        )
     }
 
-    private func typescript() throws -> LSPServerDefinition {
-        try #require(LSPServerRegistry.server(forLanguage: "typescript"))
+    private func vue() -> LSPServerDefinition {
+        builtIn(command: "vue-language-server")
     }
 
-    /// Every command the catalog has a plan for, read off the registry rather
+    /// Every command the catalog has a plan for, read off the catalog rather
     /// than listed here.
     ///
     /// It used to be a literal pair, and that is how this file broke: the
@@ -71,18 +84,17 @@ struct LSPServerDependencyTests {
     /// global `typescript` in it collided with the native row — and seven
     /// tests failed for naming a plan instead of asking for one.
     private var plannedCommands: [String] {
-        LSPServerRegistry.distinctServers
-            .filter { $0.dependencyPlan != nil }
-            .map(\.command)
+        ["vue-language-server", "typescript-language-server", "rust-analyzer", "gopls"]
+            .filter { LSPDependencyCatalog.plan(forCommand: $0) != nil }
     }
 
     // MARK: The refusal
 
-    /// The interesting half is that both names are commands the catalog has a
-    /// plan for. A lookup keyed on the command alone would hand a file on disk
-    /// `npm i -g @vue/language-server@3.3.10 …` — the same mistake
-    /// `uninstallCommand` made when it offered `rustup component remove` to a
-    /// manifest calling itself `rust-analyzer`.
+    /// The interesting half is that one of these names a command the catalog
+    /// has a plan for. A lookup keyed on the command alone would hand a file
+    /// on disk `npm i -g @vue/language-server@3.3.10 …` — the same mistake the
+    /// compiled-in uninstall table made when it offered `rustup component
+    /// remove` to a manifest calling itself `rust-analyzer`.
     @Test func aContributedServerGetsNoDependencyPlanEvenWhenItNamesOne() throws {
         for command in ["vue-language-server", "typescript-language-server", "rust-analyzer"] {
             let definition = try contributedServer(named: command)
@@ -102,22 +114,17 @@ struct LSPServerDependencyTests {
                     "\(command) offered a command for \(selection)"
                 )
             }
-
-            /// And the singular path it could already not reach is still shut.
-            #expect(definition.installCommand == nil)
-            #expect(definition.uninstallCommand == nil)
         }
     }
 
     /// The guard has to be the origin and not the absence of a plan, or every
     /// built-in server without one would be a hole.
-    @Test func aBuiltInServerWithNoPlanStillOffersNothingMultiPackage() throws {
-        let rust = try #require(LSPServerRegistry.server(forLanguage: "rust"))
+    @Test func aBuiltInServerWithNoPlanStillOffersNothingMultiPackage() {
+        let rust = builtIn(command: "rust-analyzer")
 
         #expect(rust.dependencyPlan == nil)
         #expect(rust.installCommand(forDependencies: ["typescript"]) == nil)
-        /// Its own single command is untouched.
-        #expect(rust.installCommand == "rustup component add rust-analyzer")
+        #expect(rust.installCommand(forDependencies: []) == nil)
     }
 
     /// Vue is the one server that needs more than a binary: its own server,
@@ -136,8 +143,8 @@ struct LSPServerDependencyTests {
     /// reason its row draws a plain Install: the plan's second package was a
     /// global `typescript`, and the native TypeScript row installs that same
     /// package at 7 as *itself*. Installing either row changed the other.
-    @Test func theTypeScriptWrapperHasNoPlan() throws {
-        #expect(try typescript().dependencyPlan == nil)
+    @Test func theTypeScriptWrapperHasNoPlan() {
+        #expect(builtIn(command: "typescript-language-server").dependencyPlan == nil)
         #expect(LSPDependencyCatalog.plan(forCommand: "typescript-language-server") == nil)
     }
 
@@ -155,8 +162,8 @@ struct LSPServerDependencyTests {
 
     // MARK: Composing the command
 
-    @Test func anUnrecognisedIdSelectsNothing() throws {
-        let server = try typescript()
+    @Test func anUnrecognisedIdSelectsNothing() {
+        let server = vue()
 
         #expect(server.installCommand(forDependencies: []) == nil)
         #expect(server.installCommand(forDependencies: ["not-a-package"]) == nil)
@@ -167,7 +174,7 @@ struct LSPServerDependencyTests {
     /// one and nothing else — the invented string never becomes a word on the
     /// command line.
     @Test func aForgedIdBesideARealOneAddsNoWord() throws {
-        let server = try vue()
+        let server = vue()
 
         let command = try #require(
             server.installCommand(
@@ -183,7 +190,7 @@ struct LSPServerDependencyTests {
     /// none — otherwise the line shown in the popover would reshuffle between
     /// openings for no reason a reader could see.
     @Test func theCommandFollowsThePlansOrder() throws {
-        let server = try vue()
+        let server = vue()
 
         let command = try #require(
             server.installCommand(forDependencies: [
@@ -198,7 +205,7 @@ struct LSPServerDependencyTests {
     }
 
     @Test func aPartialSelectionInstallsOnlyWhatIsTicked() throws {
-        let server = try vue()
+        let server = vue()
 
         #expect(
             server.installCommand(forDependencies: ["@vue/typescript-plugin"])
@@ -250,29 +257,6 @@ struct LSPServerDependencyTests {
         #expect(pin.contains("."))
         #expect(server.spec == "@vue/language-server@\(pin)")
         #expect(plugin.spec == "@vue/typescript-plugin@\(pin)")
-    }
-
-    /// The wrapper installs **only itself**, and that is a conflict resolved
-    /// rather than a package forgotten.
-    ///
-    /// It used to install a global `typescript@6` beside itself, pinned because
-    /// npm's `latest` is TypeScript 7 — the native rewrite, which ships no
-    /// `tsserver.js` for a wrapper to drive. The pin was right; the package was
-    /// still wrong to be here. The native row installs `typescript` as
-    /// *itself*, so the two rows fought over one global package and installing
-    /// either changed the other.
-    ///
-    /// What makes dropping it safe is the routing, asserted in
-    /// `TypeScriptRoutingTests`: a file reaches the wrapper only when its
-    /// project has `node_modules/typescript`, and a project without one goes to
-    /// `tsc --lsp` instead.
-    @Test func theWrapperInstallsOnlyItself() throws {
-        let server = try typescript()
-        let command = try #require(server.installCommand)
-
-        #expect(command == "npm i -g typescript-language-server")
-        #expect(!command.contains(" typescript@"))
-        #expect(try #require(server.uninstallCommand) == "npm rm -g typescript-language-server")
     }
 
     /// Two installs at different times must produce the same versions, which
@@ -452,7 +436,7 @@ struct LSPServerDependencyTests {
         #expect(LSPDependencyCatalog.defaultSelection(for: plan, statuses: statuses).isEmpty)
         /// Which is also what disables Install, so the button and the command
         /// under it cannot disagree.
-        let server = try vue()
+        let server = vue()
         #expect(server.installCommand(forDependencies: []) == nil)
     }
 

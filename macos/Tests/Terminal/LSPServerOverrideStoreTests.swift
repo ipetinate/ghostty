@@ -3,8 +3,8 @@ import Foundation
 import Testing
 
 /// Per-server overrides, saved and read back through `UserDefaults` — and
-/// `LSPCenter.effectiveDefinition`, the merge of that override with a
-/// registry default, kept in the same suite rather than a separate one.
+/// `LSPCenter.effectiveDefinition`, the merge of that override with what
+/// a manifest declared, kept in the same suite rather than a separate one.
 ///
 /// Serialized like the icon store's own tests: these save and restore the
 /// real `UserDefaults` entry a locally-running Phantom also reads, and
@@ -33,6 +33,23 @@ struct LSPServerOverrideStoreTests {
             }
         }
         body()
+    }
+
+    /// A contributed server, built here rather than looked up: after 0.17.0
+    /// every definition came from a manifest, and what this suite is about
+    /// is the merge of a user's override onto one — not where it came from.
+    private static func definition(
+        languageID: String,
+        command: String,
+        arguments: [String] = ["--stdio"]
+    ) -> LSPServerDefinition {
+        LSPServerDefinition(
+            languageID: languageID,
+            displayName: languageID.capitalized,
+            command: command,
+            arguments: arguments,
+            installHint: "npm i -g " + command
+        )
     }
 
     @Test func withNothingSetThereIsNoOverride() {
@@ -96,7 +113,7 @@ struct LSPServerOverrideStoreTests {
 
     @Test func withNoOverrideTheDefaultPassesThroughUnchanged() {
         withCleanDefaults {
-            let base = LSPServerRegistry.server(forLanguage: "kotlin")!
+            let base = Self.definition(languageID: "kotlin", command: "kotlin-language-server")
             #expect(LSPCenter.effectiveDefinition(base) == base)
         }
     }
@@ -106,7 +123,7 @@ struct LSPServerOverrideStoreTests {
     /// server launched with zero arguments.
     @Test func aPartialOverrideOnlyReplacesWhatItSets() {
         withCleanDefaults {
-            let base = LSPServerRegistry.server(forLanguage: "kotlin")!
+            let base = Self.definition(languageID: "kotlin", command: "kotlin-language-server")
             var override = LSPServerOverride()
             override.command = "/custom/kotlin-language-server"
             LSPServerOverrideStore.set(override, for: base.command)
@@ -118,12 +135,12 @@ struct LSPServerOverrideStoreTests {
         }
     }
 
-    /// Arguments are re-tokenized the same way the registry itself stores
-    /// them — one string per element, not a single packed string handed to
+    /// Arguments are re-tokenized the same way a definition carries them —
+    /// one string per element, not a single packed string handed to
     /// `Process`.
     @Test func overriddenArgumentsAreSplitIntoTokens() {
         withCleanDefaults {
-            let base = LSPServerRegistry.server(forLanguage: "vue")!
+            let base = Self.definition(languageID: "vue", command: "vue-language-server")
             var override = LSPServerOverride()
             override.arguments = "--stdio --log verbose"
             LSPServerOverrideStore.set(override, for: base.command)
@@ -189,8 +206,10 @@ struct LSPServerOverrideStoreTests {
     /// equally to every language id that shares one binary.
     @Test func anOverrideAppliesToEveryLanguageSharingTheBinary() {
         withCleanDefaults {
-            let typescript = LSPServerRegistry.server(forLanguage: "typescript")!
-            let javascript = LSPServerRegistry.server(forLanguage: "javascript")!
+            let typescript = Self.definition(
+                languageID: "typescript", command: "typescript-language-server")
+            let javascript = Self.definition(
+                languageID: "javascript", command: "typescript-language-server")
             #expect(typescript.command == javascript.command)
 
             var override = LSPServerOverride()

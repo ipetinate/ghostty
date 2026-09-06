@@ -42,7 +42,6 @@ struct EditorEngineBoundaryTests {
         "LanguageManifest",
         "LanguageResolver",
         "LanguageTrust",
-        "LSPServerRegistry",
         "CompletionBridge",
         "CompletionKindMapping",
         "CompletionIconFont",

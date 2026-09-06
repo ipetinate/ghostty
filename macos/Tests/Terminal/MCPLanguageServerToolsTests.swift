@@ -56,29 +56,6 @@ struct MCPLanguageServerToolsTests {
 
     // MARK: Naming a server
 
-    /// Both spellings, because `list_language_servers` reports both and a
-    /// model handed two strings will use either.
-    @Test func aServerIsFoundByItsNameOrItsCommand() throws {
-        let known = try #require(LSPServerRegistry.distinctServers.first)
-
-        #expect(MCPLanguageServerTools.server(known.displayName)?.command == known.command)
-        #expect(MCPLanguageServerTools.server(known.command)?.command == known.command)
-    }
-
-    /// The name is prose in the interface. Refusing it over a capital letter
-    /// would be a refusal about nothing.
-    @Test func theNameIsMatchedWithoutRegardForCase() throws {
-        let known = try #require(LSPServerRegistry.distinctServers.first)
-
-        #expect(
-            MCPLanguageServerTools.server(known.displayName.uppercased())?.command
-                == known.command)
-    }
-
-    @Test func anUnknownNameIsNotFound() {
-        #expect(MCPLanguageServerTools.server("not-a-server-anybody-has") == nil)
-    }
-
     private var contributedLua: LSPServerDefinition {
         LSPServerDefinition(
             languageID: "lua",
@@ -95,16 +72,59 @@ struct MCPLanguageServerToolsTests {
         )
     }
 
-    @Test func aContributedServerIsFoundByNameCommandOrLanguageID() throws {
-        let builtIn = try #require(LSPServerRegistry.distinctServers.first)
-        let servers = MCPLanguageServerTools.knownServers(
-            builtIn: [builtIn], contributed: [contributedLua]
+    private var contributedGo: LSPServerDefinition {
+        LSPServerDefinition(
+            languageID: "go",
+            displayName: "gopls (acme)",
+            command: "gopls",
+            arguments: [],
+            installHint: "go install golang.org/x/tools/gopls@latest",
+            origin: .manifest(ExtensionProvenance(
+                extensionID: "acme.go",
+                digest: "1",
+                manifestPath: "/Users/x/.config/phantom/extensions/acme.go/extension.json",
+                scope: .user
+            ))
         )
+    }
 
-        #expect(MCPLanguageServerTools.server("Lua (acme)", among: servers) == contributedLua)
-        #expect(MCPLanguageServerTools.server("lua-language-server", among: servers) == contributedLua)
-        #expect(MCPLanguageServerTools.server("LUA", among: servers) == contributedLua)
-        #expect(MCPLanguageServerTools.server(builtIn.languageID, among: servers) == builtIn)
+    /// The list is passed in rather than read off `LanguageResolver`, and
+    /// that is the point of the `among:` half of the interface existing: the
+    /// answer must not depend on which extensions the machine running the
+    /// suite happens to have installed, which after 0.17.0 is the only thing
+    /// the singular form could report.
+    private var installed: [LSPServerDefinition] {
+        MCPLanguageServerTools.knownServers(contributed: [contributedLua, contributedGo])
+    }
+
+    /// Both spellings, because `list_language_servers` reports both and a
+    /// model handed two strings will use either.
+    @Test func aServerIsFoundByItsNameOrItsCommand() {
+        #expect(
+            MCPLanguageServerTools.server("Lua (acme)", among: installed)?.command
+                == "lua-language-server")
+        #expect(
+            MCPLanguageServerTools.server("lua-language-server", among: installed)?.command
+                == "lua-language-server")
+    }
+
+    /// The name is prose in the interface. Refusing it over a capital letter
+    /// would be a refusal about nothing.
+    @Test func theNameIsMatchedWithoutRegardForCase() {
+        #expect(
+            MCPLanguageServerTools.server("LUA (ACME)", among: installed)?.command
+                == "lua-language-server")
+    }
+
+    @Test func anUnknownNameIsNotFound() {
+        #expect(MCPLanguageServerTools.server("not-a-server-anybody-has", among: installed) == nil)
+    }
+
+    /// The language id is tried last, so a name that is also some other
+    /// server's language id still means the name.
+    @Test func aServerIsAlsoFoundByTheLanguageItServes() {
+        #expect(MCPLanguageServerTools.server("lua", among: installed) == contributedLua)
+        #expect(MCPLanguageServerTools.server("go", among: installed) == contributedGo)
     }
 
     @Test func theNameWinsOverALanguageIDThatSpellsTheSame() {
@@ -112,66 +132,64 @@ struct MCPLanguageServerToolsTests {
             languageID: "python", displayName: "lua", command: "pyright-langserver",
             arguments: [], installHint: ""
         )
-        let servers = MCPLanguageServerTools.knownServers(builtIn: [named], contributed: [contributedLua])
+        let servers = MCPLanguageServerTools.knownServers(contributed: [named, contributedLua])
 
         #expect(MCPLanguageServerTools.server("lua", among: servers) == named)
     }
 
+    /// One entry per distinct binary. Two extensions shipping the same
+    /// command would otherwise report one process twice, and a model reading
+    /// the list has no way to tell that is one thing.
     @Test func oneCommandIsListedOnce() {
         let twin = LSPServerDefinition(
             languageID: "lua", displayName: "Lua", command: "lua-language-server",
             arguments: [], installHint: ""
         )
-        let servers = MCPLanguageServerTools.knownServers(builtIn: [twin], contributed: [contributedLua])
+        let servers = MCPLanguageServerTools.knownServers(contributed: [twin, contributedLua])
 
         #expect(servers == [twin])
     }
 
-    @Test func theListingSaysWhereEachServerCameFrom() throws {
-        let builtIn = try #require(LSPServerRegistry.distinctServers.first)
+    /// Every server a caller can name came from an extension, so the listing
+    /// says which one — but `built-in` is still answered for a definition
+    /// that carries no provenance, rather than left to a crash.
+    @Test func theListingSaysWhereEachServerCameFrom() {
+        let anonymous = LSPServerDefinition(
+            languageID: "lua", displayName: "Lua", command: "lua-language-server",
+            arguments: [], installHint: ""
+        )
 
-        #expect(MCPLanguageServerTools.origin(of: builtIn) == "built-in")
+        #expect(MCPLanguageServerTools.origin(of: anonymous) == "built-in")
         #expect(MCPLanguageServerTools.origin(of: contributedLua) == "extension:acme.lua")
-    }
-
-    @Test func theRefusalNamesContributedServersToo() {
-        let reason = MCPLanguageServerTools.unknownServer("nonsense", among: [contributedLua])
-
-        #expect(reason.contains("Lua (acme)"))
     }
 
     /// A refusal that only says "no such server" leaves the caller guessing at
     /// spellings, so it lists what there is.
-    @Test func theRefusalNamesTheServersThatExist() throws {
-        let known = try #require(LSPServerRegistry.distinctServers.first)
-
-        let reason = MCPLanguageServerTools.unknownServer("nonsense")
+    @Test func theRefusalNamesTheServersThatExist() {
+        let reason = MCPLanguageServerTools.unknownServer("nonsense", among: installed)
 
         #expect(reason.contains("list_language_servers"))
-        #expect(reason.contains(known.displayName))
+        #expect(reason.contains("Lua (acme)"))
+        #expect(reason.contains("gopls (acme)"))
     }
 
     // MARK: What the reader is asked to approve
 
     /// Both sides of the change. "Set initializationOptions" says nothing
     /// about what is being replaced.
-    @Test func theQuestionShowsWhatItIsNowAndWhatItWouldBecome() throws {
-        let known = try #require(LSPServerRegistry.distinctServers.first)
+    @Test func theQuestionShowsWhatItIsNowAndWhatItWouldBecome() {
+        let sentence = MCPLanguageServerTools.diff(contributedLua, to: "{\"plugins\":[]}")
 
-        let sentence = MCPLanguageServerTools.diff(known, to: "{\"plugins\":[]}")
-
-        #expect(sentence.contains(known.displayName))
+        #expect(sentence.contains("Lua (acme)"))
         #expect(sentence.contains("Now:"))
         #expect(sentence.contains("Proposed:"))
         #expect(sentence.contains("{\"plugins\":[]}"))
     }
 
     /// Going back to the default is a change too, and reads as harmless until
-    /// you know the default is what made Vue work.
-    @Test func goingBackToTheDefaultIsSaidInWords() throws {
-        let known = try #require(LSPServerRegistry.distinctServers.first)
-
-        let sentence = MCPLanguageServerTools.diff(known, to: "")
+    /// you know the default is what made the server work at all.
+    @Test func goingBackToTheDefaultIsSaidInWords() {
+        let sentence = MCPLanguageServerTools.diff(contributedLua, to: "")
 
         #expect(sentence.contains("this app's own default"))
     }

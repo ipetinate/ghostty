@@ -11,14 +11,32 @@ import Testing
 /// of it delivered: the reader gets brace matching on a file that has a
 /// published schema.
 struct JSONSchemaAssociationsTests {
-    @Test func onlyTheJSONServerIsSentAssociations() throws {
-        let json = try #require(LSPServerRegistry.server(forLanguage: "json"))
-        let yaml = try #require(LSPServerRegistry.server(forLanguage: "yaml"))
-        let typescript = try #require(LSPServerRegistry.server(forLanguage: "typescript"))
+    /// Keyed on the **command**, not on the `json` language id. That id is
+    /// one an extension may bring its own server for, and that server would
+    /// be sent a notification it has no handler for — which some servers log
+    /// as an error and a few refuse the connection over.
+    @Test func onlyTheJSONServerIsSentAssociations() {
+        func server(_ command: String, languageID: String) -> LSPServerDefinition {
+            LSPServerDefinition(
+                languageID: languageID,
+                displayName: command,
+                command: command,
+                arguments: ["--stdio"],
+                installHint: ""
+            )
+        }
 
-        #expect(JSONSchemaAssociations.payload(for: json) != nil)
-        #expect(JSONSchemaAssociations.payload(for: yaml) == nil)
-        #expect(JSONSchemaAssociations.payload(for: typescript) == nil)
+        #expect(JSONSchemaAssociations.payload(
+            for: server(JSONSchemaAssociations.serverCommand, languageID: "json")) != nil)
+        #expect(JSONSchemaAssociations.payload(
+            for: server("yaml-language-server", languageID: "yaml")) == nil)
+        #expect(JSONSchemaAssociations.payload(
+            for: server("typescript-language-server", languageID: "typescript")) == nil)
+
+        /// The near miss the keying exists for: some other extension's server
+        /// claiming the `json` id is sent nothing.
+        #expect(JSONSchemaAssociations.payload(
+            for: server("acme-json-ls", languageID: "json")) == nil)
     }
 
     /// The server fetches these itself, so anything but `https` would be

@@ -6,63 +6,30 @@ import Testing
 /// settings do to it, and — the part that can lose work — how a finished run is
 /// read.
 struct ExternalFormatterTests {
-    // MARK: The table
+    // MARK: A formatter to have settings about
 
-    /// Every row has to be runnable. A blank command or an empty extension set
-    /// is a row that silently never fires, which is indistinguishable from the
-    /// gap it was added to close.
-    @Test func everyFormatterIsComplete() {
-        for formatter in ExternalFormatterRegistry.all {
-            #expect(!formatter.command.isEmpty, "\(formatter.id)")
-            #expect(!formatter.extensions.isEmpty, "\(formatter.id)")
-            #expect(!formatter.installHint.isEmpty, "\(formatter.id)")
-            #expect(!formatter.displayName.isEmpty, "\(formatter.id)")
-        }
-    }
-
-    @Test func idsAndExtensionsAreClaimedOnce() {
-        let ids = ExternalFormatterRegistry.all.map(\.id)
-        #expect(Set(ids).count == ids.count)
-
-        var seen: Set<String> = []
-        for formatter in ExternalFormatterRegistry.all {
-            for ext in formatter.extensions {
-                #expect(!seen.contains(ext), "\(ext) is claimed twice")
-                seen.insert(ext)
-            }
-        }
-    }
-
-    /// None of them asks anything of a project, which is what makes this a
-    /// table of tools rather than of routing. A tool that wants a project to
-    /// declare it says so in a manifest — see `FormatterProjectTests`.
-    @Test func nothingHereAsksAProjectForAnything() {
-        for formatter in ExternalFormatterRegistry.all {
-            #expect(!formatter.projectRules.declaresAdoption, "\(formatter.id)")
-            #expect(formatter.projectRules.workingDirectory == .file, "\(formatter.id)")
-        }
-    }
-
-    @Test func aFileIsMatchedByItsExtensionWhateverItsCase() {
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "main.py")?.id == "python")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "MAIN.PY")?.id == "python")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "deploy.sh")?.id == "shellscript")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "init.lua")?.id == "lua")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "pom.xml")?.id == "xml")
-    }
-
-    @Test func aFileNobodyClaimsGetsNoFormatter() {
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "main.rs") == nil)
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "Makefile") == nil)
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "") == nil)
+    /// A formatter an extension contributed, built here because after 0.17.0
+    /// nothing else can build one: this build ships no table of tools. What
+    /// stays in the binary is everything below — the `$FILE` substitution, the
+    /// reader's own settings, and how a finished run is read.
+    private func ruff(arguments: [String] = ["format", ExternalFormatter.filePlaceholder, "-"])
+        -> ExternalFormatter {
+        ExternalFormatter(
+            id: "python",
+            languageName: "Python",
+            displayName: "Ruff",
+            command: "ruff",
+            arguments: arguments,
+            extensions: ["py"],
+            installHint: "brew install ruff",
+            note: nil)
     }
 
     /// The name is what these tools read their own configuration from — a
     /// `pyproject.toml` above the file, a `stylua.toml` — so a placeholder
     /// left unsubstituted means every project gets the tool's defaults.
-    @Test func thePlaceholderBecomesTheFilePath() throws {
-        let ruff = try #require(ExternalFormatterRegistry.byID["python"])
-        let arguments = ruff.arguments(for: "/repo/app/main.py")
+    @Test func thePlaceholderBecomesTheFilePath() {
+        let arguments = ruff().arguments(for: "/repo/app/main.py")
 
         #expect(arguments.contains("/repo/app/main.py"))
         #expect(!arguments.contains(ExternalFormatter.filePlaceholder))
@@ -72,31 +39,29 @@ struct ExternalFormatterTests {
     // MARK: The reader's settings
 
     @Test func aFormatterSwitchedOffDoesNotRun() {
-        let ruff = ExternalFormatterRegistry.byID["python"]!
         var setting = ExternalFormatterSetting()
         setting.isEnabled = false
 
-        #expect(ExternalFormatterStore.effective(ruff, setting: setting) == nil)
+        #expect(ExternalFormatterStore.effective(ruff(), setting: setting) == nil)
     }
 
     /// One field at a time, which is what makes "point it at the ruff in my
     /// virtualenv" a one-field edit rather than a retype of the arguments.
     @Test func aBlankFieldFallsThroughToTheDefault() throws {
-        let ruff = ExternalFormatterRegistry.byID["python"]!
+        let formatter = ruff()
         var setting = ExternalFormatterSetting()
         setting.command = "/venv/bin/ruff"
 
-        let effective = try #require(ExternalFormatterStore.effective(ruff, setting: setting))
+        let effective = try #require(ExternalFormatterStore.effective(formatter, setting: setting))
         #expect(effective.command == "/venv/bin/ruff")
-        #expect(effective.arguments == ruff.arguments)
+        #expect(effective.arguments == formatter.arguments)
     }
 
     @Test func typedArgumentsReplaceTheDefaultsWhole() throws {
-        let ruff = ExternalFormatterRegistry.byID["python"]!
         var setting = ExternalFormatterSetting()
         setting.arguments = "format  --line-length 100 -"
 
-        let effective = try #require(ExternalFormatterStore.effective(ruff, setting: setting))
+        let effective = try #require(ExternalFormatterStore.effective(ruff(), setting: setting))
         #expect(effective.arguments == ["format", "--line-length", "100", "-"])
     }
 
@@ -354,72 +319,5 @@ struct ExternalFormatterTests {
         try "#!/bin/sh\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         return url
-    }
-}
-
-/// The same runner against the tools themselves, on a machine that has them.
-///
-/// The suite above proves the rules with stubs, which is what makes it run
-/// anywhere. This one proves the arguments: a flag these tools do not take is
-/// an exit code and an empty buffer, and no stub can tell you that `ruff` wants
-/// `--stdin-filename` while `stylua` wants `--stdin-filepath`.
-///
-/// Each test is skipped where its tool is not installed, so this stays honest
-/// on a machine — or a CI runner — without them.
-struct InstalledFormatterTests {
-    private static func path(_ command: String) -> String? {
-        ExternalFormatterRunner.locate(command, searchPath: LoginEnvironment.executableSearchPath())
-    }
-
-    private func run(_ id: String, _ text: String, named name: String) throws -> String? {
-        let formatter = try #require(ExternalFormatterRegistry.byID[id])
-        return try ExternalFormatterRunner.format(
-            text,
-            filePath: "/tmp/\(name)",
-            formatter: formatter,
-            searchPath: LoginEnvironment.executableSearchPath())
-    }
-
-    @Test(.enabled(if: path("ruff") != nil))
-    func ruffFormatsPython() throws {
-        let formatted = try run("python", "def   f( a,b ):\n  return   a+b\n", named: "main.py")
-
-        #expect(formatted == "def f(a, b):\n    return a + b\n")
-    }
-
-    @Test(.enabled(if: path("shfmt") != nil))
-    func shfmtFormatsShell() throws {
-        let formatted = try run("shellscript", "x=1\nif [ 1 ];then\necho hi\nfi\n", named: "deploy.sh")
-
-        #expect(formatted == "x=1\nif [ 1 ]; then\n\techo hi\nfi\n")
-    }
-
-    @Test(.enabled(if: path("stylua") != nil))
-    func styluaFormatsLua() throws {
-        let formatted = try run("lua", "local   x = 1\n", named: "init.lua")
-
-        #expect(formatted == "local x = 1\n")
-    }
-
-    @Test(.enabled(if: path("xmllint") != nil))
-    func xmllintFormatsXML() throws {
-        let formatted = try run("xml", "<a><b>1</b></a>\n", named: "doc.xml")
-
-        #expect(formatted?.contains("  <b>1</b>") == true)
-    }
-
-    /// The failure that matters, against the real tool: a buffer mid-edit is a
-    /// parse error, and it has to arrive as a failure rather than as an empty
-    /// file.
-    @Test(.enabled(if: path("ruff") != nil))
-    func aPythonBufferMidEditFailsRatherThanEmptying() {
-        do {
-            let formatted = try run("python", "def f(\n", named: "main.py")
-            #expect(Bool(false), "expected a failure, got \(String(describing: formatted))")
-        } catch let failure as ExternalFormatterFailure {
-            #expect(failure.reason.hasPrefix("Ruff"))
-        } catch {
-            #expect(Bool(false), "wrong error: \(error)")
-        }
     }
 }

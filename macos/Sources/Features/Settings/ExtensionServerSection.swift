@@ -26,29 +26,30 @@ struct ExtensionServerSection: View {
 
     private var isRunning: Bool { runningCommand == server.command }
 
+    /// The sections are returned side by side rather than from a `Group`.
+    /// A modifier on a `Group` of `Section`s collapses it into one opaque
+    /// view, and the `Form` then draws the headers without the controls
+    /// under them — which is how the override fields shipped invisible.
     var body: some View {
-        Group {
-            section
-
-            ServerOverrideFields(
-                defaultCommand: server.command,
-                defaultArguments: server.arguments
-            )
-            .id(server.id)
-        }
-        .confirmationDialog(
-            "Uninstall \(server.displayName)?",
-            isPresented: $showUninstallConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Uninstall", role: .destructive) {
-                guard let command = install?.uninstall else { return }
-                start(command)
+        section
+            .confirmationDialog(
+                "Uninstall \(server.displayName)?",
+                isPresented: $showUninstallConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Uninstall", role: .destructive) {
+                    guard let command = install?.uninstall else { return }
+                    start(command)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(verbatim: "Runs \(install?.uninstall ?? "") in a terminal with your login environment.")
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(verbatim: "Runs \(install?.uninstall ?? "") in a terminal with your login environment.")
-        }
+
+        ServerOverrideFields(
+            defaultCommand: server.command,
+            defaultArguments: server.arguments
+        )
     }
 
     private var section: some View {

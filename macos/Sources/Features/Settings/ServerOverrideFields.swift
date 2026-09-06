@@ -1,31 +1,31 @@
 import SwiftUI
 
-/// The three editable override sections — binary, arguments, raw
-/// `initializationOptions` JSON — shared by every server row in Settings.
+/// The three things a reader may say about how one server is launched: which
+/// binary, which arguments, and what `initializationOptions` to send.
 ///
-/// Extracted rather than copied, because there is exactly one place a
-/// user's override is written and a second pair of these `TextField`s would
-/// be a second place for that write to drift. It is also the honest way to
-/// give a contributed server "the same override form" without giving it an
-/// Install button it has no command for.
+/// **Two sections, returned side by side and never wrapped.** A `Group` of
+/// `Section`s stops being sections the moment a modifier lands on it, and a
+/// `Form` then draws one opaque view: the headers survive, the fields inside
+/// do not. That is not a hypothetical — it shipped, and the override fields
+/// were invisible while their headers still read "Override". Every modifier
+/// here attaches to a single `Section` for that reason.
 ///
-/// Keyed by the server's **default** command, which is
-/// `LSPServerOverrideStore`'s key and not the field being edited — see that
-/// type for why the identity of "which server is this a setting for" cannot
-/// be the thing the reader is changing.
+/// The stored value is re-read whenever `defaultCommand` changes rather than
+/// only at init, which is what lets one form show a different server without
+/// the caller giving this view a new identity.
 struct ServerOverrideFields: View {
     let defaultCommand: String
     let defaultArguments: [String]
 
-    @State private var override: LSPServerOverride
+    @State private var override = LSPServerOverride()
+    @State private var loaded: String?
 
-    init(defaultCommand: String, defaultArguments: [String]) {
-        self.defaultCommand = defaultCommand
-        self.defaultArguments = defaultArguments
-        _override = State(
-            initialValue: LSPServerOverrideStore.override(for: defaultCommand) ?? LSPServerOverride()
-        )
-    }
+    /// What the last restart did, so the button says something happened.
+    ///
+    /// A button that changes nothing visible reads as a broken button, and
+    /// this one's whole effect is somewhere else — a server that is quietly
+    /// running with different options now.
+    @State private var restartNote: String?
 
     /// Stops this server under every command it could be running as — the
     /// default, and whatever the reader has typed over it — and re-announces
@@ -37,70 +37,70 @@ struct ServerOverrideFields: View {
             : "Stopped \(outcome.stopped) workspace\(outcome.stopped == 1 ? "" : "s")."
     }
 
-    /// What the last restart did, so the button says something happened.
-    ///
-    /// A button that changes nothing visible reads as a broken button, and
-    /// this one's whole effect is somewhere else — a server that is quietly
-    /// running with different options now.
-    @State private var restartNote: String?
+    private func load() {
+        override = LSPServerOverrideStore.override(for: defaultCommand) ?? LSPServerOverride()
+        loaded = defaultCommand
+        restartNote = nil
+    }
+
+    /// Persists only what the reader typed. The load above assigns to the same
+    /// state this watches, and writing that back would store a value nobody
+    /// entered over one somebody did.
+    private func persist(_ value: LSPServerOverride) {
+        guard loaded == defaultCommand else { return }
+        LSPServerOverrideStore.set(value, for: defaultCommand)
+    }
 
     var body: some View {
-        Group {
-            Section {
-                TextField("Command", text: $override.command, prompt: Text(verbatim: defaultCommand))
-                TextField(
-                    "Arguments",
-                    text: $override.arguments,
-                    prompt: Text(verbatim: defaultArguments.joined(separator: " "))
-                )
-            } header: {
-                Text("Override")
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(
-                        """
-                        Blank uses the default above. Takes effect the next \
-                        time this server starts for a workspace.
-                        """
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                    /// Here rather than only in the sentence above, because
-                    /// the reader who just changed a field is the reader who
-                    /// needs it applied, and the instruction they used to get
-                    /// was to relaunch the app.
-                    HStack(spacing: 8) {
-                        Button("Restart Server") { restart() }
-                        if let note = restartNote {
-                            Text(note)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-            Section {
-                TextEditor(text: $override.initializationOptionsJSON)
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(minHeight: 120)
-            } header: {
-                Text("initializationOptions (JSON)")
-            } footer: {
+        Section {
+            TextField("Command", text: $override.command, prompt: Text(verbatim: defaultCommand))
+            TextField(
+                "Arguments",
+                text: $override.arguments,
+                prompt: Text(verbatim: defaultArguments.joined(separator: " "))
+            )
+        } header: {
+            Text("Override")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(
                     """
-                    Sent to the server at startup. Left blank, the \
-                    extension's own `initializationOptions` are used where it \
-                    declared any, and nothing where it did not.
+                    Blank uses the default above. Takes effect the next \
+                    time this server starts for a workspace.
                     """
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Button("Restart Server") { restart() }
+                    if let note = restartNote {
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
-        .onChange(of: override) { value in
-            LSPServerOverrideStore.set(value, for: defaultCommand)
+        .task(id: defaultCommand) { load() }
+        .onChange(of: override) { value in persist(value) }
+
+        Section {
+            TextEditor(text: $override.initializationOptionsJSON)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(minHeight: 120)
+        } header: {
+            Text("initializationOptions (JSON)")
+        } footer: {
+            Text(
+                """
+                Sent to the server at startup. Left blank, the \
+                extension's own `initializationOptions` are used where it \
+                declared any, and nothing where it did not.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 }

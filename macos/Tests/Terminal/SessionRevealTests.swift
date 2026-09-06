@@ -46,7 +46,7 @@ struct SessionRevealTests {
         let queue = DispatchQueue(label: "reveal-test")
         queue.suspend()
 
-        PhantomSessionStore.scheduleReveal(of: spy, on: queue)
+        PhantomSessionStore.scheduleReveal(of: spy, on: queue, appIsActive: { true })
 
         #expect(spy.orderedFront == 0)
         #expect(spy.madeKey == 0)
@@ -63,14 +63,33 @@ struct SessionRevealTests {
         let queue = DispatchQueue(label: "reveal-test")
         var stateAtFollowUp: (front: Int, key: Int)?
 
-        PhantomSessionStore.scheduleReveal(of: spy, on: queue) {
-            stateAtFollowUp = (spy.orderedFront, spy.madeKey)
-        }
+        PhantomSessionStore.scheduleReveal(
+            of: spy,
+            on: queue,
+            appIsActive: { true },
+            then: { stateAtFollowUp = (spy.orderedFront, spy.madeKey) })
         queue.sync {}
 
         #expect(spy.orderedFront == 1)
         #expect(spy.madeKey == 1)
         #expect(stateAtFollowUp?.front == 1)
         #expect(stateAtFollowUp?.key == 1)
+    }
+
+    @Test func anInactiveRestoreForcesNothingInFrontOfTheReader() {
+        let spy = makeSpy()
+        let queue = DispatchQueue(label: "reveal-test")
+        var followedUp = false
+
+        PhantomSessionStore.scheduleReveal(
+            of: spy,
+            on: queue,
+            appIsActive: { false },
+            then: { followedUp = true })
+        queue.sync {}
+
+        #expect(spy.orderedFront == 0)
+        #expect(spy.madeKey == 0)
+        #expect(followedUp)
     }
 }

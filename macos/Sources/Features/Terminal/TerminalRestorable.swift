@@ -274,7 +274,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             // prevents a bug found in #1177 where sometimes on restore the windows
             // would be behind other applications.
             if viewWindow.isMainWindow {
-                viewWindow.orderFront(nil)
+                WindowSpaceSafety.orderFront(viewWindow, .front, from: .appKitRestoreFocus)
             }
         }
     }

@@ -75,10 +75,8 @@ enum WindowGhostRescue {
             else { return }
 
             WindowBreadcrumbs.note(
-                "rescue: reopen left no terminal reachable, ordering front " +
-                "window=\(window.windowNumber) visible=\(window.isVisible) " +
-                "onActiveSpace=\(window.isOnActiveSpace)")
-            window.makeKeyAndOrderFront(nil)
+                "rescue: reopen left no terminal reachable, visible=\(window.isVisible)")
+            WindowSpaceSafety.orderFront(window, .keyAndFront, from: .reopenRescue)
         }
     }
 }

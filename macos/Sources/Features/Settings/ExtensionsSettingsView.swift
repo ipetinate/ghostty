@@ -152,16 +152,33 @@ struct ExtensionsSettingsView: View {
         } else if sections.isEmpty {
             Section { message(emptyMessage) }
         } else if !sections.entries.isEmpty {
-            Section {
-                ForEach(sections.entries) { entry in
-                    entryRow(entry)
+            if kind == .all {
+                ForEach(ExtensionCatalogGrouping.groups(sections.entries)) { group in
+                    Section {
+                        ForEach(group.entries) { entry in
+                            entryRow(entry)
+                        }
+                    } header: {
+                        Label(group.title, systemImage: group.systemImage)
+                    }
                 }
-            } header: {
-                Text("Registry")
-            } footer: {
-                Text("Each extension is a zip published as a GitHub release of the registry. Phantom checks its digest against the index before unpacking it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Section {
+                    Text("Each extension is a zip published as a GitHub release of the registry. Phantom checks its digest against the index before unpacking it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Section {
+                    ForEach(sections.entries) { entry in
+                        entryRow(entry)
+                    }
+                } header: {
+                    Text("Registry")
+                } footer: {
+                    Text("Each extension is a zip published as a GitHub release of the registry. Phantom checks its digest against the index before unpacking it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
 

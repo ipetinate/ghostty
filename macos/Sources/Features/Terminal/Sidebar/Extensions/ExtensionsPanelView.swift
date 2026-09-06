@@ -145,6 +145,13 @@ struct ExtensionsPanelView: View {
                     message("The registry has no extensions yet.")
                 } else if sections.isEmpty {
                     message(emptyMessage)
+                } else if kind == .all {
+                    ForEach(ExtensionCatalogGrouping.groups(sections.entries)) { group in
+                        heading(group.title, systemImage: group.systemImage)
+                        ForEach(group.entries) { entry in
+                            row(for: entry)
+                        }
+                    }
                 } else {
                     ForEach(sections.entries) { entry in
                         row(for: entry)
@@ -152,12 +159,7 @@ struct ExtensionsPanelView: View {
                 }
 
                 if !sections.orphans.isEmpty {
-                    Text("Installed, not in the registry")
-                        .font(palette.font(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 8)
-                        .padding(.bottom, 2)
+                    heading("Installed, not in the registry", systemImage: "questionmark.folder")
                     ForEach(sections.orphans) { installed in
                         row(for: installed)
                     }
@@ -166,6 +168,16 @@ struct ExtensionsPanelView: View {
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
         }
+    }
+
+    private func heading(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(palette.font(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .padding(.horizontal, 8)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
     }
 
     private func row(for entry: ExtensionIndex.Entry) -> some View {

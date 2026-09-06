@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ExtensionPaneView: View {
     let document: ExtensionDocument
-    let theme: CodeTheme
 
     @ObservedObject private var store: ExtensionStore = .shared
     @ObservedObject private var palette: ThemePalette = .shared
@@ -30,8 +29,6 @@ struct ExtensionPaneView: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: theme.background)
-
             if entry == nil && installed == nil {
                 if store.isRefreshing || store.index == nil {
                     ProgressView()

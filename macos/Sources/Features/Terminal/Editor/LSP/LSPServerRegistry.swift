@@ -920,6 +920,12 @@ enum LSPServerRegistry {
         return languageIDByExtension[ext]
     }
 
+    static func category(forLanguageID languageID: String) -> LSPServerCategory? {
+        (all + nativeServers + tailwindServers)
+            .first { $0.languageID == languageID }?
+            .category
+    }
+
     /// One entry per distinct binary, for a UI that lists what could be
     /// installed — listing the TypeScript server four times because four
     /// language ids point at it would be noise.

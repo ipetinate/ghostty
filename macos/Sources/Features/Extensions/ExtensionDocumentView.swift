@@ -36,6 +36,7 @@ struct ExtensionDocumentView: NSViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsMagnification = false
         webView.setValue(false, forKey: "drawsBackground")
+        webView.underPageBackgroundColor = .clear
         #if DEBUG
         if #available(macOS 13.3, *) {
             webView.isInspectable = true

@@ -352,6 +352,11 @@ struct EditorTabSet: Equatable {
         selection = .file(tab.path)
     }
 
+    mutating func setTitle(_ title: String, for path: String) {
+        guard let index = tabs.firstIndex(where: { $0.path == path }) else { return }
+        tabs[index].title = title
+    }
+
     mutating func setDirty(_ isDirty: Bool, for path: String) {
         guard let index = tabs.firstIndex(where: { $0.path == path }) else { return }
         tabs[index].isDirty = isDirty

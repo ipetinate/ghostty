@@ -173,7 +173,14 @@ final class EditorCenter: ObservableObject {
         let group = EditorGroup(hostsTerminal: true)
         tree = .leaf(group)
         activeGroupID = group.id
+
+        ExtensionStore.shared.$index
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.retitleExtensions() }
+            .store(in: &storeObservers)
     }
+
+    private var storeObservers: Set<AnyCancellable> = []
 
     // MARK: Routing a change to a cell
 
@@ -578,8 +585,41 @@ final class EditorCenter: ObservableObject {
         return true
     }
 
+    /// The name the tab wears for an extension.
+    ///
+    /// A restored tab is opened before the registry has been fetched, so the
+    /// installed set is the only source there is at that moment and an
+    /// extension browsed but never installed is in neither. Falling back to
+    /// the identifier put `phantom.go` on the tab; the last component of the
+    /// identifier, spelled as words, reads as the name until the index lands
+    /// and ``retitleExtensions()`` replaces it with the real one.
     static func restoredExtensionTitle(_ extensionID: String) -> String {
-        ExtensionStore.shared.installed.first { $0.id == extensionID }?.name ?? extensionID
+        if let installed = ExtensionStore.shared.installed.first(where: { $0.id == extensionID }) {
+            return installed.name
+        }
+        if let entry = ExtensionStore.shared.index?.extensions.first(where: { $0.id == extensionID }) {
+            return entry.card?.title ?? entry.name
+        }
+        return readableExtensionName(extensionID)
+    }
+
+    static func readableExtensionName(_ extensionID: String) -> String {
+        let name = extensionID.split(separator: ".").last.map(String.init) ?? extensionID
+        guard !name.isEmpty else { return extensionID }
+        return name
+            .split(whereSeparator: { $0 == "-" || $0 == "_" })
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    /// Puts the real name on every extension tab once the registry answers.
+    func retitleExtensions() {
+        for (path, document) in extensions {
+            let title = Self.restoredExtensionTitle(document.extensionID)
+            guard title != document.title else { continue }
+            extensions[path] = ExtensionDocument(extensionID: document.extensionID, title: title)
+            mutateHolder(of: path) { $0.setTitle(title, for: path) }
+        }
     }
 
     func openExtension(_ document: ExtensionDocument) {

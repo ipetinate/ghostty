@@ -191,7 +191,7 @@ struct EditorPaneView: View {
             MediaPaneView(document: media, theme: theme)
                 .id(media.id)
         } else if let extensionDocument = center.selected(in: groupID)?.extensionDocument {
-            ExtensionPaneView(document: extensionDocument, theme: theme)
+            ExtensionPaneView(document: extensionDocument)
         } else {
             Color.clear
         }

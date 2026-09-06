@@ -1,11 +1,15 @@
 import Foundation
 
-/// The kind of language a server's workspace deals in, used to group the
-/// settings list into readable sections.
+/// The kind of language an extension deals in, used to group the store's
+/// listing into readable sections.
 ///
-/// Deliberately coarser than "one category per server": the point of the
-/// grouping is that a user scanning for "the Python server" or "the one for
-/// C" can land in the right neighborhood without reading every row.
+/// Declared by the registry index, one or more per entry — the settings list
+/// this used to group is gone, and nothing in this build guesses a family for
+/// an entry that declares none.
+///
+/// Deliberately coarser than "one category per extension": the point of the
+/// grouping is that a reader scanning for "the Python one" or "the one for C"
+/// can land in the right neighborhood without reading every row.
 enum LSPServerCategory: String, CaseIterable, Hashable, Sendable, Identifiable {
     /// Interpreted or just-in-time languages whose sources run as-is.
     case script
@@ -36,11 +40,11 @@ enum LSPServerCategory: String, CaseIterable, Hashable, Sendable, Identifiable {
 
     var id: String { rawValue }
 
-    /// The section header shown in Settings.
+    /// The heading shown over a group of the store's listing.
     ///
-    /// The sections are ordered by this string, not by the order the cases
-    /// are declared in — so a reader hunting for one scans alphabetically
-    /// instead of learning which family somebody decided was important.
+    /// The groups are ordered by this string, not by the order the cases are
+    /// declared in — so a reader hunting for one scans alphabetically instead
+    /// of learning which family somebody decided was important.
     var title: String {
         switch self {
         case .script: return "Script"
@@ -53,8 +57,8 @@ enum LSPServerCategory: String, CaseIterable, Hashable, Sendable, Identifiable {
         }
     }
 
-    /// An SF Symbol for the section header, when the row icon isn't enough
-    /// to distinguish one section from the next.
+    /// An SF Symbol for the heading, when the row icon isn't enough to
+    /// distinguish one group from the next.
     var systemImage: String {
         switch self {
         case .script: return "chevron.left.forwardslash.chevron.right"

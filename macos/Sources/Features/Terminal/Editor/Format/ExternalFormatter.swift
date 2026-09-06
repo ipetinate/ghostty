@@ -3,20 +3,19 @@ import Foundation
 /// A formatter that is a command, for a language nothing else in this editor
 /// formats.
 ///
-/// The gap this fills was measured rather than assumed: every language server
-/// this app shipped a definition for was started and asked what it offers, and
-/// the answer for Python was that `pyright` has no formatter at all — by
-/// design, it says
-/// so in its own documentation. Shell is the same story one step removed:
-/// `bash-language-server` advertises formatting and shells out to `shfmt`, so
-/// a machine without `shfmt` has a server that says yes and does nothing. Lua
-/// and XML have no server here at all.
+/// The gap it fills is real and was measured rather than assumed: a language
+/// server is asked what it offers, and several answer nothing. `pyright` has
+/// no formatter at all, by design, and says so in its own documentation.
+/// Shell is the same story one step removed — `bash-language-server`
+/// advertises formatting and shells out to `shfmt`, so a machine without
+/// `shfmt` has a server that says yes and does nothing.
 ///
-/// What a tool asks of a project before it rewrites its files — a
-/// configuration that has to exist, a copy installed into the project, a
-/// directory to run in — is `projectRules`, and it is data an extension
-/// declares. This table holds none of it: these four are the tools that are
-/// genuinely one process, text in, text out.
+/// Every value of this type is built from a `contributes.formatters` entry:
+/// there is no compiled-in table left, so an extension is the only thing that
+/// can put a tool in front of a reader. What the tool asks of a project before
+/// it rewrites its files — a configuration that has to exist, a copy installed
+/// into the project, a directory to run in — is `projectRules`, declared in
+/// that same manifest entry.
 struct ExternalFormatter: Identifiable, Hashable, Sendable {
     /// The language, spelled as its LSP `languageId` where there is a server
     /// for it. It is also the settings key, so it does not change.
@@ -53,9 +52,8 @@ struct ExternalFormatter: Identifiable, Hashable, Sendable {
 
     /// What the project has to say before this runs, and where it runs.
     ///
-    /// Empty here means the tool asks for nothing, which is the answer for
-    /// every entry in the table below. A contributed formatter fills it in
-    /// from its manifest.
+    /// Empty means the tool asks for nothing and is run wherever the file is,
+    /// which is the answer for a manifest that declares no rules at all.
     var projectRules = FormatterProjectRules()
 
     var origin: LSPServerOrigin {

@@ -216,9 +216,16 @@ struct ExtensionsPanelView: View {
         .contextMenu { openInSettings(id: installed.id) }
     }
 
+    /// Offered only once the extension is installed, which is the same rule
+    /// the store card and the Extensions pane apply. Nothing is configured
+    /// about an extension that is not on this machine, so the item led to a
+    /// list rather than to settings.
+    @ViewBuilder
     private func openInSettings(id: String) -> some View {
-        Button("Open in Settings") {
-            ExtensionDocumentTabs.openInSettings(id: id)
+        if store.installed.contains(where: { $0.id == id }) {
+            Button("Open in Settings") {
+                ExtensionDocumentTabs.openInSettings(id: id)
+            }
         }
     }
 

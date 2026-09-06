@@ -208,8 +208,10 @@ struct LanguageCatalog: Equatable {
     }
 
     enum Shadow: Equatable, Sendable {
-        /// The compiled-in registry, or the highlighter's own language
-        /// table — either is "a language the user already had".
+        /// Something this build carries itself. No language is any more —
+        /// every one of them arrives in an extension — so what is left to
+        /// shadow a contribution is the agent registry, whose ids an
+        /// extension may not take over.
         case builtIn
 
         /// Another extension, named so Settings can say which.

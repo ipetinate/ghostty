@@ -5,13 +5,14 @@ import Foundation
 /// The kind tabs answer "show me only themes". This answers the other
 /// question a reader has in front of twenty-five rows sorted by name: which
 /// of these are languages I compile, which are languages I run, and which are
-/// not languages at all. Languages split by the same category the settings
-/// list already groups servers under, so the two read alike.
+/// not languages at all. Languages split by `LSPServerCategory`, which the
+/// registry index declares per entry.
 enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
     case language(LSPServerCategory)
     case languages
     case servers
     case formatters
+    case grammars
     case themes
     case iconThemes
     case agents
@@ -23,6 +24,7 @@ enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
         case .languages: return "languages"
         case .servers: return "servers"
         case .formatters: return "formatters"
+        case .grammars: return "grammars"
         case .themes: return "themes"
         case .iconThemes: return "iconThemes"
         case .agents: return "agents"
@@ -36,6 +38,7 @@ enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
         case .languages: return "Languages"
         case .servers: return "Servers"
         case .formatters: return "Formatters"
+        case .grammars: return "Grammars"
         case .themes: return "Themes"
         case .iconThemes: return "Icon Packs"
         case .agents: return "Agents"
@@ -43,15 +46,18 @@ enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
         }
     }
 
+    /// The same mark the entry's own chip carries, so a heading and the row
+    /// under it are one thing rather than two drawings of it.
     var systemImage: String {
         switch self {
         case .language(let category): return category.systemImage
         case .languages: return ExtensionContributionChip.of("languages").systemImage
         case .servers: return ExtensionContributionChip.of("servers").systemImage
         case .formatters: return ExtensionContributionChip.of("formatters").systemImage
+        case .grammars: return ExtensionContributionChip.of("grammars").systemImage
         case .themes: return ExtensionContributionChip.of("themes").systemImage
         case .iconThemes: return ExtensionContributionChip.of("iconThemes").systemImage
-        case .agents: return "sparkles"
+        case .agents: return ExtensionContributionChip.of("agents").systemImage
         case .other: return "shippingbox"
         }
     }
@@ -67,12 +73,11 @@ enum ExtensionCatalogGrouping {
         var systemImage: String { group.systemImage }
     }
 
-    /// The order the headings appear in. Languages first, by the same
-    /// category order the settings list uses, then what an extension can add
-    /// beside a language.
+    /// The order the headings appear in. Languages first, by category title,
+    /// then what an extension can add beside a language.
     static let order: [ExtensionCatalogGroup] =
         LSPServerCategory.allCases.sorted { $0.title < $1.title }.map(ExtensionCatalogGroup.language)
-            + [.languages, .servers, .formatters, .themes, .iconThemes, .agents, .other]
+            + [.languages, .servers, .formatters, .grammars, .themes, .iconThemes, .agents, .other]
 
     /// Where one entry belongs.
     ///
@@ -91,11 +96,12 @@ enum ExtensionCatalogGrouping {
             guard let category = category(for: entry) else { return .languages }
             return .language(category)
         }
-        for kind in ["servers", "formatters", "themes", "iconThemes", "agents"]
+        for kind in ["servers", "formatters", "grammars", "themes", "iconThemes", "agents"]
         where entry.contributes.contains(kind) {
             switch kind {
             case "servers": return .servers
             case "formatters": return .formatters
+            case "grammars": return .grammars
             case "themes": return .themes
             case "iconThemes": return .iconThemes
             default: return .agents

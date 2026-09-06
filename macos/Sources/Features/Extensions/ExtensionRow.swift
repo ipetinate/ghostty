@@ -431,6 +431,13 @@ struct ExtensionChipView: View {
     }
 }
 
+/// The label and mark for one entry of an extension's `contributes`.
+///
+/// A case for every kind `LanguageManifest` reads, and the fallthrough is
+/// there for a kind a later schema adds rather than for one this build knows
+/// about: a known kind reaching `default` shows its manifest spelling —
+/// `iconThemes`, `grammars` — beside a puzzle piece, which names nothing and
+/// tells the reader the app did not recognise its own extension.
 struct ExtensionContributionChip: Equatable {
     let title: String
     let systemImage: String
@@ -448,6 +455,10 @@ struct ExtensionContributionChip: Equatable {
             return ExtensionContributionChip(title: "Themes", systemImage: "paintpalette")
         case "iconThemes":
             return ExtensionContributionChip(title: "Icon Themes", systemImage: "photo.on.rectangle")
+        case "grammars":
+            return ExtensionContributionChip(title: "Grammars", systemImage: "textformat.abc")
+        case "agents":
+            return ExtensionContributionChip(title: "Agents", systemImage: "sparkles")
         default:
             return ExtensionContributionChip(title: kind, systemImage: "puzzlepiece")
         }

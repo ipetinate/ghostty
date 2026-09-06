@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 @testable import Ghostty
 import Testing
@@ -272,7 +273,7 @@ struct AssetContributionTests {
         #expect(manifest.isUsable)
     }
 
-    @Test func aThemeThatSetsAnythingButColorsIsDropped() throws {
+    @Test func aThemeThatChangesBehaviorIsDropped() throws {
         let root = try makeExtensionRoot([
             "themes/good": Self.colorTheme,
             "themes/runs": Self.colorTheme + "command = /tmp/evil\n",
@@ -296,7 +297,7 @@ struct AssetContributionTests {
           }
         }
         """#, root: root))
-        #expect(manifest.themes.map(\.name) == ["Good"])
+        #expect(manifest.themes.map(\.name) == ["Font", "Good"])
     }
 
     @Test func aThemePathOutsideTheExtensionOrMissingIsDropped() throws {
@@ -325,11 +326,81 @@ struct AssetContributionTests {
 
     @Test func colorOnlyIsJudgedOnKeysAndSkipsCommentsAndBlanks() {
         #expect(ThemeContribution.isColorOnly(Self.colorTheme))
-        #expect(ThemeContribution.isColorOnly(""))
-        #expect(ThemeContribution.isColorOnly("# only a comment\n\n"))
+        #expect(ThemeContribution.isColorOnly("# a comment\n\nbackground = #000\n"))
+        #expect(!ThemeContribution.isColorOnly(""))
+        #expect(!ThemeContribution.isColorOnly("# only a comment\n\n"))
         #expect(!ThemeContribution.isColorOnly("background = #000\ninitial-command = evil\n"))
         #expect(!ThemeContribution.isColorOnly("custom-shader = /tmp/x.glsl\n"))
         #expect(!ThemeContribution.isColorOnly("theme = Dracula\n"))
+    }
+
+    @Test func anUnknownKeyIsIgnoredRatherThanDiscardingTheTheme() {
+        #expect(ThemeContribution.isColorOnly(Self.colorTheme + "cursor-invert-fg-bg = true\n"))
+        #expect(ThemeContribution.isColorOnly("background-opacity = 0.9\nbackground = #000\n"))
+        #expect(ThemeContribution.isColorOnly("background = #000\nnot-a-ghostty-key = 1\n"))
+    }
+
+    @Test func aBehaviorKeyIsCaughtWhateverItsCase() {
+        #expect(!ThemeContribution.isColorOnly(Self.colorTheme + "COMMAND = /tmp/evil\n"))
+        #expect(!ThemeContribution.isColorOnly(Self.colorTheme + "  Keybind  = ctrl+a=text:x\n"))
+    }
+
+    @Test func aThemeWithAnUnknownKeyLoadsAndKeepsItsColors() throws {
+        let root = try makeExtensionRoot([
+            "themes/wide": Self.colorTheme + "background-opacity = 0.9\nwindow-padding-x = 4\n",
+            "themes/behavior": "shell-integration = none\n",
+        ])
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.lua",
+          "contributes": {
+            "themes": [
+              { "name": "Wide", "path": "themes/wide", "appearance": "dark" },
+              { "name": "Behavior", "path": "themes/behavior" }
+            ]
+          }
+        }
+        """#, root: root))
+
+        #expect(manifest.themes.map(\.name) == ["Wide"])
+        let contribution = try #require(manifest.themes.first)
+        let theme = try #require(ThemeCatalog.parse(
+            url: contribution.fileURL,
+            source: .contributed(extension: "acme.lua"),
+            name: contribution.name
+        ))
+        #expect(theme.background == NSColor(hex: "#1e1e2e"))
+        #expect(theme.foreground == NSColor(hex: "#cdd6f4"))
+        #expect(theme.cursorColor == NSColor(hex: "#f5e0dc"))
+        #expect(theme.selectionBackground == NSColor(hex: "#45475a"))
+        #expect(theme.palette[0] == NSColor(hex: "#45475a"))
+        #expect(theme.palette[1] == NSColor(hex: "#f38ba8"))
+    }
+
+    @Test func aThemeThatIsNothingButABehaviorKeyIsNotATheme() throws {
+        let root = try makeExtensionRoot([
+            "themes/keybind": "keybind = ctrl+a=text:rm -rf ~\n",
+            "themes/command": "command = /tmp/evil\n",
+            "themes/empty": "# nothing here\n",
+        ])
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.lua",
+          "contributes": {
+            "themes": [
+              { "name": "Keybind", "path": "themes/keybind" },
+              { "name": "Command", "path": "themes/command" },
+              { "name": "Empty", "path": "themes/empty" }
+            ]
+          }
+        }
+        """#, root: root))
+
+        #expect(manifest.themes.isEmpty)
     }
 
     // MARK: Icon themes

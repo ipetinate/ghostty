@@ -121,7 +121,7 @@ struct ThemeContribution: Equatable, Sendable {
 
     static let maxBytes = 64 * 1024
 
-    static let allowedKeys: Set<String> = [
+    static let colorKeys: Set<String> = [
         "background", "foreground", "palette",
         "cursor-color", "cursor-text",
         "selection-background", "selection-foreground",
@@ -131,6 +131,20 @@ struct ThemeContribution: Equatable, Sendable {
         "search-selected-background", "search-selected-foreground",
         "window-titlebar-background", "window-titlebar-foreground",
         "macos-icon-ghost-color", "macos-icon-screen-color",
+    ]
+
+    static let behaviorKeys: Set<String> = [
+        "auto-update", "auto-update-channel",
+        "background-image", "bell-audio-path", "custom-shader", "gtk-custom-css",
+        "macos-custom-icon",
+        "clipboard-codepoint-map", "clipboard-paste-bracketed-safe",
+        "clipboard-paste-protection", "clipboard-read", "clipboard-write",
+        "command", "env", "initial-command", "wait-after-command", "working-directory",
+        "config-default-files", "config-file", "theme",
+        "enquiry-response", "title-report", "vt-kam-allowed",
+        "input", "key-remap", "keybind", "macos-applescript", "macos-shortcuts",
+        "link", "link-osc8", "link-url",
+        "shell-integration", "shell-integration-features",
     ]
 
     static func parse(json: [String: Any], root: URL) -> ThemeContribution? {
@@ -158,14 +172,18 @@ struct ThemeContribution: Equatable, Sendable {
     }
 
     static func isColorOnly(_ contents: String) -> Bool {
+        var setsAColor = false
         for line in contents.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
             guard let eq = trimmed.firstIndex(of: "=") else { return false }
-            let key = String(trimmed[..<eq]).trimmingCharacters(in: .whitespaces)
-            guard allowedKeys.contains(key) else { return false }
+            let key = String(trimmed[..<eq])
+                .trimmingCharacters(in: .whitespaces)
+                .lowercased()
+            if behaviorKeys.contains(key) { return false }
+            if colorKeys.contains(key) { setsAColor = true }
         }
-        return true
+        return setsAColor
     }
 }
 

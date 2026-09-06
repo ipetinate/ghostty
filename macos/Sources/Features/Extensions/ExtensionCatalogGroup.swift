@@ -10,6 +10,7 @@ import Foundation
 enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
     case language(LSPServerCategory)
     case languages
+    case servers
     case formatters
     case themes
     case iconThemes
@@ -20,6 +21,7 @@ enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
         switch self {
         case .language(let category): return "language." + category.rawValue
         case .languages: return "languages"
+        case .servers: return "servers"
         case .formatters: return "formatters"
         case .themes: return "themes"
         case .iconThemes: return "iconThemes"
@@ -32,6 +34,7 @@ enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
         switch self {
         case .language(let category): return category.title
         case .languages: return "Languages"
+        case .servers: return "Servers"
         case .formatters: return "Formatters"
         case .themes: return "Themes"
         case .iconThemes: return "Icon Packs"
@@ -44,6 +47,7 @@ enum ExtensionCatalogGroup: Hashable, Identifiable, Sendable {
         switch self {
         case .language(let category): return category.systemImage
         case .languages: return ExtensionContributionChip.of("languages").systemImage
+        case .servers: return ExtensionContributionChip.of("servers").systemImage
         case .formatters: return ExtensionContributionChip.of("formatters").systemImage
         case .themes: return ExtensionContributionChip.of("themes").systemImage
         case .iconThemes: return ExtensionContributionChip.of("iconThemes").systemImage
@@ -68,7 +72,7 @@ enum ExtensionCatalogGrouping {
     /// beside a language.
     static let order: [ExtensionCatalogGroup] =
         LSPServerCategory.allCases.sorted { $0.title < $1.title }.map(ExtensionCatalogGroup.language)
-            + [.languages, .formatters, .themes, .iconThemes, .agents, .other]
+            + [.languages, .servers, .formatters, .themes, .iconThemes, .agents, .other]
 
     /// Where one entry belongs.
     ///
@@ -77,13 +81,20 @@ enum ExtensionCatalogGrouping {
     /// brings a formatter and an icon, and a reader looking for Lua wants it
     /// under Script, not repeated in three places. Only an extension that
     /// contributes no language is filed by what it does contribute.
+    ///
+    /// Servers are asked about first among those, and sit next to the
+    /// languages in the order: Tailwind is a server for five languages and
+    /// the language of none, so it has no family to file under, and a reader
+    /// hunting for it is hunting among the things that read code.
     static func group(for entry: ExtensionIndex.Entry) -> ExtensionCatalogGroup {
         if entry.contributes.contains("languages") {
             guard let category = category(for: entry) else { return .languages }
             return .language(category)
         }
-        for kind in ["formatters", "themes", "iconThemes", "agents"] where entry.contributes.contains(kind) {
+        for kind in ["servers", "formatters", "themes", "iconThemes", "agents"]
+        where entry.contributes.contains(kind) {
             switch kind {
+            case "servers": return .servers
             case "formatters": return .formatters
             case "themes": return .themes
             case "iconThemes": return .iconThemes

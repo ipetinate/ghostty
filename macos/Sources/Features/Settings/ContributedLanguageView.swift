@@ -230,12 +230,7 @@ struct ContributedLanguageSection: View {
             }
         } header: {
             HStack(spacing: 6) {
-                LanguageIconView(
-                    name: LSPServerDefinition.iconName(
-                        forLanguageID: contributed.language.languageID
-                    ),
-                    size: 14
-                )
+                LanguageIconView(icon: contributed.language.iconURL, size: 14)
                 /// Every string on this screen that came out of a manifest
                 /// goes through `Text(verbatim:)`. The interpolating
                 /// initializer treats its argument as a `LocalizedStringKey`,

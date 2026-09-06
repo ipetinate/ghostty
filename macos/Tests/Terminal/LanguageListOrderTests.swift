@@ -3,9 +3,10 @@ import Foundation
 @testable import Ghostty
 import Testing
 
-/// The order the Languages pane puts things in.
+/// The order a grouped listing of languages puts things in — the store's,
+/// now that the Languages pane is gone.
 ///
-/// The pane sorts both levels itself, so these pin the inputs that sort has
+/// The view sorts both levels itself, so these pin the inputs that sort has
 /// to work with rather than the view — a `private var` in a `View` is not
 /// reachable from here, and reaching for it would test the wrong thing
 /// anyway.
@@ -43,9 +44,9 @@ struct LanguageListOrderTests {
 ///
 /// A symbol name that does not resolve draws **nothing** — no crash, no
 /// warning, an 18-point hole in the list, and in a `List` row it can take
-/// the row with it. The same failure the asset-catalogue check used to catch
-/// for the per-server logos, at the one place an icon still comes from the
-/// binary rather than from a manifest.
+/// the row with it. These headings are now the only artwork in the store's
+/// listing the binary still decides; the icon beside a row comes from the
+/// extension, and `LanguageIconTests` covers that.
 @MainActor
 struct LanguageSectionSymbolTests {
     @Test func everySectionHeaderDrawsItsSymbol() {
@@ -59,56 +60,71 @@ struct LanguageSectionSymbolTests {
     }
 }
 
-/// The logo beside a row, which is the other icon the binary still decides.
+/// The icon beside a row, which the extension decides and this build does
+/// not.
 ///
-/// It fails the same silent way a section symbol does — an asset name that is
-/// not in the catalogue draws nothing, an 18-point hole — and it lost its
-/// check when the server table it used to be enumerated from was deleted.
+/// It replaced a table of 22 bundled logos keyed on language id — the last
+/// compiled-in language table in the binary, and redundant once every
+/// contributed language declared its own `icon`. What is left to get wrong is
+/// the wiring: reading the wrong field, or losing the fallback and drawing an
+/// 18-point hole for a contribution that declares nothing.
+///
+/// The path rules the icon has to satisfy are not asserted here.
+/// `LanguageManifestTests.anIconOutsideTheExtensionIsRefused` already pins
+/// them, and a second copy would drift.
 @MainActor
-struct LanguageIconAssetTests {
-    @Test func everyLogoTheListCanAskForIsInTheCatalogue() {
-        let names = LSPServerDefinition.languageIconNames
+struct LanguageIconTests {
+    private static let root = URL(fileURLWithPath: "/tmp/phantom-tests/acme.rust")
 
-        #expect(names.count > 15, "expected the whole set of logos, got \(names.count)")
-
-        for (languageID, name) in names.sorted(by: { $0.key < $1.key }) {
-            #expect(name.hasPrefix("Lang-"), "\(languageID) names \(name)")
-            #expect(NSImage(named: name) != nil, "\(name) is not in Assets.xcassets")
-            #expect(LSPServerDefinition.iconName(forLanguageID: languageID) == name)
+    private func language(_ body: String) throws -> LanguageContribution {
+        let json = #"""
+        {
+          "schemaVersion": 1,
+          "id": "acme.rust",
+          "name": "Rust Pack",
+          "version": "1.0.0",
+          "publisher": "acme",
+          "contributes": { "languages": [{ \#(body) }] }
         }
+        """#
+        let manifest = try #require(LanguageManifest.parse(
+            data: Data(json.utf8),
+            url: Self.root.appendingPathComponent(LanguageManifest.fileName),
+            root: Self.root,
+            scope: .user))
+        return try #require(manifest.languages.first)
     }
 
-    /// The ids that share one image. Four spellings of one language family
-    /// and two preprocessors of one stylesheet language, which is a decision
-    /// worth pinning: drawing `scss` with no logo at all would be a
-    /// regression nobody would notice from a green suite.
-    @Test func theSharedLogosStaySharedAndDoNotLeak() {
-        let tsjs = ["typescript", "typescriptreact", "javascript", "javascriptreact"]
-        #expect(tsjs.allSatisfy { LSPServerDefinition.iconName(forLanguageID: $0) == "Lang-ts-js" })
+    /// The row draws what the manifest named, resolved against the
+    /// extension's own directory.
+    @Test func theRowDrawsTheIconTheContributionDeclares() throws {
+        let rust = try language(#""languageId": "rust", "icon": "icons/rust.png""#)
+        let icon = try #require(rust.iconURL)
 
-        let css = ["css", "scss", "less"]
-        #expect(css.allSatisfy { LSPServerDefinition.iconName(forLanguageID: $0) == "Lang-css" })
-
-        #expect(LSPServerDefinition.iconName(forLanguageID: "shellscript") == "Lang-bash")
+        #expect(icon.lastPathComponent == "rust.png")
+        #expect(icon.deletingLastPathComponent().lastPathComponent == "icons")
+        #expect(icon.path.hasPrefix(Self.root.path + "/"))
+        #expect(ExtensionIconSource.file(icon).key == "file:" + icon.path)
     }
 
-    /// A language this app ships no logo for gets the generic glyph rather
-    /// than a blank, and after 0.17.0 that is the normal case: every language
-    /// comes from an extension, and an extension is free to name one this
-    /// build has never heard of.
-    @Test func aLanguageWithNoLogoFallsBackToASymbolThatResolves() {
-        for languageID in ["elixir", "fixture", "", "TypeScript", "swift-testing"] {
-            #expect(
-                LSPServerDefinition.iconName(forLanguageID: languageID) == nil,
-                "\(languageID) claimed a logo this app does not ship"
-            )
-        }
+    /// A contribution that declares none falls back to a symbol rather than
+    /// to nothing. An unresolved SF Symbol draws no glyph and no warning, so
+    /// the fallback is checked against the system rather than assumed.
+    @Test func aContributionWithNoIconFallsBackToASymbolThatResolves() throws {
+        let rust = try language(#""languageId": "rust""#)
 
+        #expect(rust.iconURL == nil)
         #expect(
-            NSImage(
-                systemSymbolName: LSPServerDefinition.genericLanguageSymbol,
-                accessibilityDescription: nil
-            ) != nil
-        )
+            NSImage(systemSymbolName: LanguageIconView.genericSymbol, accessibilityDescription: nil) != nil,
+            "\(LanguageIconView.genericSymbol) is not an SF Symbol")
+    }
+
+    /// Nothing in the app bundle is named after a language any more. The
+    /// deleted assets were reachable by name alone, so a caller left behind
+    /// would have kept drawing one until somebody looked.
+    @Test func theBundleShipsNoLanguageLogos() {
+        for name in ["Lang-rust", "Lang-ts-js", "Lang-css", "Lang-tailwind"] {
+            #expect(NSImage(named: name) == nil, "\(name) is still in Assets.xcassets")
+        }
     }
 }

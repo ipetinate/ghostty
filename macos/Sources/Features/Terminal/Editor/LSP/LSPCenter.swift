@@ -269,8 +269,7 @@ final class LSPCenter: ObservableObject {
         isProbingInstalls = true
 
         let commands = Set(
-            (LSPServerRegistry.distinctServers + Self.contributedServers())
-                .map { Self.effectiveDefinition($0).command }
+            Self.contributedServers().map { Self.effectiveDefinition($0).command }
         )
         Task { [weak self] in
             let found = await Task.detached(priority: .utility) { () -> Set<String> in
@@ -424,14 +423,14 @@ final class LSPCenter: ObservableObject {
     /// effective command rather than the base.** That ordering is the whole
     /// point: a user override that repoints some language at `tsc` produces a
     /// definition this file never wrote, and checking the base would wave it
-    /// through. See `LSPServerRegistry.accepts(command:path:)` for what is
-    /// being refused and why a field on the definition could not do it.
+    /// through. See `LSPCommandCompatibility.accepts(command:path:)` for what
+    /// is being refused and why a field on the definition could not do it.
     private static func resolvedPairs(
         forPath path: String
     ) -> [(base: LSPServerDefinition, effective: LSPServerDefinition)] {
         LanguageResolver.shared.serverDefinitions(forPath: path)
             .map { (base: $0, effective: effectiveDefinition($0)) }
-            .filter { LSPServerRegistry.accepts(command: $0.effective.command, path: path) }
+            .filter { LSPCommandCompatibility.accepts(command: $0.effective.command, path: path) }
     }
 
     private static func resolvedServer(forPath path: String) -> LSPServerDefinition? {
@@ -457,7 +456,7 @@ final class LSPCenter: ObservableObject {
     /// `LSPCenter.shared`. That direction is fine and the reverse is not:
     /// see `LanguageResolver.noteResolutionChanged`.
     private static func contributedServers() -> [LSPServerDefinition] {
-        LanguageResolver.shared.catalog.contributed.compactMap(\.serverDefinition)
+        LanguageResolver.shared.allServerDefinitions
     }
 
     // MARK: Documents
@@ -880,8 +879,14 @@ final class LSPCenter: ObservableObject {
         return completionSupport[key]
     }
 
-    /// Whether a server that completes the inside of a class attribute is
-    /// **running** for this file — Tailwind's, today.
+    /// Whether a companion server is **running** for this file — Tailwind's,
+    /// on the machines this matters for.
+    ///
+    /// A companion is the only kind of server that answers inside a `class`
+    /// attribute, because a language's own server is answering about the
+    /// code around it. Asking "is a companion up" rather than naming
+    /// Tailwind is what lets an extension nobody has written yet enable the
+    /// same exception.
     ///
     /// The editor asks before lifting the string-and-comment suppression that
     /// keeps a 1-character trigger out of prose, so the answer has to be about
@@ -894,22 +899,26 @@ final class LSPCenter: ObservableObject {
     ///
     /// Cheap enough for a view body: a dictionary walk, one extension lookup
     /// and the `.git` walk `workspaceRoot` already does everywhere else. It
-    /// deliberately does not call `resolvedServers`, which stats a
-    /// `node_modules` per level.
-    /// The command is the **effective** one, not the registry's: a key holds
+    /// deliberately does not call `resolvedServers`, which stats every
+    /// project marker per level.
+    /// The command is the **effective** one, not the manifest's: a key holds
     /// whatever `LSPServerOverrideStore` turned it into, so comparing against
-    /// the compiled-in name would answer no for anybody who pointed the
-    /// setting at their own build.
+    /// the declared name would answer no for anybody who pointed the setting
+    /// at their own build.
     func completesClassAttributes(forPath path: String) -> Bool {
-        guard let languageID = LanguageResolver.shared.languageID(forPath: path),
-              let tailwind = LSPServerRegistry.tailwindServer(forLanguage: languageID)
-        else { return false }
+        guard let languageID = LanguageResolver.shared.languageID(forPath: path) else {
+            return false
+        }
+        let commands = Set(
+            LanguageResolver.shared
+                .companionServerDefinitions(forLanguage: languageID)
+                .map { Self.effectiveDefinition($0).command }
+        )
+        guard !commands.isEmpty else { return false }
 
-        let command = Self.effectiveDefinition(tailwind).command
         let root = Self.workspaceRoot(for: path)
-
         return servers.keys.contains { key in
-            key.languageID == languageID && key.root == root && key.command == command
+            key.languageID == languageID && key.root == root && commands.contains(key.command)
         }
     }
 
@@ -923,7 +932,7 @@ final class LSPCenter: ObservableObject {
         openDocuments.contains(path)
     }
 
-    /// The registry's definition for a language, with any user override
+    /// The contributed definition for a language, with any user override
     /// applied.
     ///
     /// Command and arguments are replaced outright when overridden — a
@@ -965,7 +974,11 @@ final class LSPCenter: ObservableObject {
             arguments: arguments,
             installHint: definition.installHint,
             initializationOptionsKind: definition.initializationOptionsKind,
-            origin: definition.origin
+            initializationOptionsJSON: definition.initializationOptionsJSON,
+            origin: definition.origin,
+            category: definition.category,
+            documentationURL: definition.documentationURL,
+            maximumJavaFeatureVersion: definition.maximumJavaFeatureVersion
         )
     }
 
@@ -1971,37 +1984,34 @@ final class LSPCenter: ObservableObject {
     /// What this workspace adds to one server's launch: the
     /// `initializationOptions` to send, and the arguments to append.
     ///
-    /// The options are a user override's raw JSON when there is one, else
-    /// the language's own resolution — Vue's `tsdk` lookup today, nothing
-    /// for everyone else. The arguments are the language's alone: an
-    /// override replaces what the server is *told*, not how it is *started*,
-    /// and for the Vue server the `--tsdk` argument is the difference
-    /// between a server that answers and one that hangs. See
-    /// `LSPInitializationOptions.vueTSDKArgument(tsdk:)`.
+    /// Three sources, in this order: a user override's raw JSON, the
+    /// resolver the manifest named, then the manifest's own literal JSON.
+    /// The arguments are the server's alone — an override replaces what the
+    /// server is *told*, not how it is *started*, and for a server reading
+    /// its TypeScript from `--tsdk` that argument is the difference between
+    /// a server that answers and one that hangs. See
+    /// `LSPInitializationOptions.tsdkArgument(tsdk:)`.
     ///
     /// The override lookup uses the *default* command for this language
     /// rather than `definition.command` — `definition` here may already be
     /// the overridden one, and the override's own identity has to stay
-    /// independent of what it changes the command to. Resolved rather than
-    /// looked up in the registry so a contributed language, which the
-    /// registry has never heard of, keys its override on the command its
-    /// manifest asked for instead of falling through to the overridden one.
+    /// independent of what it changes the command to.
     ///
     /// `baseCommand` is carried down from `didOpen` rather than resolved
     /// here, and that is the fix for the hazard the single-server version
-    /// left behind: asking the registry for "the" server of a language id
-    /// answers with the primary, so the `.vue` file's TypeScript half would
-    /// have read the *Vue server's* override. `Key.command` cannot stand in
-    /// either — it is the command after the override, and the store is keyed
-    /// by the one before.
+    /// left behind: asking for "the" server of a language id answers with
+    /// the primary, so a `.vue` file's TypeScript half would have read the
+    /// *Vue server's* override. `Key.command` cannot stand in either — it is
+    /// the command after the override, and the store is keyed by the one
+    /// before.
     ///
-    /// A manifest's own `initializationOptions` are deliberately **not**
-    /// consulted here, even though `LanguageResolver` can supply them. The
-    /// approval prompt names a command and a resolved path; it does not show
-    /// the options, and for more than one real server an option is enough to
-    /// redirect which code the server loads. Wiring them in is a change to
-    /// what an approval *means*, so it belongs with a prompt that shows them
-    /// and a `LanguageTrustStore.currentRecordVersion` bump, not here.
+    /// **A manifest's own `initializationOptions` are sent**, and the
+    /// approval that covers them is the digest: `LanguageTrust.verdict`
+    /// compares the manifest's SHA-256 against the one the reader approved,
+    /// so editing an option re-asks. The prompt shows them too — see
+    /// `LanguageTrustAlert.detailRows(for:)` — because an option is enough
+    /// to redirect which code a server loads, and approving what you cannot
+    /// see is not approving.
     private func resolvedLaunchSettings(
         for definition: LSPServerDefinition,
         key: Key,
@@ -2009,17 +2019,17 @@ final class LSPCenter: ObservableObject {
         searchPath: String
     ) async -> LSPOutcome<LSPLaunchSettings> {
         /// Resolved once, before the override is read, because the same path
-        /// is needed twice — as the option version 2 of the Vue server reads
-        /// and as the argument version 3 reads — and the lookup can shell out
-        /// to `npm root -g` on a project without its own TypeScript.
-        let vueTSDK: LSPOutcome<String>? = await resolvedVueTypeScriptSDK(
+        /// is needed twice — as the option an older server reads and as the
+        /// argument a newer one reads — and the lookup can shell out to
+        /// `npm root -g` on a project without its own TypeScript.
+        let tsdk: LSPOutcome<String>? = await resolvedTypeScriptSDK(
             for: definition,
             root: key.root,
             searchPath: searchPath
         )
-        let vueArguments = (vueTSDK.flatMap { outcome -> String? in
-            guard case .success(let tsdk) = outcome else { return nil }
-            return LSPInitializationOptions.vueTSDKArgument(tsdk: tsdk)
+        let tsdkArguments = (tsdk.flatMap { outcome -> String? in
+            guard case .success(let path) = outcome else { return nil }
+            return LSPInitializationOptions.tsdkArgument(tsdk: path)
         }).map { [$0] } ?? []
 
         if let override = LSPServerOverrideStore.override(for: baseCommand) {
@@ -2027,7 +2037,7 @@ final class LSPCenter: ObservableObject {
             if !raw.isEmpty {
                 switch Self.parseInitializationOptions(raw) {
                 case .success(let value):
-                    return .success(LSPLaunchSettings(initializationOptions: value, arguments: vueArguments))
+                    return .success(LSPLaunchSettings(initializationOptions: value, arguments: tsdkArguments))
                 case .failure(let reason): return .failure(reason)
                 }
             }
@@ -2035,23 +2045,27 @@ final class LSPCenter: ObservableObject {
 
         switch definition.initializationOptionsKind {
         case .none:
-            return .success(LSPLaunchSettings())
+            guard let declared = definition.initializationOptionsJSON else {
+                return .success(LSPLaunchSettings())
+            }
+            switch Self.parseInitializationOptions(declared) {
+            case .success(let value):
+                return .success(LSPLaunchSettings(initializationOptions: value))
+            case .failure(let reason): return .failure(reason)
+            }
 
-        case .provideFormatter:
-            return .success(LSPLaunchSettings(
-                initializationOptions: LSPInitializationOptions.provideFormatterValue))
-        case .vueTypeScriptSDK:
-            switch vueTSDK {
-            case .success(let tsdk):
+        case .typeScriptSDKArgument:
+            switch tsdk {
+            case .success(let path):
                 return .success(LSPLaunchSettings(
-                    initializationOptions: LSPInitializationOptions.vueValue(tsdk: tsdk),
-                    arguments: vueArguments
+                    initializationOptions: LSPInitializationOptions.sdkValue(tsdk: path),
+                    arguments: tsdkArguments
                 ))
             case .failure(let reason): return .failure(reason)
             case nil: return .failure(LSPInitializationOptions.missingTypeScriptMessage)
             }
 
-        case .vueTypeScriptPlugin:
+        case .typeScriptPluginHost(let plugin, let languages):
             /// A failure here is reported rather than swallowed, and that is
             /// the whole point of the case: without the plugin this server
             /// refuses the document, so starting it anyway would spend a
@@ -2059,7 +2073,12 @@ final class LSPCenter: ObservableObject {
             /// sentence in the banner, where the reader can act on it.
             let root = key.root
             let resolved = await Task.detached(priority: .utility) {
-                LSPInitializationOptions.vueTypeScriptPlugin(root: root, searchPath: searchPath)
+                LSPInitializationOptions.typeScriptPluginHost(
+                    plugin: plugin,
+                    languages: languages,
+                    root: root,
+                    searchPath: searchPath
+                )
             }.value
             switch resolved {
             case .success(let value): return .success(LSPLaunchSettings(initializationOptions: value))
@@ -2068,20 +2087,20 @@ final class LSPCenter: ObservableObject {
         }
     }
 
-    /// Volar's TypeScript for this workspace, or nil for a server that does
-    /// not need one.
+    /// The TypeScript library directory for this workspace, or nil for a
+    /// server that does not need one.
     ///
     /// Split out so the lookup — which touches the filesystem and may run
     /// `npm` — happens once per launch no matter how many places want the
     /// path, and off the main actor either way.
-    private func resolvedVueTypeScriptSDK(
+    private func resolvedTypeScriptSDK(
         for definition: LSPServerDefinition,
         root: String,
         searchPath: String
     ) async -> LSPOutcome<String>? {
-        guard definition.initializationOptionsKind == .vueTypeScriptSDK else { return nil }
+        guard definition.initializationOptionsKind == .typeScriptSDKArgument else { return nil }
         return await Task.detached(priority: .utility) {
-            LSPInitializationOptions.vueLoadableTypeScriptSDK(root: root, searchPath: searchPath)
+            LSPInitializationOptions.loadableTypeScriptSDK(root: root, searchPath: searchPath)
         }.value
     }
 
@@ -2210,20 +2229,26 @@ final class LSPCenter: ObservableObject {
         )
     }
 
-    /// The other half of a `.vue` — the process that loads
-    /// `@vue/typescript-plugin` and therefore knows the `_vue:` commands.
+    /// The other half of a document a primary server cannot type-check on
+    /// its own — the tsserver that loads the plugin, and therefore the
+    /// process that knows the relayed commands.
     ///
-    /// Named from the registry rather than found by scanning the running
+    /// Named from the manifest rather than found by scanning the running
     /// servers, so the pairing is a stated fact and not a coincidence of
-    /// what happens to be up. `effectiveDefinition` because a user override
-    /// changes the command, and the key is keyed on the command after it.
+    /// what happens to be up: it is whichever companion server the extension
+    /// declared with a `typescriptPluginHost` resolver for this language.
+    /// `effectiveDefinition` because a user override changes the command,
+    /// and the key is keyed on the command after it.
     ///
     /// Waits, briefly, when the peer is still starting: both halves are
-    /// launched together by `didOpen`, and the Vue server asks its first
+    /// launched together by `didOpen`, and the primary server asks its first
     /// question the moment anything is requested of it — often before the
     /// second process has finished its handshake.
     private func typeScriptPeer(of key: Key) async -> (key: Key, server: LSPProcess)? {
-        let peer = Self.effectiveDefinition(LSPServerRegistry.vueTypeScriptServer)
+        guard let declared = LanguageResolver.shared.typeScriptPluginHost(
+            forLanguage: key.languageID
+        ) else { return nil }
+        let peer = Self.effectiveDefinition(declared)
         let peerKey = Key(languageID: peer.languageID, root: key.root, command: peer.command)
         guard peerKey != key else { return nil }
 

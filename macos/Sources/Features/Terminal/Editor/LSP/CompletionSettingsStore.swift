@@ -274,10 +274,10 @@ enum CompletionSettingsStore {
         )
     }
 
-    /// Language ids arrive lower-cased from `LanguageManifest` and from
-    /// `LSPServerRegistry` alike, so folding here only matters for a value
-    /// somebody typed. Doing it anyway costs nothing and keeps `Swift` and
-    /// `swift` from being two rows in one table.
+    /// Language ids arrive lower-cased from `LanguageManifest`, so folding
+    /// here only matters for a value somebody typed. Doing it anyway costs
+    /// nothing and keeps `Swift` and `swift` from being two rows in one
+    /// table.
     private static func normalized(_ languageID: String) -> String {
         languageID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }

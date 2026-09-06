@@ -13,14 +13,17 @@ import Foundation
 ///
 /// 1. a promoted contribution from the user's directory
 /// 2. a promoted contribution from the bundle
-/// 3. **the compiled-in registry**
-/// 4. a contribution from the user's directory
-/// 5. a contribution from the bundle
+/// 3. a contribution from the user's directory
+/// 4. a contribution from the bundle
 ///
-/// The registry sitting third is the invariant the whole design turns on:
-/// copying a file into a directory must never change a language the user
-/// already had. Promotion moves a contribution above it, and promotion is a
-/// click in Settings — never something the file can ask for.
+/// There used to be a fifth rank between the promoted pair and the rest —
+/// the compiled-in table of servers — and the invariant it stood for was
+/// that copying a file into a directory must never change a language the
+/// user already had. The table is gone: after 0.17.0 a language server
+/// exists only because an installed extension declared it, so there is
+/// nothing compiled in for a contribution to yield to. Promotion survives,
+/// and it is what settles two extensions claiming the same file — a click
+/// in Settings, never something a file can ask for.
 ///
 /// Ties inside a rank are broken by **directory name, lexicographically**,
 /// and the loser stays in the catalog marked conflicted. Which one wins
@@ -72,8 +75,49 @@ struct LanguageCatalog: Equatable {
                 command: server.command,
                 arguments: server.arguments,
                 installHint: server.installHint,
-                origin: .manifest(provenance)
+                initializationOptionsKind: server.resolver,
+                initializationOptionsJSON: server.initializationOptionsJSON,
+                origin: .manifest(provenance),
+                category: language.category,
+                documentationURL: server.documentationURL,
+                maximumJavaFeatureVersion: server.maximumJavaFeatureVersion
             )
+        }
+    }
+
+    /// One contributed companion server, and where it landed.
+    ///
+    /// Separate from `Contributed` because a companion is not a language: it
+    /// claims no file type and owns no `languageId`, it only offers itself
+    /// beside whoever does. Shadowing is by its own `id`, so two extensions
+    /// shipping the same server produce one running process and a row
+    /// saying which of them lost.
+    struct ContributedServer: Equatable, Identifiable {
+        let provenance: ExtensionProvenance
+        let listIdentity: String
+        let extensionName: String
+        let extensionVersion: String
+        let publisher: String
+        let server: CompanionServerContribution
+        let resolution: Resolution
+        let manifestURL: URL
+
+        var id: String { listIdentity + "#server:" + server.id }
+
+        var isActive: Bool { resolution == .active }
+
+        /// The launchable definition for one of the language ids this server
+        /// was declared for, or nil when it is not in force or does not
+        /// claim that id.
+        func serverDefinition(forLanguage languageID: String) -> LSPServerDefinition? {
+            guard isActive else { return nil }
+            return server.definition(forLanguage: languageID, provenance: provenance)
+        }
+
+        /// Every definition this contribution can produce, for a screen that
+        /// lists what could be installed rather than what a file gets.
+        var serverDefinitions: [LSPServerDefinition] {
+            server.languageIDs.compactMap(serverDefinition(forLanguage:))
         }
     }
 
@@ -162,6 +206,7 @@ struct LanguageCatalog: Equatable {
 
     let entries: [Entry]
     let contributed: [Contributed]
+    let servers: [ContributedServer]
     let formatters: [ContributedFormatter]
     let themes: [ContributedTheme]
     let iconThemes: [ContributedIconTheme]
@@ -171,6 +216,7 @@ struct LanguageCatalog: Equatable {
     static let empty = LanguageCatalog(
         entries: [],
         contributed: [],
+        servers: [],
         formatters: [],
         themes: [],
         iconThemes: [],
@@ -191,8 +237,7 @@ struct LanguageCatalog: Equatable {
     /// The contribution in force for a file, or nil when this build's own
     /// tables own it.
     ///
-    /// Matched the way `LSPServerRegistry.languageID(forPath:)` matches:
-    /// **a whole file name beats an extension**, because a name is the more
+    /// **A whole file name beats an extension**, because a name is the more
     /// specific statement — `go.mod` is Go, and `.mod` is a Fortran module
     /// as often as it is anything else.
     func contribution(forFileName fileName: String) -> Contributed? {
@@ -213,6 +258,14 @@ struct LanguageCatalog: Equatable {
     func contribution(forLanguageID languageID: String) -> Contributed? {
         let lowered = languageID.lowercased()
         return contributed.first { $0.isActive && $0.language.languageID == lowered }
+    }
+
+    /// The companion servers in force for a language id, in the order they
+    /// should be consulted. Whether any of them actually starts is a
+    /// question about the project on disk — see `ProjectMarker`.
+    func companionServers(forLanguageID languageID: String) -> [ContributedServer] {
+        let lowered = languageID.lowercased()
+        return servers.filter { $0.isActive && $0.server.languageIDs.contains(lowered) }
     }
 
     func formatter(forFileName fileName: String) -> ContributedFormatter? {
@@ -259,13 +312,12 @@ struct LanguageCatalog: Equatable {
     /// Precedence, lowest number first: a contribution the reader promoted
     /// outranks one they did not, and the user's directory outranks the
     /// bundle. Nothing is compiled in for either to yield to.
-
     private static func rank(scope: LanguageManifest.Scope, promoted: Bool) -> Int {
         switch (scope, promoted) {
         case (.user, true): return 0
         case (.bundled, true): return 1
-        case (.user, false): return 3
-        case (.bundled, false): return 4
+        case (.user, false): return 2
+        case (.bundled, false): return 3
         }
     }
 
@@ -353,6 +405,7 @@ struct LanguageCatalog: Equatable {
         return LanguageCatalog(
             entries: entries,
             contributed: contributed,
+            servers: resolveServers(manifests: manifests),
             formatters: resolveFormatters(manifests: manifests),
             themes: resolveThemes(manifests: manifests),
             iconThemes: resolveIconThemes(manifests: manifests),
@@ -415,6 +468,37 @@ struct LanguageCatalog: Equatable {
                 listIdentity: manifest.listIdentity,
                 extensionName: manifest.name,
                 iconTheme: iconTheme
+            )
+        }
+    }
+
+    /// One companion server per id, the highest-ranked extension's winning.
+    ///
+    /// Claimed by id and not by language id, because a companion is offered
+    /// beside a language's own server rather than instead of it: two of them
+    /// serving the same document is the normal case, and shadowing on the
+    /// language would turn a Tailwind server and a tsserver plugin host into
+    /// a conflict neither of them has.
+    static func resolveServers(manifests: [LanguageManifest]) -> [ContributedServer] {
+        var claimed: [String: String] = [:]
+        return ordered(\.servers, in: manifests, by: \.id).map { manifest, server in
+            let claim = "server:" + server.id
+            let resolution: Resolution
+            if let owner = claimed[claim] {
+                resolution = .shadowed(by: .extensionID(owner), claim: claim)
+            } else {
+                resolution = .active
+                claimed[claim] = manifest.listIdentity
+            }
+            return ContributedServer(
+                provenance: manifest.provenance,
+                listIdentity: manifest.listIdentity,
+                extensionName: manifest.name,
+                extensionVersion: manifest.version,
+                publisher: manifest.publisher,
+                server: server,
+                resolution: resolution,
+                manifestURL: manifest.manifestURL
             )
         }
     }

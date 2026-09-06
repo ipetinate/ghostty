@@ -216,10 +216,10 @@ enum LSPDependencyCatalog {
     /// The plan for a built-in command, or nil for a server whose one install
     /// command is the whole story.
     ///
-    /// Keyed on the command rather than the language id for the same reason
-    /// `uninstallCommand` is: four language ids share the TypeScript binary
-    /// and one `.vue` file needs two different binaries, so the binary is the
-    /// only key that names the thing being installed.
+    /// Keyed on the command rather than the language id: four language ids
+    /// share the TypeScript binary and one `.vue` file needs two different
+    /// binaries, so the binary is the only key that names the thing being
+    /// installed.
     static func plan(forCommand command: String) -> LSPServerDependencyPlan? {
         plans[command]
     }
@@ -420,13 +420,19 @@ extension LSPServerDefinition {
     /// install command says everything there is to say.
     ///
     /// **Nil for anything a manifest contributed**, and that refusal is the
-    /// reason to read this rather than `LSPDependencyCatalog` directly. It is
-    /// the same guard `installCommand` carries and for the same reason: the
+    /// reason to read this rather than `LSPDependencyCatalog` directly: the
     /// packages here become a string handed to `$SHELL -lic`. A contributed
     /// definition is free to name itself `vue-language-server`, and a lookup
-    /// keyed on the command alone would hand it this plan — which is the
-    /// mistake `uninstallCommand` already made once, when a manifest calling
+    /// keyed on the command alone would hand it this plan — the mistake a
+    /// compiled-in uninstall table already made once, when a manifest calling
     /// itself `rust-analyzer` was offered `rustup component remove`.
+    ///
+    /// **Which means it is nil for everything, from 0.17.0 on.** No server
+    /// has a `.builtIn` origin any more. The table below and this guard are
+    /// both kept rather than deleted in the same change that removed the
+    /// server registry, so that one diff does one thing; an extension
+    /// declares what it needs in its own `install` block, and
+    /// `ExtensionRequirements` is what reads it.
     var dependencyPlan: LSPServerDependencyPlan? {
         guard case .builtIn = origin else { return nil }
         return LSPDependencyCatalog.plan(forCommand: command)

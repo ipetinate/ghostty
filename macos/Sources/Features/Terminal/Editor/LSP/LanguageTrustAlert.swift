@@ -39,6 +39,13 @@ enum LanguageTrustAlert {
         let manifestPath: String
         let change: LanguageTrust.Change
 
+        /// `initializationOptions` the manifest declared, when it declared
+        /// any. Shown because they are sent at `initialize`, and for more
+        /// than one real server an option decides which code the server
+        /// loads — approving a command without them would be approving half
+        /// of what runs.
+        var initializationOptionsJSON: String?
+
         var role: Role = .languageServer
 
         enum Role: Equatable {
@@ -136,6 +143,9 @@ enum LanguageTrustAlert {
         ]
         if !request.extensionVersion.isEmpty {
             rows.append(.init(label: "Version", value: escaped(request.extensionVersion)))
+        }
+        if let options = request.initializationOptionsJSON, !options.isEmpty {
+            rows.append(.init(label: "Options", value: escaped(options)))
         }
         return rows
     }
@@ -270,6 +280,11 @@ enum LanguageTrustGate {
     /// Fills the prompt out of the catalog, which is where the extension's
     /// own name, publisher and version live — the definition carries only
     /// what launching needs.
+    ///
+    /// Matched on **provenance**, not on the language id. A companion server
+    /// serves a language some other extension declared — Tailwind's serves
+    /// `vue` — so a lookup by id would name the wrong publisher on the one
+    /// dialog whose entire job is saying whose code is about to run.
     @MainActor
     private static func request(
         for definition: LSPServerDefinition,
@@ -279,20 +294,28 @@ enum LanguageTrustGate {
         guard case .manifest(let provenance) = definition.origin else {
             preconditionFailure("a prompt is only built for a manifest-supplied server")
         }
-        let contributed = LanguageResolver.shared.catalog
-            .contribution(forLanguageID: definition.languageID)
+        let catalog = LanguageResolver.shared.catalog
+        let contributed = catalog.contributed.first {
+            $0.provenance == provenance && $0.language.languageID == definition.languageID
+        }
+        let companion = catalog.servers.first {
+            $0.provenance == provenance && $0.server.command == definition.command
+        }
 
         return LanguageTrustAlert.Request(
-            extensionName: contributed?.extensionName ?? provenance.extensionID,
+            extensionName: contributed?.extensionName ?? companion?.extensionName
+                ?? provenance.extensionID,
             extensionID: provenance.extensionID,
-            publisher: contributed?.publisher ?? "",
-            extensionVersion: contributed?.extensionVersion ?? "",
-            languageName: contributed?.language.displayName ?? definition.languageID,
+            publisher: contributed?.publisher ?? companion?.publisher ?? "",
+            extensionVersion: contributed?.extensionVersion ?? companion?.extensionVersion ?? "",
+            languageName: contributed?.language.displayName ?? companion?.server.displayName
+                ?? definition.languageID,
             command: definition.command,
             arguments: definition.arguments,
             resolvedPath: subject.resolvedPath,
             manifestPath: provenance.manifestPath,
-            change: change
+            change: change,
+            initializationOptionsJSON: definition.initializationOptionsJSON
         )
     }
 

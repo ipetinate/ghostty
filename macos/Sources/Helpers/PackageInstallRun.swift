@@ -10,16 +10,16 @@ import Foundation
 /// somebody has a reason to touch it, and then the change is a deletion.
 ///
 /// **Nothing here quotes or escapes, so every caller owes the check.** The
-/// language servers' commands come from `LSPServerRegistry` and the agents'
-/// from `AgentInstallPlan`; both are compiled-in literals, and neither is
-/// assembled from anything a file on disk said.
+/// agents' commands come from `AgentInstallPlan`, which is a compiled-in
+/// literal assembled from nothing a file on disk said.
 ///
-/// An extension's are the one exception, and they pay for it at the parse.
+/// An extension's are the other kind, and they pay for it at the parse.
 /// `ExtensionInstallPlan` reads them out of a manifest this app did not
 /// write, and hands over only a command whose first word is a package manager
 /// this build named and which carries no fragment that could start a second
 /// command. A string that fails either test never becomes an Install button,
-/// so it never reaches this `-lic`.
+/// so it never reaches this `-lic`. Every language server's install command
+/// arrives that way now — this build ships no table of its own.
 @MainActor
 final class PackageInstallRun: ObservableObject {
     /// What is running, if anything. `nil` is also what a finished run leaves

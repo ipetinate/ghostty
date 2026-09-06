@@ -15,7 +15,6 @@ struct SettingsRootView: View {
         case sidebar
         case files
         case keyboardShortcuts
-        case languageServers
         case extensions
         case agents
         case mcp
@@ -31,7 +30,6 @@ struct SettingsRootView: View {
             case .sidebar: return "Sidebar"
             case .files: return "Editor"
             case .keyboardShortcuts: return "Keyboard Shortcuts"
-            case .languageServers: return "Languages"
             case .extensions: return "Extensions"
             case .agents: return "Agents"
             case .mcp: return "MCP"
@@ -51,7 +49,6 @@ struct SettingsRootView: View {
             case .sidebar: return "sidebar.left"
             case .files: return "doc.text"
             case .keyboardShortcuts: return "keyboard"
-            case .languageServers: return "chevron.left.forwardslash.chevron.right"
             case .extensions: return "puzzlepiece"
             case .agents: return "sparkles"
             case .mcp: return "point.3.connected.trianglepath.dotted"
@@ -98,8 +95,6 @@ struct SettingsRootView: View {
                 FilesSettingsView()
             case .keyboardShortcuts:
                 KeyboardShortcutsSettingsView()
-            case .languageServers:
-                LanguageServersSettingsView()
             case .extensions:
                 ExtensionsSettingsView()
             case .agents:

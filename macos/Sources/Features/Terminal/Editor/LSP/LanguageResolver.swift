@@ -2,17 +2,14 @@ import Combine
 import Foundation
 
 /// The one place that answers "what language is this file, and what starts
-/// for it" — the compiled-in registry plus whatever is installed.
+/// for it" — which, after 0.17.0, is entirely a question about what is
+/// installed. This build ships no table of languages and no table of
+/// servers: a language server exists because an extension declared it.
 ///
-/// A façade rather than a change to `LSPServerRegistry`, which stays what it
-/// has always been: pure data, no filesystem, no app state, answerable in a
-/// test with nothing around it. Everything that has to know about disk lives
-/// on this side of the seam, and callers that used to reach for the registry
-/// reach for this instead.
-///
-/// Ownership of the precedence rule lives here too, in one method each, so
-/// that "the registry wins unless the user promoted this contribution" is
-/// stated once rather than re-derived at every call site.
+/// The seam is still worth having. `LanguageCatalog` is pure — parsed files
+/// and their resolution, no filesystem beyond the scan, answerable in a test
+/// with nothing around it — and everything that has to walk a directory to
+/// answer a question lives on this side of it.
 @MainActor
 final class LanguageResolver: ObservableObject {
     static let shared = LanguageResolver()
@@ -159,71 +156,93 @@ final class LanguageResolver: ObservableObject {
 
     // MARK: Resolution
 
-    /// The LSP language id for a path, or nil when nothing claims it.
+    /// The LSP language id for a path, or nil when nothing claims it —
+    /// which is the normal case for most files a terminal opens, and not an
+    /// error.
     func languageID(forPath path: String) -> String? {
-        let name = (path as NSString).lastPathComponent
-        if let contributed = catalog.contribution(forFileName: name) {
-            return contributed.language.languageID
-        }
-        return LSPServerRegistry.languageID(forPath: path)
+        catalog.contribution(forFileName: (path as NSString).lastPathComponent)?
+            .language.languageID
     }
 
     /// What to launch for a path.
     ///
     /// A contributed definition carries its own `origin`, which is what the
-    /// trust gate reads. A registry definition carries `.builtIn` by
-    /// default, so the gate lets it through without a lookup and without a
-    /// chance to forget one.
-    ///
-    /// A contribution that claims the file but ships no server still *owns*
-    /// the file, and the answer is nothing rather than the registry's:
-    /// falling through would start a server for a language the user has
-    /// replaced.
+    /// trust gate reads. A contribution that claims the file but ships no
+    /// server still *owns* the file, and the answer is then nothing at all.
     func serverDefinition(forPath path: String) -> LSPServerDefinition? {
-        let name = (path as NSString).lastPathComponent
-        if let contributed = catalog.contribution(forFileName: name),
-           let definition = contributed.serverDefinition {
-            return definition
-        }
-        if catalog.contribution(forFileName: name) != nil { return nil }
-        return LSPServerRegistry.server(forPath: path)
+        catalog.contribution(forFileName: (path as NSString).lastPathComponent)?
+            .serverDefinition
     }
 
     /// Every server that should be started for a file, in the order they are
     /// to be consulted — primary first.
     ///
-    /// Plural because one language id is not one server, and two things make
-    /// that concrete today. Since Volar 2 a `.vue` file is served by the Vue
-    /// server for its template and by `typescript-language-server` — loading
-    /// `@vue/typescript-plugin` — for its `<script>`; one server per language
-    /// id is the Volar 1.x model and has been wrong since. And a file in a
-    /// Tailwind project gets the Tailwind server alongside whichever server
-    /// completes the language itself, which is what fills in a `class`
-    /// attribute.
+    /// Plural because one language id is not one server. A `.vue` file is
+    /// served by the Vue server for its template and by a tsserver hosting
+    /// `@vue/typescript-plugin` for its `<script>`, and a file in a Tailwind
+    /// project gets the Tailwind server alongside whichever server completes
+    /// the language itself. Both of those are now a manifest's
+    /// `contributes.servers`, not a fact this build knows.
     ///
-    /// This is also the seam where facts about disk are resolved: the registry
-    /// is pure and takes both of them as values.
+    /// Companions come last, because everything that merges answers from
+    /// several servers reads primary-first: the language's own server is the
+    /// one whose hover and diagnostics should win.
+    ///
+    /// This is also the seam where facts about disk are resolved: the
+    /// catalog is pure and answers only which servers were *declared*.
     func serverDefinitions(forPath path: String) -> [LSPServerDefinition] {
-        let name = (path as NSString).lastPathComponent
-        if let contributed = catalog.contribution(forFileName: name) {
-            return contributed.serverDefinition.map { [$0] } ?? []
-        }
+        guard let contributed = catalog.contribution(
+            forFileName: (path as NSString).lastPathComponent
+        ) else { return [] }
+
+        let primary = contributed.serverDefinition.map { [$0] } ?? []
+        let languageID = contributed.language.languageID
+        let companions = catalog.companionServers(forLanguageID: languageID)
+        guard !companions.isEmpty else { return primary }
 
         let root = LSPCenter.workspaceRoot(for: path)
-        return LSPServerRegistry.servers(
-            forPath: path,
-            toolchain: TypeScriptToolchain.resolve(root: root),
-            tailwind: TailwindProject.resolve(forPath: path, root: root)
-        )
+        return primary + companions.compactMap { companion in
+            guard ProjectMarker.resolve(
+                forPath: path,
+                root: root,
+                markers: companion.server.projectMarkers
+            ).isPresent else { return nil }
+            return companion.serverDefinition(forLanguage: languageID)
+        }
     }
 
     func serverDefinition(forLanguage languageID: String) -> LSPServerDefinition? {
-        if let contributed = catalog.contribution(forLanguageID: languageID),
-           let definition = contributed.serverDefinition {
-            return definition
+        catalog.contribution(forLanguageID: languageID)?.serverDefinition
+    }
+
+    /// Every companion server declared for a language, whether or not this
+    /// project carries the markers that would start one.
+    ///
+    /// For the callers that ask about a *language* rather than about a file:
+    /// a Settings row listing what could run, and the class-attribute check
+    /// that only wants to know which commands to look for among the
+    /// processes already up.
+    func companionServerDefinitions(forLanguage languageID: String) -> [LSPServerDefinition] {
+        catalog.companionServers(forLanguageID: languageID)
+            .compactMap { $0.serverDefinition(forLanguage: languageID) }
+    }
+
+    /// The companion server a manifest declared as a tsserver plugin host
+    /// for this language — the process that answers the primary server's
+    /// type-aware questions. See `LSPTSServerBridge`.
+    func typeScriptPluginHost(forLanguage languageID: String) -> LSPServerDefinition? {
+        companionServerDefinitions(forLanguage: languageID).first {
+            if case .typeScriptPluginHost = $0.initializationOptionsKind { return true }
+            return false
         }
-        if catalog.contribution(forLanguageID: languageID) != nil { return nil }
-        return LSPServerRegistry.server(forLanguage: languageID)
+    }
+
+    /// Every server any installed extension declared, primaries and
+    /// companions alike, for the screens that ask "what could be installed"
+    /// rather than "what serves this file".
+    var allServerDefinitions: [LSPServerDefinition] {
+        catalog.contributed.compactMap(\.serverDefinition)
+            + catalog.servers.flatMap(\.serverDefinitions)
     }
 
     func formatter(forFileNamed name: String) -> ExternalFormatter? {

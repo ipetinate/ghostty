@@ -2058,9 +2058,10 @@ private struct DocumentView: View {
         .background(Color.secondary.opacity(0.12))
     }
 
-    /// Settings, on this server's own row — every way out of the states
-    /// this banner reports is there: a different binary, different
-    /// arguments, or the approval a withheld server is waiting on.
+    /// Settings, on the form of the extension that ships this server —
+    /// every way out of the states this banner reports is there: a different
+    /// binary, different arguments, or the approval a withheld server is
+    /// waiting on.
     ///
     /// The row is named before the window is asked for, because the first
     /// open is also the moment the settings views are built and they read
@@ -2068,8 +2069,8 @@ private struct DocumentView: View {
     /// own action, which keeps the `Ghostty.App` it needs out of the editor.
     private func openServerSettings(_ server: LSPServerDefinition) {
         SettingsNavigation.shared.target = SettingsNavigation.Target(
-            section: .languageServers,
-            row: SettingsNavigation.languageRow(for: server)
+            section: .extensions,
+            row: SettingsNavigation.extensionRow(for: server)
         )
         _ = NSApp.sendAction(#selector(AppDelegate.openConfig(_:)), to: nil, from: nil)
     }

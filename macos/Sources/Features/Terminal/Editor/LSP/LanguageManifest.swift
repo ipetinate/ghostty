@@ -9,9 +9,10 @@ import Foundation
 /// a publisher long before anything verifies them, because a format that
 /// gains identity later cannot be retrofitted onto files already published.
 /// `contributes` is the same bet: v1 reads `contributes.languages`,
-/// `formatters`, `themes`, `iconThemes` and `agents`, and every other key is counted
-/// and ignored rather than rejected, so a file written for a later build
-/// still installs the half this one understands.
+/// `servers`, `formatters`, `themes`, `iconThemes`, `grammars` and `agents`,
+/// and every other key is counted and ignored rather than rejected, so a
+/// file written for a later build still installs the half this one
+/// understands.
 ///
 /// Parsing is lenient in the shape of `IconTheme`, and for the same reason:
 /// these are files we don't control. A missing key, a string where an array
@@ -82,6 +83,10 @@ struct LanguageManifest: Equatable, Sendable {
     let publisher: String
     let eligibility: ServerEligibility
     let languages: [LanguageContribution]
+
+    /// Servers that attach alongside a language's own, rather than being
+    /// one. See `CompanionServerContribution`.
+    let servers: [CompanionServerContribution]
     let formatters: [FormatterContribution]
     let themes: [ThemeContribution]
     let iconThemes: [IconThemeContribution]
@@ -133,8 +138,8 @@ struct LanguageManifest: Equatable, Sendable {
     /// parses cleanly and lands here, the same way a font-based icon theme
     /// parses cleanly and reports itself unsupported.
     var isUsable: Bool {
-        !languages.isEmpty || !formatters.isEmpty || !themes.isEmpty || !iconThemes.isEmpty || !grammars.isEmpty
-            || !agents.isEmpty
+        !languages.isEmpty || !servers.isEmpty || !formatters.isEmpty || !themes.isEmpty
+            || !iconThemes.isEmpty || !grammars.isEmpty || !agents.isEmpty
     }
 
     /// A short reason to show beside an entry that isn't fully in force, or
@@ -188,7 +193,7 @@ struct LanguageManifest: Equatable, Sendable {
         "description", "homepage", "phantom",
     ]
     private static let knownContributesKeys: Set<String> = [
-        "languages", "formatters", "themes", "iconThemes", "grammars", "agents",
+        "languages", "servers", "formatters", "themes", "iconThemes", "grammars", "agents",
     ]
 
     /// Builds the value from an already-decoded object and a digest taken
@@ -225,17 +230,21 @@ struct LanguageManifest: Equatable, Sendable {
                 LanguageContribution.parse(json: $0, root: root, eligibility: eligibility)
             }
 
+        let servers: [CompanionServerContribution]
         let formatters: [FormatterContribution]
         let agents: [AgentDescriptor]
         let agentInstallPlans: [String: ExtensionInstallPlan]
         switch eligibility {
         case .eligible:
+            servers = objects(contributes["servers"], limit: CompanionServerContribution.maxServers)
+                .compactMap(CompanionServerContribution.parse(json:))
             formatters = objects(contributes["formatters"], limit: FormatterContribution.maxFormatters)
                 .compactMap(FormatterContribution.parse(json:))
             let rawAgents = objects(contributes["agents"], limit: AgentContribution.maxAgents)
             agents = rawAgents.compactMap { AgentContribution.parse(json: $0, root: root) }
             agentInstallPlans = installPlans(in: rawAgents)
         case .needsNewerApp, .unidentified:
+            servers = []
             formatters = []
             agents = []
             agentInstallPlans = [:]
@@ -254,6 +263,7 @@ struct LanguageManifest: Equatable, Sendable {
             publisher: displayString(json["publisher"]) ?? "",
             eligibility: eligibility,
             languages: dedupedByLanguageID(languages),
+            servers: deduped(servers, by: \.id),
             formatters: deduped(formatters, by: \.id),
             themes: deduped(themes, by: \.name),
             iconThemes: deduped(iconThemes, by: \.name),
@@ -282,7 +292,7 @@ struct LanguageManifest: Equatable, Sendable {
 
     /// One extension contributing the same `languageId` twice is a mistake
     /// in the file, and the deterministic reading is that the first entry
-    /// wins — the same rule `LSPServerRegistry` applies to its own table.
+    /// wins.
     private static func dedupedByLanguageID(
         _ languages: [LanguageContribution]
     ) -> [LanguageContribution] {
@@ -500,9 +510,9 @@ struct LanguageContribution: Equatable, Sendable {
     /// that element rather than the list.
     ///
     /// Dots inside an extension are refused. The resolver matches the
-    /// last-dot extension exactly as `LSPServerRegistry` does, so a
-    /// multi-part extension could never match anything — and allowing dots
-    /// would also allow `..`, which has no business in a lookup key.
+    /// last-dot extension, so a multi-part extension could never match
+    /// anything — and allowing dots would also allow `..`, which has no
+    /// business in a lookup key.
     static func fileExtensions(from value: Any?) -> [String] {
         let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
         var seen: Set<String> = []
@@ -660,6 +670,14 @@ struct LanguageServerContribution: Equatable, Sendable {
     /// second decoder that could disagree with it.
     let initializationOptionsJSON: String?
 
+    /// The glue this server needs that no JSON literal can express, because
+    /// it has to read the project first. See `LSPInitializationOptionsKind`.
+    let resolver: LSPInitializationOptionsKind
+
+    /// The newest Java feature version this server runs on, when it runs on
+    /// a JVM at all. See `LSPServerDefinition.maximumJavaFeatureVersion`.
+    let maximumJavaFeatureVersion: Int?
+
     /// There is deliberately **no `env`**.
     ///
     /// A manifest that could set environment variables could set
@@ -681,21 +699,70 @@ struct LanguageServerContribution: Equatable, Sendable {
             return (nil, .unsafeCommand(rawCommand))
         }
 
-        let arguments = (json["args"] as? [Any])?
+        let contribution = LanguageServerContribution(
+            command: rawCommand,
+            arguments: arguments(from: json["args"]),
+            installHint: installHint(json["installHint"]),
+            installPlan: ExtensionInstallPlan.parse(json["install"]),
+            documentationURL: documentationURL(json["documentationURL"]),
+            initializationOptionsJSON: initializationOptionsJSON(json["initializationOptions"]),
+            resolver: resolver(json["resolver"]),
+            maximumJavaFeatureVersion: maximumJavaFeatureVersion(json["maximumJavaFeatureVersion"])
+        )
+        return (contribution, nil)
+    }
+
+    /// Launch arguments, one bad element costing that element rather than
+    /// the list.
+    ///
+    /// `${HOME}` is left in place. It is expanded at launch, in
+    /// `LSPProcess`, which is the only place that knows whose home to
+    /// expand it to — see `LSPProcess.expandingHome(_:)`.
+    static func arguments(from value: Any?) -> [String] {
+        (value as? [Any])?
             .compactMap { $0 as? String }
             .filter { !$0.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar) }
             .prefix(maxArguments)
             .map { $0 } ?? []
+    }
 
-        let contribution = LanguageServerContribution(
-            command: rawCommand,
-            arguments: arguments,
-            installHint: installHint(json["installHint"]),
-            installPlan: ExtensionInstallPlan.parse(json["install"]),
-            documentationURL: documentationURL(json["documentationURL"]),
-            initializationOptionsJSON: initializationOptionsJSON(json["initializationOptions"])
-        )
-        return (contribution, nil)
+    /// A named capability the binary implements, out of the manifest's
+    /// `resolver` block. Anything this build does not implement reads as
+    /// `.none`, the same way an unknown `contributes` key does: a server
+    /// declared against a later build still starts, without the glue.
+    static func resolver(_ value: Any?) -> LSPInitializationOptionsKind {
+        guard let json = value as? [String: Any],
+              let kind = LanguageManifest.string(json["kind"])
+        else { return .none }
+
+        switch kind {
+        case "typescriptSDKArgument":
+            return .typeScriptSDKArgument
+        case "typescriptPluginHost":
+            guard let plugin = LanguageManifest.string(json["plugin"]),
+                  TypeScriptToolchain.isPackageName(plugin)
+            else { return .none }
+            let languages = (json["languages"] as? [Any] ?? [])
+                .compactMap(LanguageContribution.validLanguageID)
+                .prefix(CompanionServerContribution.maxLanguageIDs)
+                .map { $0 }
+            guard !languages.isEmpty else { return .none }
+            return .typeScriptPluginHost(plugin: plugin, languages: languages)
+        default:
+            return .none
+        }
+    }
+
+    /// A JVM feature version ceiling, or nil.
+    ///
+    /// The same `NSNumber` care `LanguageManifest.integerSchemaVersion`
+    /// takes, and for the same trap: JSON `true` bridges to `Int` as 1.
+    static func maximumJavaFeatureVersion(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber else { return nil }
+        guard CFGetTypeID(number as CFTypeRef) != CFBooleanGetTypeID() else { return nil }
+        guard let version = Int(exactly: number.doubleValue), (1...999).contains(version)
+        else { return nil }
+        return version
     }
 
     /// Whether a manifest-supplied command may be launched at all.

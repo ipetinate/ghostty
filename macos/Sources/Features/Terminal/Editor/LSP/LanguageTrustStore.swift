@@ -26,7 +26,17 @@ enum LanguageTrustStore {
 
     /// Bumped when `LanguageTrustRecord` changes shape in a way that alters
     /// what an approval covers.
-    static let currentRecordVersion = 1
+    static let currentRecordVersion = 2
+
+    /// The oldest approval this build will honour.
+    ///
+    /// Raised to 2 in 0.17.0, and the reason is what an approval now
+    /// includes rather than a change to the record's shape: a manifest's own
+    /// `initializationOptions` are sent at `initialize` from this build on,
+    /// and they were ignored before it. An option decides which code some
+    /// servers load, so a decision taken while they were ignored is not a
+    /// decision about them. Every pre-0.17 approval is asked once more.
+    static let minimumRecordVersion = 2
 
     static var all: [String: LanguageTrustRecord] {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey),
@@ -41,11 +51,13 @@ enum LanguageTrustStore {
     /// The decision for an extension, or nil when there is none this build
     /// can read.
     ///
-    /// A record from a future version reads as **absent**, which means the
+    /// A record from a future version, or from a build whose approvals
+    /// covered less than this one's, reads as **absent**, which means the
     /// user is asked again. Absent never means allowed.
     static func record(for extensionID: String) -> LanguageTrustRecord? {
         guard let record = all[extensionID] else { return nil }
-        guard record.recordVersion <= currentRecordVersion else { return nil }
+        guard (minimumRecordVersion...currentRecordVersion).contains(record.recordVersion)
+        else { return nil }
         return record
     }
 

@@ -95,15 +95,13 @@ enum ExtensionCatalogGrouping {
 
     /// The family a language extension belongs to.
     ///
-    /// Read from the index when the registry published it. An index built
-    /// before that field existed has none, so the language identifiers are
-    /// matched against the servers the app already ships — which covers every
-    /// language in the registry today and costs nothing when it does not.
+    /// Read from the index, and from nowhere else. An index built before
+    /// that field existed declares none, and an entry that declares none
+    /// files under Languages rather than being guessed at — there is no
+    /// compiled-in table of language families left to guess from, and a
+    /// heading is not worth inventing one for.
     static func category(for entry: ExtensionIndex.Entry) -> LSPServerCategory? {
-        let declared = entry.categories.compactMap(LSPServerCategory.init(rawValue:))
-        if let first = ordered(declared).first { return first }
-        let known = entry.languages.compactMap { LSPServerRegistry.category(forLanguageID: $0) }
-        return ordered(known).first
+        ordered(entry.categories.compactMap(LSPServerCategory.init(rawValue:))).first
     }
 
     private static func ordered(_ categories: [LSPServerCategory]) -> [LSPServerCategory] {

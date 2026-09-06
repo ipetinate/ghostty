@@ -12,37 +12,98 @@ struct ExtensionsSettingsView: View {
     @State private var sort: ExtensionCatalogFilter.Sort = .name
     @State private var hasRequestedRegistry = false
 
+    /// The extension whose configuration form is open, if any. A path of
+    /// ids rather than of values, so a registry reload underneath the form
+    /// leaves it pointing at the new one rather than at a stale copy.
+    @State private var path: [String] = []
+
+    /// A row a deep link named that has no form to open — not installed, so
+    /// there is nothing to configure and the useful answer is to show the
+    /// reader where it is in the list.
+    @State private var rowToReveal: String?
+
     var body: some View {
-        let sections = catalog
-
-        return Form {
-            Section {
-                ExtensionKindTabs(selection: $kind, counts: sections.counts)
-                    .padding(.vertical, 6)
-                headerRow
-                    .padding(.vertical, 4)
-                if store.index != nil, let error = store.lastRefreshError {
-                    Text(verbatim: error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+        NavigationStack(path: $path) {
+            list
+                .navigationDestination(for: String.self) { id in
+                    ExtensionSettingsForm(extensionID: id)
                 }
-            }
-
-            registryContent(sections)
-            folderSection
         }
-        .formStyle(.grouped)
-        .navigationTitle("Extensions")
-        .onAppear {
-            consumeRequest()
-            loadOnce()
-        }
-        .onChange(of: navigation.target) { _ in consumeRequest() }
     }
 
+    private var list: some View {
+        let sections = catalog
+
+        return ScrollViewReader { proxy in
+            Form {
+                Section {
+                    ExtensionKindTabs(selection: $kind, counts: sections.counts)
+                        .padding(.vertical, 6)
+                    headerRow
+                        .padding(.vertical, 4)
+                    if store.index != nil, let error = store.lastRefreshError {
+                        Text(verbatim: error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                registryContent(sections)
+                folderSection
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Extensions")
+            .onAppear {
+                loadOnce()
+                consumeRequest()
+                reveal(with: proxy)
+            }
+            .onChange(of: navigation.target) { _ in
+                consumeRequest()
+                reveal(with: proxy)
+            }
+        }
+    }
+
+    /// Answers a request to open this pane at one extension.
+    ///
+    /// An installed extension has a configuration form, so the request opens
+    /// it — that is what every caller of this deep link is after: the editor
+    /// banner about a server that will not start, and the store's own link
+    /// beside an installed card. One that is not installed has no form, so
+    /// the request only reveals its row in the list below.
     private func consumeRequest() {
-        guard navigation.target?.section == .extensions else { return }
+        guard let target = navigation.target, target.section == .extensions else { return }
         navigation.target = nil
+
+        guard let row = target.row,
+              let id = SettingsNavigation.extensionID(fromRow: row)
+        else {
+            path = []
+            return
+        }
+
+        guard store.installed.contains(where: { $0.id == id }) else {
+            path = []
+            /// A query left over from the last visit filters the list, and a
+            /// row that is filtered out cannot be scrolled to.
+            searchText = ""
+            kind = .all
+            rowToReveal = id
+            return
+        }
+
+        path = [id]
+    }
+
+    private func reveal(with proxy: ScrollViewProxy) {
+        guard let id = rowToReveal else { return }
+        rowToReveal = nil
+        /// Next turn of the loop, not this one: the row being asked for may
+        /// not have been laid out until the filter reset above has been.
+        DispatchQueue.main.async {
+            proxy.scrollTo(id, anchor: .center)
+        }
     }
 
     private var catalog: ExtensionCatalogFilter.Sections {
@@ -246,29 +307,54 @@ struct ExtensionsSettingsView: View {
 
     // MARK: Rows
 
-    private func entryRow(_ entry: ExtensionIndex.Entry) -> ExtensionRow {
-        ExtensionRow(
-            subject: .entry(entry, state: store.state(for: entry)),
-            style: .form,
-            icon: store.icon(for: entry),
-            activity: store.activity[entry.id],
-            error: store.errors[entry.id],
-            onOpen: { ExtensionDocumentTabs.open(entry) },
-            onInstall: { Task { await store.install(entry) } },
-            onRemove: { Task { await store.remove(id: entry.id) } }
-        )
+    private func entryRow(_ entry: ExtensionIndex.Entry) -> some View {
+        HStack(spacing: 8) {
+            ExtensionRow(
+                subject: .entry(entry, state: store.state(for: entry)),
+                style: .form,
+                icon: store.icon(for: entry),
+                activity: store.activity[entry.id],
+                error: store.errors[entry.id],
+                onOpen: { ExtensionDocumentTabs.open(entry) },
+                onInstall: { Task { await store.install(entry) } },
+                onRemove: { Task { await store.remove(id: entry.id) } }
+            )
+            configureButton(id: entry.id)
+        }
+        .id(entry.id)
     }
 
-    private func orphanRow(_ installed: InstalledExtension) -> ExtensionRow {
-        ExtensionRow(
-            subject: .orphan(installed),
-            style: .form,
-            icon: installed.iconURL.map(ExtensionIconSource.file),
-            activity: store.activity[installed.id],
-            error: store.errors[installed.id],
-            onOpen: { ExtensionDocumentTabs.open(installed: installed) },
-            onInstall: {},
-            onRemove: { Task { await store.remove(id: installed.id) } }
-        )
+    private func orphanRow(_ installed: InstalledExtension) -> some View {
+        HStack(spacing: 8) {
+            ExtensionRow(
+                subject: .orphan(installed),
+                style: .form,
+                icon: installed.iconURL.map(ExtensionIconSource.file),
+                activity: store.activity[installed.id],
+                error: store.errors[installed.id],
+                onOpen: { ExtensionDocumentTabs.open(installed: installed) },
+                onInstall: {},
+                onRemove: { Task { await store.remove(id: installed.id) } }
+            )
+            configureButton(id: installed.id)
+        }
+        .id(installed.id)
+    }
+
+    /// The way into an extension's own settings, offered only once it is
+    /// installed — a form about a binary that is not on this machine, and an
+    /// override of arguments nothing reads, would be a screen with nothing
+    /// true on it.
+    @ViewBuilder
+    private func configureButton(id: String) -> some View {
+        if store.installed.contains(where: { $0.id == id }) {
+            Button {
+                path = [id]
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.borderless)
+            .help("Configure this extension")
+        }
     }
 }

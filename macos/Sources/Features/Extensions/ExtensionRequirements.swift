@@ -68,6 +68,11 @@ enum ExtensionRequirements {
                 server.command, .languageServer,
                 plan: server.installPlan, documentationURL: server.documentationURL)
         }
+        for server in manifest.servers {
+            note(
+                server.command, .languageServer,
+                plan: server.installPlan, documentationURL: server.documentationURL)
+        }
         for formatter in manifest.formatters {
             note(
                 formatter.command, .formatter,

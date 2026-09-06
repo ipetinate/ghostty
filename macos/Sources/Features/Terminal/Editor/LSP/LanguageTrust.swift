@@ -8,7 +8,10 @@ import Foundation
 /// language id can, and one missed lookup is not a bug in a UI — it is the
 /// gate not running.
 enum LSPServerOrigin: Hashable, Sendable {
-    /// From `LSPServerRegistry.all`, compiled into this build.
+    /// Compiled into this build. No language server is any more — every one
+    /// of them comes from a manifest — but a formatter and an agent still
+    /// can be, and the gate has to have a case that means "nobody needs to
+    /// be asked about this".
     case builtIn
 
     /// From an `extension.json`, with the identity an approval is keyed by.

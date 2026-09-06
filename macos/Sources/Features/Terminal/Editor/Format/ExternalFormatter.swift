@@ -4,8 +4,9 @@ import Foundation
 /// formats.
 ///
 /// The gap this fills was measured rather than assumed: every language server
-/// in `LSPServerRegistry` was started and asked what it offers, and the answer
-/// for Python was that `pyright` has no formatter at all — by design, it says
+/// this app shipped a definition for was started and asked what it offers, and
+/// the answer for Python was that `pyright` has no formatter at all — by
+/// design, it says
 /// so in its own documentation. Shell is the same story one step removed:
 /// `bash-language-server` advertises formatting and shells out to `shfmt`, so
 /// a machine without `shfmt` has a server that says yes and does nothing. Lua
@@ -17,8 +18,8 @@ import Foundation
 /// declares. This table holds none of it: these four are the tools that are
 /// genuinely one process, text in, text out.
 struct ExternalFormatter: Identifiable, Hashable, Sendable {
-    /// The language, spelled as `LSPServerRegistry` spells it where there is
-    /// a server for it. It is also the settings key, so it does not change.
+    /// The language, spelled as its LSP `languageId` where there is a server
+    /// for it. It is also the settings key, so it does not change.
     let id: String
 
     /// The language, as a person says it.

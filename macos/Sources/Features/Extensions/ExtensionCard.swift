@@ -18,6 +18,7 @@ struct ExtensionCard: Equatable, Sendable {
     let created: Date
     let updated: Date?
     let icon: String?
+    let iconData: Data?
     let cover: String?
     let tags: [String]
     let screenshots: [String]
@@ -34,6 +35,9 @@ extension ExtensionCard {
     static let maxTags = 8
     static let maxScreenshots = 8
     static let maxMedia = 64
+
+    static let maxInlineIconBytes = 16 * 1024
+    static let inlineIconPrefixes = ["data:image/svg+xml;base64,", "data:image/png;base64,"]
 
     static let maxTitleLength = 128
     static let maxTaglineLength = 512
@@ -72,6 +76,7 @@ extension ExtensionCard {
             created: created,
             updated: date(json["updated"]),
             icon: icon,
+            iconData: inlineIcon(json["iconData"]),
             cover: cover,
             tags: tagList(json["tags"]),
             screenshots: screenshots,
@@ -80,6 +85,18 @@ extension ExtensionCard {
             media: media,
             mediaBytes: mediaBytes
         )
+    }
+
+    static func inlineIcon(_ value: Any?) -> Data? {
+        guard let raw = LanguageManifest.string(value),
+              let prefix = inlineIconPrefixes.first(where: { raw.hasPrefix($0) })
+        else { return nil }
+        let encoded = raw.dropFirst(prefix.count)
+        guard encoded.count <= maxInlineIconBytes * 4 / 3 + 4,
+              let data = Data(base64Encoded: String(encoded)),
+              !data.isEmpty, data.count <= maxInlineIconBytes
+        else { return nil }
+        return data
     }
 
     static func relativePath(_ value: Any?) -> String? {

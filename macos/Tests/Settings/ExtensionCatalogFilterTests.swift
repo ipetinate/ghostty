@@ -37,7 +37,7 @@ struct ExtensionCatalogFilterTests {
         ExtensionCard(
             title: "", tagline: "", license: "MIT",
             author: ExtensionCard.Author(name: author, url: nil),
-            created: created, updated: updated, icon: nil, cover: nil,
+            created: created, updated: updated, icon: nil, iconData: nil, cover: nil,
             tags: tags, screenshots: [], document: "extension.mdx", documentBytes: 1,
             media: [], mediaBytes: 0)
     }

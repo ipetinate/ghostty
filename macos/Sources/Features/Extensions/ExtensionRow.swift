@@ -49,7 +49,7 @@ struct ExtensionRow: View {
 
     let subject: Subject
     let style: Style
-    let iconURL: URL?
+    let icon: ExtensionIconSource?
     let activity: ExtensionActivity?
     let error: String?
     var isSelected = false
@@ -84,7 +84,7 @@ struct ExtensionRow: View {
             trailing(controlSize: .regular)
         } label: {
             HStack(alignment: .center, spacing: 10) {
-                ExtensionIconView(url: iconURL, size: 28)
+                ExtensionIconView(source: icon, size: 28)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(verbatim: subject.title)
@@ -113,7 +113,7 @@ struct ExtensionRow: View {
 
     private var compactBody: some View {
         HStack(spacing: 12) {
-            ExtensionIconView(url: iconURL, size: 40)
+            ExtensionIconView(source: icon, size: 40)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(verbatim: subject.title)
@@ -340,7 +340,7 @@ struct ExtensionTagView: View {
 }
 
 struct ExtensionIconView: View {
-    let url: URL?
+    let source: ExtensionIconSource?
     var size: CGFloat = 28
 
     @State private var image: NSImage?
@@ -363,19 +363,37 @@ struct ExtensionIconView: View {
             }
         }
         .frame(width: size, height: size)
-        .task(id: url) {
-            image = await Self.load(url)
+        .task(id: source?.key) {
+            image = await Self.resolve(source)
         }
     }
 
-    static func load(_ url: URL?) async -> NSImage? {
-        guard let url else { return nil }
-        let data = await Task.detached(priority: .utility) { () -> Data? in
-            guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
-                  size <= ExtensionMediaGate.maxImageBytes
-            else { return nil }
-            return try? Data(contentsOf: url)
-        }.value
+    @MainActor
+    static func resolve(_ source: ExtensionIconSource?) async -> NSImage? {
+        guard let source else { return nil }
+        let key = source.key
+        let cache = ExtensionIconCache.shared
+        if cache.knows(key) { return cache.image(forKey: key) }
+        let image = Self.image(from: await bytes(of: source))
+        cache.remember(image, forKey: key)
+        return image
+    }
+
+    static func bytes(of source: ExtensionIconSource) async -> Data? {
+        switch source {
+        case .inline(_, let data):
+            return data
+        case .file(let url):
+            return await Task.detached(priority: .utility) { () -> Data? in
+                guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+                      size <= ExtensionMediaGate.maxImageBytes
+                else { return nil }
+                return try? Data(contentsOf: url)
+            }.value
+        }
+    }
+
+    static func image(from data: Data?) -> NSImage? {
         guard let data, let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else {
             return nil
         }

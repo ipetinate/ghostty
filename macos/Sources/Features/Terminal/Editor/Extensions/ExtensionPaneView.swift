@@ -99,7 +99,7 @@ struct ExtensionPaneView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            ExtensionIconView(url: iconURL, size: 64)
+            ExtensionIconView(source: icon, size: 64)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -197,9 +197,9 @@ struct ExtensionPaneView: View {
         }
     }
 
-    private var iconURL: URL? {
-        if let entry { return store.iconURL(for: entry) }
-        return installed?.iconURL
+    private var icon: ExtensionIconSource? {
+        if let entry { return store.icon(for: entry) }
+        return installed?.iconURL.map(ExtensionIconSource.file)
     }
 
     // MARK: Document

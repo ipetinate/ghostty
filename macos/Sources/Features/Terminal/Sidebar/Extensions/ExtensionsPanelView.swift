@@ -172,7 +172,7 @@ struct ExtensionsPanelView: View {
         ExtensionRow(
             subject: .entry(entry, state: store.state(for: entry)),
             style: .compact,
-            iconURL: store.iconURL(for: entry),
+            icon: store.icon(for: entry),
             activity: store.activity[entry.id],
             error: store.errors[entry.id],
             isSelected: selectedID == entry.id,
@@ -190,7 +190,7 @@ struct ExtensionsPanelView: View {
         ExtensionRow(
             subject: .orphan(installed),
             style: .compact,
-            iconURL: installed.iconURL,
+            icon: installed.iconURL.map(ExtensionIconSource.file),
             activity: store.activity[installed.id],
             error: store.errors[installed.id],
             isSelected: selectedID == installed.id,

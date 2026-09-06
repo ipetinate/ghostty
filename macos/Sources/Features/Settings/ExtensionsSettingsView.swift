@@ -233,7 +233,7 @@ struct ExtensionsSettingsView: View {
         ExtensionRow(
             subject: .entry(entry, state: store.state(for: entry)),
             style: .form,
-            iconURL: store.iconURL(for: entry),
+            icon: store.icon(for: entry),
             activity: store.activity[entry.id],
             error: store.errors[entry.id],
             onOpen: { ExtensionDocumentTabs.open(entry) },
@@ -246,7 +246,7 @@ struct ExtensionsSettingsView: View {
         ExtensionRow(
             subject: .orphan(installed),
             style: .form,
-            iconURL: installed.iconURL,
+            icon: installed.iconURL.map(ExtensionIconSource.file),
             activity: store.activity[installed.id],
             error: store.errors[installed.id],
             onOpen: { ExtensionDocumentTabs.open(installed: installed) },

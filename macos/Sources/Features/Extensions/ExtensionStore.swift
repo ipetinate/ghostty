@@ -214,6 +214,10 @@ final class ExtensionStore: ObservableObject {
         previews[id] = nil
     }
 
+    func icon(for entry: ExtensionIndex.Entry) -> ExtensionIconSource? {
+        ExtensionIconSource.of(entry: entry, file: iconURL(for: entry))
+    }
+
     func iconURL(for entry: ExtensionIndex.Entry) -> URL? {
         let onDisk = installed.first { $0.id == entry.id }
         guard let icon = entry.card?.icon else { return onDisk?.iconURL }

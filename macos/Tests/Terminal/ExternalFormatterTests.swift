@@ -33,17 +33,13 @@ struct ExternalFormatterTests {
         }
     }
 
-    /// **The two tables must not overlap.** Prettier resolves a project, a
-    /// config and an ignore file; these are one process with no opinion about
-    /// any of that. A file both claimed would be formatted by whichever route
-    /// the editor happened to try first, which is not a decision anybody made.
-    @Test func nothingHereIsAlsoAPrettierFile() {
+    /// None of them asks anything of a project, which is what makes this a
+    /// table of tools rather than of routing. A tool that wants a project to
+    /// declare it says so in a manifest — see `FormatterProjectTests`.
+    @Test func nothingHereAsksAProjectForAnything() {
         for formatter in ExternalFormatterRegistry.all {
-            for ext in formatter.extensions {
-                #expect(
-                    !PrettierProject.parserCanBeInferred(for: "sample.\(ext)"),
-                    "Prettier also claims .\(ext)")
-            }
+            #expect(!formatter.projectRules.declaresAdoption, "\(formatter.id)")
+            #expect(formatter.projectRules.workingDirectory == .file, "\(formatter.id)")
         }
     }
 
@@ -122,8 +118,7 @@ struct ExternalFormatterTests {
 
     /// **The one that deletes files.** A buffer halfway through a function is a
     /// parse error, and a parse error exits non-zero having printed nothing:
-    /// reading stdout first would answer "your file is now empty". Same order,
-    /// same reason, as `PrettierRunner.result`.
+    /// reading stdout first would answer "your file is now empty".
     @Test func aNonZeroExitWithNoOutputIsAFailureAndNotAnEmptyFile() {
         do {
             let result = try ExternalFormatterRunner.result(
@@ -184,6 +179,120 @@ struct ExternalFormatterTests {
             tool: "StyLua", hint: "brew install stylua")
 
         #expect(failure.reason == "StyLua isn't installed. brew install stylua")
+    }
+
+    // MARK: What reaches the reader
+
+    /// The regression this section exists for: a save banner read *"The
+    /// operation couldn't be completed."* followed by the runtime's own tag
+    /// for the case, which is what `localizedDescription` answers for a bare
+    /// Swift enum. It told the reader nothing, and it told whoever read the
+    /// report less than nothing — the runtime orders the payload cases first,
+    /// so the number pointed at the wrong case.
+    @Test func everyFailureDescribesItselfRatherThanItsTag() {
+        let failures: [ExternalFormatterFailure] = [
+            .notFound(tool: "Tool", hint: "brew install tool"),
+            .launchFailed(tool: "Tool", reason: "No such file or directory"),
+            .timedOut(tool: "Tool", seconds: 10),
+            .failed(tool: "Tool", status: 2, message: "SyntaxError: Unexpected token (3:1)"),
+        ]
+
+        for failure in failures {
+            #expect(failure.localizedDescription == failure.reason)
+            #expect(!failure.localizedDescription.contains("ExternalFormatterFailure"))
+        }
+    }
+
+    /// A real parse error, pasted from a run. The sentence is the first line;
+    /// the rest is a code frame drawn in a monospaced column an alert does not
+    /// have.
+    @Test func aParseErrorsCodeFrameStaysOutOfTheBanner() {
+        let stderr = """
+            [error] /p/main.tsx: SyntaxError: Declaration or statement expected. (3:1)
+            [error]   1 | const a = 1
+            [error]   2 |
+            [error] > 3 | }
+            [error]     | ^
+            [error]   4 |
+            """
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr)
+                == "/p/main.tsx: SyntaxError: Declaration or statement expected. (3:1)"
+        )
+    }
+
+    /// A configuration naming a plugin that will not load, which is the case
+    /// that prints a stack trace — twenty frames of the tool's own bundle in
+    /// the run this was taken from, enough to push the sentence out of an
+    /// alert entirely.
+    @Test func aPluginsStackTraceStaysOutOfTheBanner() {
+        let stderr = """
+            [error] /p/main.ts: Error: Cannot find package 'plugin-nope' imported from /p/noop.js
+            [error]     at __node_internal_ (file:///p/node_modules/tool/index.mjs:14106:11)
+            [error]     at new NodeError (file:///p/node_modules/tool/index.mjs:14071:5)
+            [error]     at packageResolve (file:///p/node_modules/tool/index.mjs:15012:9)
+            """
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr)
+                == "/p/main.ts: Error: Cannot find package 'plugin-nope' imported from /p/noop.js"
+        )
+    }
+
+    /// Why the banner is not simply the first line. A malformed configuration
+    /// takes three to say anything: on its own, `Invalid configuration for
+    /// file` names no fault.
+    @Test func aConfigurationErrorKeepsTheLinesThatNameTheFault() {
+        let stderr = """
+            [error] Invalid configuration for file "/p/main.ts":
+            [error] YAML Error in /p/.toolrc:
+            [error] Flow map must end with a } at line 2, column 1:
+            [error]\u{20}
+            [error] { "semi": false
+            [error]\u{20}
+            [error] ^
+            [error]\u{20}
+            """
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr) == """
+                Invalid configuration for file "/p/main.ts":
+                YAML Error in /p/.toolrc:
+                Flow map must end with a } at line 2, column 1:
+                { "semi": false
+                """
+        )
+    }
+
+    /// The bound on an unmeasured shape — a plugin free to print an essay.
+    @Test func aBannerIsNotUnbounded() {
+        let stderr = (1...40).map { "[error] line \($0)" }.joined(separator: "\n")
+        let lines = ExternalFormatterFailure.banner(from: stderr).split(separator: "\n")
+
+        #expect(lines.count == 4)
+        #expect(lines.first == "line 1")
+    }
+
+    /// Trimming that removed everything would leave a banner saying nothing at
+    /// all, which is the failure this whole section is about. A wall of text
+    /// beats that.
+    @Test func aMessageThatIsNothingButScaffoldingSurvivesWhole() {
+        let stderr = "[error]   1 | const a = 1\n[error]     | ^\n"
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr)
+                == "[error]   1 | const a = 1\n[error]     | ^"
+        )
+    }
+
+    /// The tool is still named in front of it, because "the formatter failed"
+    /// leaves the reader guessing which of the several ran.
+    @Test func theTrimmedBannerIsStillAttributed() {
+        let failure = ExternalFormatterFailure.failed(
+            tool: "Tool", status: 2, message: "[error] main.ts: Unexpected token (3:7)")
+
+        #expect(failure.reason == "Tool: main.ts: Unexpected token (3:7)")
     }
 
     // MARK: Running one

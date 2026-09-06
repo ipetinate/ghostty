@@ -133,20 +133,6 @@ enum EditorSettings {
     /// is the one where saving writes exactly what is on screen.
     static let formatOnSaveKey = "EditorFormatOnSave"
 
-    /// Let a project's own Prettier format the files it handles, in place of
-    /// the language server.
-    ///
-    /// On by default, because a repository that carries a Prettier config has
-    /// already decided how its files are written, and a language server
-    /// formatting them another way is the wrong answer arriving faster.
-    ///
-    /// Worth a switch at all because honouring that decision means running
-    /// `node_modules/.bin/prettier` **from the repository that was opened** —
-    /// the only way the project's own version and plugins apply, and the same
-    /// thing every editor does, but still code from a folder rather than from
-    /// this app. Turning this off keeps formatting on the language server.
-    static let usesPrettierKey = "EditorUsesPrettier"
-
     /// Offer the Markdown snippet catalogue when a `/` is typed.
     ///
     /// On by default, and worth a switch because the trigger it installs is a

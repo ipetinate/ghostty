@@ -17,6 +17,7 @@ const global = @import("global.zig");
 const apprt = @import("apprt.zig");
 const internal_os = @import("os/main.zig");
 const windows = @import("os/windows.zig");
+const oni = @import("oniguruma");
 
 // Some comptime assertions that our C API depends on.
 comptime {
@@ -174,6 +175,104 @@ pub export fn ghostty_translate(msgid: [*:0]const u8) [*:0]const u8 {
 /// Free a string allocated by Ghostty.
 pub export fn ghostty_string_free(str: String) void {
     str.deinit();
+}
+
+/// A compiled Oniguruma pattern, plus the scratch it searches into.
+///
+/// The region is kept on the handle rather than made per search: Oniguruma
+/// reuses a region's allocation when it already has the capacity, so a
+/// tokenizer running one pattern down a file pays for that buffer once
+/// instead of once per line. It is also why a handle cannot be searched
+/// from two threads at once, which `ghostty.h` says out loud.
+const Regex = struct {
+    regex: oni.Regex,
+    region: oni.Region = .{},
+    match_param: oni.MatchParam,
+
+    /// Enough backtracking for a grammar written by somebody else, and not
+    /// so much that a pathological pattern stops the editor. Oniguruma's
+    /// own default is unlimited.
+    const retry_limit = 1_000_000;
+};
+
+pub export fn ghostty_regex_new(ptr: [*]const u8, len: usize) ?*Regex {
+    const alloc = global.alloc();
+    const self = alloc.create(Regex) catch return null;
+    errdefer alloc.destroy(self);
+
+    self.regex = oni.Regex.init(
+        ptr[0..len],
+        .{},
+        oni.Encoding.utf8,
+        oni.Syntax.default,
+        null,
+    ) catch |err| {
+        std.log.warn("regex failed to compile error={} pattern={s}", .{ err, ptr[0..len] });
+        alloc.destroy(self);
+        return null;
+    };
+    errdefer self.regex.deinit();
+
+    self.region = .{};
+    self.match_param = oni.MatchParam.init() catch {
+        self.regex.deinit();
+        alloc.destroy(self);
+        return null;
+    };
+    self.match_param.setRetryLimitInSearch(Regex.retry_limit) catch {};
+
+    return self;
+}
+
+pub export fn ghostty_regex_free(self_: ?*Regex) void {
+    const self = self_ orelse return;
+    self.region.deinit();
+    self.match_param.deinit();
+    self.regex.deinit();
+    global.alloc().destroy(self);
+}
+
+pub export fn ghostty_regex_capture_count(self_: ?*Regex) usize {
+    const self = self_ orelse return 0;
+    const count = oni.c.c.onig_number_of_captures(self.regex.value);
+    if (count < 0) return 1;
+    return @as(usize, @intCast(count)) + 1;
+}
+
+pub export fn ghostty_regex_search(
+    self_: ?*Regex,
+    text: [*]const u8,
+    text_len: usize,
+    start: usize,
+    captures: [*]i64,
+    captures_cap: usize,
+) isize {
+    const self = self_ orelse return -1;
+    if (start > text_len) return -1;
+
+    _ = self.regex.searchAdvancedWithParam(
+        text[0..text_len],
+        start,
+        text_len,
+        &self.region,
+        .{},
+        &self.match_param,
+    ) catch |err| return switch (err) {
+        error.Mismatch => 0,
+        else => -1,
+    };
+
+    const groups = self.region.count();
+    if (groups == 0) return 0;
+    if (groups > captures_cap) return -1;
+
+    const starts = self.region.starts();
+    const ends = self.region.ends();
+    for (0..groups) |i| {
+        captures[i * 2] = starts[i];
+        captures[i * 2 + 1] = ends[i];
+    }
+    return @intCast(groups);
 }
 
 // On Windows, Zig's _DllMainCRTStartup does not initialize the MSVC C

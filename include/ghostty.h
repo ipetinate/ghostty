@@ -62,6 +62,7 @@ typedef void* ghostty_app_t;
 typedef void* ghostty_config_t;
 typedef void* ghostty_surface_t;
 typedef void* ghostty_inspector_t;
+typedef void* ghostty_regex_t;
 
 // All the types below are fully defined and must be kept in sync with
 // their Zig counterparts. Any changes to these types MUST have an associated
@@ -1272,6 +1273,36 @@ GHOSTTY_API void ghostty_set_window_background_blur(ghostty_app_t, void*);
 
 // Benchmark API, if available.
 GHOSTTY_API bool ghostty_benchmark_cli(const char*, const char*);
+
+// Oniguruma regular expressions.
+//
+// Exposed because the editor's grammar engine needs the dialect TextMate
+// grammars are written in: backreferences inside an `end` pattern, `\G` to
+// anchor a continuation to where the last match stopped, and lookbehind.
+// NSRegularExpression is ICU and does none of the three the same way.
+//
+// A compiled regex is not thread-safe to search from two threads at once,
+// because Oniguruma writes match positions through the caller's buffer.
+// Compile one per thread, or serialise.
+GHOSTTY_API ghostty_regex_t ghostty_regex_new(const char*, uintptr_t);
+GHOSTTY_API void ghostty_regex_free(ghostty_regex_t);
+
+// Searches text[start..len] and writes (start, end) byte offsets into
+// captures, two int64_t per group, group zero first. An unmatched group is
+// (-1, -1). Returns the number of groups written, 0 when nothing matched,
+// and -1 on error or when captures_cap is too small for the pattern.
+//
+// The whole text is passed on every call, not the slice being searched, so
+// that `^`, `\G` and lookbehind see the context they are written against.
+GHOSTTY_API intptr_t ghostty_regex_search(ghostty_regex_t,
+                                          const char*,
+                                          uintptr_t,
+                                          uintptr_t,
+                                          int64_t*,
+                                          uintptr_t);
+
+// How many capture groups the pattern has, group zero included.
+GHOSTTY_API uintptr_t ghostty_regex_capture_count(ghostty_regex_t);
 
 #ifdef __cplusplus
 }

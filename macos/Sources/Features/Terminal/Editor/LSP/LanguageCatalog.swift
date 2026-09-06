@@ -102,7 +102,8 @@ struct LanguageCatalog: Equatable {
                 extensions: Set(formatter.fileExtensions),
                 installHint: formatter.installHint,
                 note: nil,
-                provenance: provenance
+                provenance: provenance,
+                projectRules: formatter.projectRules
             )
         }
     }

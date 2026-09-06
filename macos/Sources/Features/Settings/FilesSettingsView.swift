@@ -37,7 +37,6 @@ struct FilesSettingsView: View {
     @AppStorage(EditorSettings.closesTagsKey) private var closesTags = true
     @AppStorage(EditorSettings.expandsTagsKey) private var expandsTags = true
     @AppStorage(EditorSettings.formatOnSaveKey) private var formatOnSave = false
-    @AppStorage(EditorSettings.usesPrettierKey) private var usesPrettier = true
     @AppStorage(EditorSettings.markdownSnippetsKey) private var markdownSnippets = true
 
     @State private var isChoosingFont = false
@@ -200,24 +199,22 @@ struct FilesSettingsView: View {
             Section {
                 Toggle("Format on Save", isOn: $formatOnSave)
                     .toggleStyle(.switch)
-                Toggle("Use the Project's Prettier", isOn: $usesPrettier)
-                    .toggleStyle(.switch)
             } header: {
                 Text("Formatting")
             } footer: {
                 Text("""
-                A project carrying a Prettier config has already decided how its \
-                files are written, so Prettier formats the ones it handles and the \
-                language server keeps the rest. Its own config is honored whatever \
-                the format — including `prettier.config.mjs`, which only Prettier \
-                itself can read.
+                A project that declares a formatter — a configuration file it \
+                carries, or the tool installed into it — has already decided how \
+                its files are written, so that tool formats the ones it handles \
+                and the language server keeps the rest. The tool resolves its own \
+                configuration, whatever the format.
 
-                Honoring the project's version and plugins means running the \
-                `prettier` inside its `node_modules`, which is code from the folder \
-                you opened rather than from this app. Turn this off to keep \
-                formatting on the language server.
+                Honoring the project's version and plugins means running the copy \
+                inside the project, which is code from the folder you opened \
+                rather than from this app. Phantom asks before it runs one, and \
+                remembers the answer for that extension.
 
-                Formatting never blocks a save: if Prettier is missing, slow or \
+                Formatting never blocks a save: if the tool is missing, slow or \
                 unhappy, the file is still written.
                 """)
                     .font(.caption)
@@ -225,9 +222,9 @@ struct FilesSettingsView: View {
             }
 
             /// Directly under Formatting, because it is the rest of the same
-            /// answer: that section says what happens to the files Prettier
-            /// and the language servers handle, and this one says what happens
-            /// to the languages neither of them formats.
+            /// answer: that section says when a formatter runs at all, and this
+            /// one says which tool each language gets and lets it be pointed
+            /// somewhere else.
             ExternalFormatterSettingsSection()
 
             /// Above Completion, and next to Formatting, because that is the

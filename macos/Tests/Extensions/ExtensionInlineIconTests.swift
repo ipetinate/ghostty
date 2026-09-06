@@ -6,6 +6,11 @@ import Testing
 struct ExtensionInlineIconTests {
     static let svg = Data("<svg xmlns='http://www.w3.org/2000/svg'/>".utf8)
 
+    static let pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+    static let sizedSVG = Data(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16'/></svg>".utf8)
+
     static func dataURI(_ mediaType: String = "image/svg+xml", _ bytes: Data = svg) -> String {
         "data:\(mediaType);base64,\(bytes.base64EncodedString())"
     }
@@ -57,7 +62,16 @@ struct ExtensionInlineIconTests {
         let entry = try #require(ExtensionIndex.Entry.parse(json))
         let source = try #require(ExtensionIconSource.of(entry: entry, file: nil))
         #expect(source.key == "inline:\(entry.id)@\(entry.version)")
-        #expect(ExtensionIconView.image(from: Self.svg) != nil)
+    }
+
+    /// An SVG that declares no size is not artwork this can draw, and the
+    /// bytes the registry inlines are the one place icon data comes from.
+    @Test func decodesTheBytesAnIconIsMadeOf() {
+        #expect(ExtensionIconView.image(from: Data(base64Encoded: Self.pixel)) != nil)
+        #expect(ExtensionIconView.image(from: Data("not an image".utf8)) == nil)
+        #expect(ExtensionIconView.image(from: nil) == nil)
+        #expect(ExtensionIconView.image(from: Self.svg) == nil)
+        #expect(ExtensionIconView.image(from: Self.sizedSVG) != nil)
     }
 
     @Test func anEntryWithoutAnIconHasNoSource() throws {

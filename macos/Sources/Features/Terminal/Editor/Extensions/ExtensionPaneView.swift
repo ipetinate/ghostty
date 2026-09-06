@@ -8,6 +8,7 @@ struct ExtensionPaneView: View {
     @ObservedObject private var store: ExtensionStore = .shared
     @ObservedObject private var palette: ThemePalette = .shared
     @ObservedObject private var config: GuiConfigStore = .shared
+    @StateObject private var requirements = ExtensionRequirementsModel()
     @State private var status: ExtensionDocumentView.Status = .rendering
 
     private var id: String { document.extensionID }
@@ -41,6 +42,7 @@ struct ExtensionPaneView: View {
             } else {
                 VStack(spacing: 0) {
                     header
+                    requirementsSection
                     Divider()
                     documentArea
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -49,6 +51,8 @@ struct ExtensionPaneView: View {
         }
         .task(id: previewKey) { await requestPreview() }
         .onChange(of: document.id) { _ in status = .rendering }
+        .onChange(of: manifestDirectory) { requirements.load(directory: $0) }
+        .onAppear { requirements.load(directory: manifestDirectory) }
     }
 
     private func requestPreview() async {
@@ -57,6 +61,21 @@ struct ExtensionPaneView: View {
             await store.preview(entry)
         } else if let installed {
             await store.preview(installed: installed)
+        }
+    }
+
+    private var manifestDirectory: URL? { store.manifestDirectory(for: id) }
+
+    @ViewBuilder
+    private var requirementsSection: some View {
+        if requirements.hasMissing {
+            ExtensionRequirementsSection(requirements: requirements.requirements) {
+                requirements.noteAvailabilityChanged()
+                LSPCenter.shared.noteAvailabilityChanged()
+                Task { await store.refreshRequirements(id: id) }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
     }
 

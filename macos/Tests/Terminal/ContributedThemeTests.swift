@@ -168,6 +168,47 @@ struct ContributedThemeTests {
         #expect(TerminalTheme.Source.user.sortRank < TerminalTheme.Source.contributed(extension: "x").sortRank)
         #expect(TerminalTheme.Source.contributed(extension: "x").sortRank < TerminalTheme.Source.builtin.sortRank)
     }
+
+    // MARK: Which group a theme lands in
+
+    @Test func aDeclaredAppearanceDecidesTheGroupOverTheBackground() throws {
+        let root = try makeRoot(directory: "acme.lua", themes: ["lua-dark"])
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        let url = root.appendingPathComponent("themes/lua-dark")
+
+        let claimedLight = try #require(ThemeCatalog.parse(
+            url: url,
+            source: .contributed(extension: "Lua"),
+            name: "Lua Dark",
+            declaredAppearance: .light
+        ))
+        #expect(claimedLight.isLight)
+
+        let claimedDark = try #require(ThemeCatalog.parse(
+            url: url,
+            source: .contributed(extension: "Lua"),
+            name: "Lua Dark",
+            declaredAppearance: .dark
+        ))
+        #expect(!claimedDark.isLight)
+    }
+
+    @Test func aThemeWithNoDeclaredAppearanceIsReadOffItsBackground() {
+        let url = URL(fileURLWithPath: "/tmp/Any")
+        var dark = TerminalTheme(name: "Any", source: .builtin, url: url)
+        dark.background = NSColor(hex: "#1e1e2e")
+        #expect(!dark.isLight)
+
+        var light = TerminalTheme(name: "Any", source: .user, url: url)
+        light.background = NSColor(hex: "#fafafa")
+        #expect(light.isLight)
+    }
+
+    @Test func everySourceNamesItselfOnTheCard() {
+        #expect(TerminalTheme.Source.builtin.label == "Built-in")
+        #expect(TerminalTheme.Source.user.label == "Custom")
+        #expect(TerminalTheme.Source.contributed(extension: "Lua").label == "Lua")
+    }
 }
 
 @MainActor

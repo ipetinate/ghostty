@@ -15,11 +15,26 @@ struct TerminalTheme: Identifiable, Equatable {
             case .builtin: return 2
             }
         }
+
+        /// What a theme card says under the name. The origin of a theme is a
+        /// detail of that theme, not the shelf it is filed under.
+        var label: String {
+            switch self {
+            case .builtin: return "Built-in"
+            case .user: return "Custom"
+            case .contributed(let extensionName): return extensionName
+            }
+        }
     }
 
     let name: String
     let source: Source
     let url: URL
+
+    /// The appearance the theme's manifest claims, when one supplied it.
+    /// Only a contributed theme has a manifest; the rest are a file of
+    /// colors and nothing else.
+    var declaredAppearance: ThemeContribution.Appearance?
 
     var background: NSColor?
     var foreground: NSColor?
@@ -41,6 +56,14 @@ struct TerminalTheme: Identifiable, Equatable {
     var previewColors: [NSColor] {
         (0..<8).compactMap { palette[$0] }
     }
+
+    /// Which of the two groups the theme belongs in. A declared appearance
+    /// is taken at its word, because the author of the theme knows what it
+    /// is for; anything else is read off the background it paints.
+    var isLight: Bool {
+        if let declaredAppearance { return declaredAppearance == .light }
+        return background?.isLightColor == true
+    }
 }
 
 /// Discovers and parses themes from the app bundle, the user's config
@@ -50,6 +73,11 @@ struct TerminalTheme: Identifiable, Equatable {
 final class ThemeCatalog: ObservableObject {
     @Published private(set) var themes: [TerminalTheme] = []
     @Published private(set) var isLoading = false
+
+    /// The theme a fresh install starts on, and the one a deleted theme
+    /// falls back to. A bare bundled name, which the core resolves against
+    /// its own resources directory.
+    static let defaultThemeName = "Dracula"
 
     private let userThemesDirs: [URL]
 
@@ -96,7 +124,8 @@ final class ThemeCatalog: ObservableObject {
                 guard let theme = Self.parse(
                     url: entry.theme.fileURL,
                     source: .contributed(extension: entry.extensionName),
-                    name: entry.theme.name
+                    name: entry.theme.name,
+                    declaredAppearance: entry.theme.appearance
                 ), seen.insert(theme.name).inserted
                 else { continue }
                 result.append(theme)
@@ -132,11 +161,17 @@ final class ThemeCatalog: ObservableObject {
     nonisolated static func parse(
         url: URL,
         source: TerminalTheme.Source,
-        name: String? = nil
+        name: String? = nil,
+        declaredAppearance: ThemeContribution.Appearance? = nil
     ) -> TerminalTheme? {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
 
-        var theme = TerminalTheme(name: name ?? url.lastPathComponent, source: source, url: url)
+        var theme = TerminalTheme(
+            name: name ?? url.lastPathComponent,
+            source: source,
+            url: url,
+            declaredAppearance: declaredAppearance
+        )
 
         for line in content.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)

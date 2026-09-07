@@ -87,11 +87,18 @@ struct ExtensionRow: View {
         }
     }
 
-    /// `signature`, an SF Symbol since macOS 10.15 — three releases before
-    /// this app's deployment target, and old enough that no build it ships
-    /// to can fail to resolve it. A name that does not resolve makes SwiftUI
-    /// drop the whole row silently, so the age matters more than the shape.
-    static let authorSymbol = "signature"
+    /// `lanyardcard`, an SF Symbol since 2021 — before this app's deployment
+    /// target. A name that does not resolve makes SwiftUI drop the whole row
+    /// silently, so its age matters as much as its shape.
+    ///
+    /// An identity card, because the line names who published the extension.
+    /// Two shapes were tried on screen and rejected: `signature` is a drawn
+    /// squiggle that reads as a smudge at the eleven points this line is set
+    /// in, and `seal` reads as a rosette awarded rather than a person named.
+    /// Deliberately not `checkmark.seal`, which would claim a verification
+    /// nobody performs, and not a person glyph, which reads as a user
+    /// account rather than an author.
+    static let authorSymbol = "lanyardcard"
 
     static func versionText(_ entry: ExtensionIndex.Entry, state: ExtensionState) -> String {
         if case .updateAvailable(let installed, let available) = state {
@@ -104,7 +111,7 @@ struct ExtensionRow: View {
 
     private var formBody: some View {
         LabeledContent {
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .center, spacing: 4) {
                 trailing(controlSize: .regular)
                 versionTag
             }
@@ -143,7 +150,7 @@ struct ExtensionRow: View {
 
             Spacer(minLength: 8)
 
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .center, spacing: 4) {
                 trailing(controlSize: .regular)
                 versionTag
             }

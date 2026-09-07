@@ -142,6 +142,41 @@ struct ExtensionStoreInstalledScanTests {
         #expect(store.installed.isEmpty)
     }
 
+    @Test func anExtensionWithoutALanguageWearsItsPackagedArtwork() throws {
+        let directory = try makeExtensionsDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manifest = """
+        {
+          "schemaVersion": 1,
+          "id": "tests.theme",
+          "name": "Theme",
+          "version": "1.0.0",
+          "publisher": "tests",
+          "contributes": {}
+        }
+        """
+        try write(manifest, into: directory, named: "theme")
+        let media = directory
+            .appendingPathComponent("theme", isDirectory: true)
+            .appendingPathComponent("media", isDirectory: true)
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        try Data().write(to: media.appendingPathComponent("icon.png"))
+
+        let store = ExtensionStore(extensionsDir: directory)
+
+        #expect(store.installed.first?.iconURL?.lastPathComponent == "icon.png")
+    }
+
+    @Test func nothingPackagedLeavesTheIconUnset() throws {
+        let directory = try makeExtensionsDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write(manifest(id: "tests.bare", name: "Bare", version: "1.0.0"), into: directory, named: "bare")
+
+        let store = ExtensionStore(extensionsDir: directory)
+
+        #expect(store.installed.first?.iconURL == nil)
+    }
+
     @Test func stateReadsTheInstalledVersionByEntryId() throws {
         let directory = try makeExtensionsDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -475,9 +475,23 @@ final class ExtensionStore: ObservableObject {
             .map {
                 InstalledExtension(
                     id: $0.id, name: $0.name, version: $0.version, root: $0.root,
-                    publisher: $0.publisher, iconURL: $0.languages.first?.iconURL)
+                    publisher: $0.publisher,
+                    iconURL: $0.languages.first?.iconURL ?? artworkURL(in: $0.root))
             }
             .sorted(by: displayOrder)
+    }
+
+    /// The artwork a contribution-less extension still has.
+    ///
+    /// A theme contributes no language, so there is no language icon to read,
+    /// and the icon its page declares is in the card rather than the
+    /// manifest. Until the catalogue arrives that left a restored theme tab
+    /// wearing the puzzle mark, so the packaged file answers first.
+    nonisolated private static func artworkURL(in root: URL) -> URL? {
+        let url = root
+            .appendingPathComponent(ExtensionMediaGate.mediaDirectoryName, isDirectory: true)
+            .appendingPathComponent("icon.png")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     nonisolated private static func displayOrder(_ lhs: InstalledExtension, _ rhs: InstalledExtension) -> Bool {

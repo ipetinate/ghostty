@@ -8,7 +8,6 @@ struct ExtensionsPanelView: View {
     @State private var kind: ExtensionCatalogFilter.Kind = .all
     @State private var sort: ExtensionCatalogFilter.Sort = .name
     @State private var selectedID: String?
-    @State private var hasLoaded = false
 
     var body: some View {
         let sections = catalog
@@ -21,7 +20,7 @@ struct ExtensionsPanelView: View {
             searchRow
             registryContent(sections)
         }
-        .onAppear(perform: loadOnce)
+        .onAppear { Task { await store.loadIfNeeded() } }
     }
 
     private var catalog: ExtensionCatalogFilter.Sections {
@@ -31,13 +30,6 @@ struct ExtensionsPanelView: View {
             query: searchText,
             kind: kind,
             sort: sort)
-    }
-
-    private func loadOnce() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        store.reloadInstalled()
-        Task { await store.refresh() }
     }
 
     private var searchRow: some View {
@@ -261,9 +253,7 @@ struct ExtensionsPanelView: View {
     }
 
     private var emptyMessage: String {
-        kind == .all
-            ? "No extension matches."
-            : "No extension matches in " + kind.title + "."
+        ExtensionCatalogFilter.emptyMessage(kind: kind, query: searchText)
     }
 
     private func message(_ text: String) -> some View {

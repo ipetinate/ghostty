@@ -14,7 +14,6 @@ struct ExtensionsSettingsView: View {
     @State private var searchText = ""
     @State private var kind: ExtensionCatalogFilter.Kind = .all
     @State private var sort: ExtensionCatalogFilter.Sort = .name
-    @State private var hasRequestedRegistry = false
 
     /// The extension whose configuration form is open, if any. A path of
     /// ids rather than of values, so a registry reload underneath the form
@@ -58,7 +57,7 @@ struct ExtensionsSettingsView: View {
             .formStyle(.grouped)
             .navigationTitle("Extensions")
             .onAppear {
-                loadOnce()
+                load()
                 consumeRequest()
                 reveal(with: proxy)
             }
@@ -119,11 +118,13 @@ struct ExtensionsSettingsView: View {
             sort: sort)
     }
 
-    private func loadOnce() {
-        guard !hasRequestedRegistry else { return }
-        hasRequestedRegistry = true
-        store.reloadInstalled()
-        Task { await store.refresh() }
+    /// **The store decides whether there is anything to load, not this
+    /// view.** The guard used to be a `@State` flag here, and SwiftUI throws
+    /// this pane's state away every time the settings window changes
+    /// section, so every visit reloaded the whole catalogue. See
+    /// `ExtensionStore.loadIfNeeded` for what that cost.
+    private func load() {
+        Task { await store.loadIfNeeded() }
     }
 
     // MARK: Header
@@ -263,9 +264,7 @@ struct ExtensionsSettingsView: View {
                 }
             } else {
                 Section {
-                    ForEach(sections.entries) { entry in
-                        entryRow(entry)
-                    }
+                    rows(sections.entries, row: entryRow)
                 } header: {
                     Text("Registry")
                 } footer: {
@@ -280,13 +279,46 @@ struct ExtensionsSettingsView: View {
         }
     }
 
+    /// One section's rows, realised as the reader scrolls to them.
+    ///
+    /// A grouped `Form` lays out every row it is handed before it shows a
+    /// frame. With 131 extensions installed, `onAppear` arrived 366 ms after
+    /// the pane had built its rows — and because the sidebar highlight moves
+    /// in the same turn of the loop, the window read as hung: the row was
+    /// already selected while the pane still drew the section the reader had
+    /// left. Inside the form's own scroll view a `LazyVStack` realises about
+    /// twenty rows instead of all 131, and `onAppear` arrives 100 ms after
+    /// the click. It is the shape `ExtensionsPanelView` already draws the
+    /// same catalogue with.
+    ///
+    /// The stack has to draw what the form drew for its own rows: the
+    /// separator between two of them, and the inset above and below each.
+    /// Both were matched against a capture of the eager form. `ExtensionRow`
+    /// dropped the `LabeledContent` from its form body for the same reason —
+    /// that container takes its metrics from the enclosing form row, so
+    /// inside a stack it drew every trailing control half a row above its
+    /// own label. Replacing it did not itself make the eager form faster:
+    /// `onAppear` still arrived at 343 ms to 381 ms, which is what pointed
+    /// at the row count rather than the row.
+    @ViewBuilder
+    private func rows<Item: Identifiable, Row: View>(
+        _ items: [Item],
+        @ViewBuilder row: @escaping (Item) -> Row
+    ) -> some View {
+        LazyVStack(spacing: 0) {
+            ForEach(items) { item in
+                if item.id != items.first?.id { Divider() }
+                row(item)
+                    .padding(.vertical, 6)
+            }
+        }
+    }
+
     @ViewBuilder
     private func groupSections(_ list: [ExtensionCatalogGrouping.Group]) -> some View {
         ForEach(list) { group in
             Section {
-                ForEach(group.entries) { entry in
-                    entryRow(entry)
-                }
+                rows(group.entries, row: entryRow)
             } header: {
                 Label(group.title, systemImage: group.systemImage)
             }
@@ -297,9 +329,7 @@ struct ExtensionsSettingsView: View {
     private func orphanSection(_ sections: ExtensionCatalogFilter.Sections) -> some View {
         if !sections.orphans.isEmpty {
             Section {
-                ForEach(sections.orphans) { installed in
-                    orphanRow(installed)
-                }
+                rows(sections.orphans, row: orphanRow)
             } header: {
                 Text("Installed, not in the registry")
             } footer: {
@@ -311,9 +341,7 @@ struct ExtensionsSettingsView: View {
     }
 
     private var emptyMessage: String {
-        kind == .all
-            ? "No extension matches."
-            : "No extension matches in " + kind.title + "."
+        ExtensionCatalogFilter.emptyMessage(kind: kind, query: searchText)
     }
 
     private func message(_ text: String) -> some View {

@@ -379,6 +379,41 @@ struct ExtensionCatalogFilterTests {
             title: "snippets", systemImage: "puzzlepiece"))
     }
 
+    // MARK: Empty listing
+
+    @Test func anEmptyTabSaysWhatTheRegistryCarries() {
+        #expect(ExtensionCatalogFilter.emptyMessage(kind: .agents, query: "")
+            == "The registry has nothing under Agents yet.")
+        #expect(ExtensionCatalogFilter.emptyMessage(kind: .iconThemes, query: "")
+            == "The registry has nothing under Icons yet.")
+    }
+
+    @Test func anEmptyAllTabSaysTheRegistryIsEmpty() {
+        #expect(ExtensionCatalogFilter.emptyMessage(kind: .all, query: "")
+            == "The registry has no extensions yet.")
+    }
+
+    @Test func aSearchWithNoHitsSaysSo() {
+        #expect(ExtensionCatalogFilter.emptyMessage(kind: .all, query: "lua")
+            == "No extension matches this search.")
+        #expect(ExtensionCatalogFilter.emptyMessage(kind: .agents, query: "lua")
+            == "No extension under Agents matches this search.")
+    }
+
+    @Test func aQueryThatParsesToNothingIsNotASearch() {
+        #expect(ExtensionCatalogFilter.emptyMessage(kind: .agents, query: "   ")
+            == ExtensionCatalogFilter.emptyMessage(kind: .agents, query: ""))
+        #expect(ExtensionCatalogFilter.emptyMessage(kind: .themes, query: "\"\"")
+            == "The registry has nothing under Themes yet.")
+    }
+
+    @Test func noEmptyMessageBlamesTheReaderForATabTheyOnlyOpened() {
+        for kind in ExtensionCatalogFilter.Kind.allCases {
+            #expect(!ExtensionCatalogFilter.emptyMessage(kind: kind, query: "").contains("search"))
+            #expect(!ExtensionCatalogFilter.emptyMessage(kind: kind, query: "").contains("matches"))
+        }
+    }
+
     @Test func everyKindTabCarriesATitleAndASymbol() {
         #expect(ExtensionCatalogFilter.Kind.allCases.map(\.title)
             == ["All", "Languages", "Formatters", "Themes", "Icons", "Agents"])

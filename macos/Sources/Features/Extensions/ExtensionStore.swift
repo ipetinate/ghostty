@@ -73,21 +73,70 @@ final class ExtensionStore: ObservableObject {
         ExtensionPreviewCache.root(cachesDir: cachesDir)
     }
 
+    /// The catalogue, read once for the whole app.
+    ///
+    /// The two views that show it — the Extensions pane and the sidebar
+    /// panel — used to hold this guard in a `@State` flag of their own, and
+    /// SwiftUI destroys the pane's state when the settings window changes
+    /// section. So every visit to Extensions rescanned the folder and
+    /// refetched the index, and every value that published laid the list out
+    /// again. Measured with 131 extensions installed: four full layout
+    /// passes, the pane painting between 0.9 s and 1.2 s after the click —
+    /// 1.5 s to 3.0 s on the sweep that reported it.
+    ///
+    /// What is installed stays current without this: `install`, `remove`
+    /// and `reload` all rescan, and Refresh is how somebody picks up a
+    /// folder they edited by hand.
+    func loadIfNeeded() async {
+        guard index == nil, !isRefreshing else { return }
+        await reloadInstalledOffMainThread()
+        await refresh()
+    }
+
+    /// Fetches the catalogue, and publishes what changed.
+    ///
+    /// `@Published` notifies on assignment rather than on change. Assigning
+    /// the index already held, or clearing an error that was already nil,
+    /// notified every row reading this store and bought a full layout pass
+    /// of the list for nothing.
     func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         do {
-            index = try await Self.fetchIndex()
-            lastRefreshError = nil
+            let fetched = try await Self.fetchIndex()
+            if fetched != index { index = fetched }
+            if lastRefreshError != nil { lastRefreshError = nil }
         } catch {
             lastRefreshError = Self.refreshMessage(for: error)
         }
     }
 
     func reloadInstalled() {
-        installed = Self.scanInstalled(in: extensionsDir)
+        publish(installed: Self.scanInstalled(in: extensionsDir))
+    }
+
+    /// The same scan, off the main thread.
+    ///
+    /// Reading the 131 manifests in the owner's folder costs 53 ms to 79 ms,
+    /// and on the path that opens the Extensions pane that is time between
+    /// the click and the first frame.
+    func reloadInstalledOffMainThread() async {
+        let directory = extensionsDir
+        publish(installed: await Task.detached(priority: .userInitiated) {
+            Self.scanInstalled(in: directory)
+        }.value)
+    }
+
+    /// Publishes only a list that differs from the one already held.
+    ///
+    /// A rescan that finds the same 131 extensions is the common case, and
+    /// republishing it laid every row out again for no visible change. See
+    /// `refresh()` for the same rule on the catalogue.
+    private func publish(installed scanned: [InstalledExtension]) {
+        guard scanned != installed else { return }
+        installed = scanned
     }
 
     /// The whole store, read again: the catalogue, what is installed, and

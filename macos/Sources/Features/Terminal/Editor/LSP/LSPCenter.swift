@@ -846,9 +846,17 @@ final class LSPCenter: ObservableObject {
 
         let live = servers.keys.filter { commands.contains($0.command) }
 
+        /// Dropped from `servers` at the same moment, not when the exit
+        /// lands. `terminate()` only asks, and until `handleExit` arrives the
+        /// key still answered `server(for:)` with the dying process — so the
+        /// re-announce this gesture triggers introduced the document to a
+        /// corpse, and the file sat there with no diagnostics and no banner
+        /// saying why. `handleExit` already tolerates a key that has been
+        /// cleared, and takes a replacement under the same key as its cue to
+        /// leave the bookkeeping alone.
         for key in live {
             stopping.insert(key)
-            servers[key]?.terminate()
+            servers.removeValue(forKey: key)?.terminate()
         }
 
         /// Including the keys just told to die. `terminate()` is not the
@@ -2481,7 +2489,14 @@ final class LSPCenter: ObservableObject {
         /// key immediately; the old one's exit arrives afterwards, and without
         /// this guard it would delete the bookkeeping of its replacement —
         /// leaving a live server the app believes is not running.
-        guard servers[key] === process || servers[key] == nil else { return }
+        guard servers[key] === process || servers[key] == nil else {
+            /// The deliberate stop belonged to the process that just exited,
+            /// so it is spent. Leaving the mark would make the replacement's
+            /// own crash, whenever it comes, read as something the reader
+            /// asked for.
+            stopping.remove(key)
+            return
+        }
 
         servers.removeValue(forKey: key)
         serverCapabilities.removeValue(forKey: key)

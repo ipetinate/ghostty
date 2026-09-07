@@ -446,6 +446,16 @@ struct CodeTextView: NSViewRepresentable {
         /// Paint, not a control: a click here belongs to the text under it.
         blame.refusesFirstResponder = true
 
+        /// The box round a symbol a jump landed on, in front of the glyphs and
+        /// inside the document for the same reasons as the waves below — and
+        /// added before them, so a diagnostic on the symbol stays legible
+        /// through the mark rather than under it.
+        let revealHighlight = CodeRevealHighlightView(frame: textView.bounds)
+        revealHighlight.textView = textView
+        textView.addSubview(revealHighlight)
+        textView.revealHighlight = revealHighlight
+        context.coordinator.revealHighlight = revealHighlight
+
         /// The diagnostic waves, in front of the glyphs and inside the
         /// document — which is what scrolls them for free. Added before the
         /// ghost text so a squiggle running to the end of a line passes under
@@ -534,6 +544,21 @@ struct CodeTextView: NSViewRepresentable {
             selector: #selector(Coordinator.scrolled),
             name: NSView.boundsDidChangeNotification,
             object: scrollView.contentView
+        )
+
+        /// The reader scrolling away from a jump, which takes the mark on it
+        /// away — see ``CodeRevealHighlightView/clear()``.
+        ///
+        /// This notification and not the bounds change above, which is posted
+        /// for a programmatic scroll too: `reveal` scrolls twice on its way in,
+        /// so a mark cleared on any scroll would be cleared by the very jump
+        /// that put it there. A live scroll is a scroll the reader's own hand
+        /// started, and nothing else posts it.
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.readerStartedScrolling),
+            name: NSScrollView.willStartLiveScrollNotification,
+            object: scrollView
         )
 
         if let undoTimeline { textView.undoTimeline = undoTimeline }
@@ -772,6 +797,20 @@ struct CodeTextView: NSViewRepresentable {
         /// The wave under each problem. See `CodeSquiggleView`.
         weak var squiggles: CodeSquiggleView?
 
+        /// The box round the symbol the last jump landed on.
+        /// See `CodeRevealHighlightView`.
+        weak var revealHighlight: CodeRevealHighlightView?
+
+        /// Where `reveal` last put the caret, so the selection change it makes
+        /// itself is not read as the reader moving the caret away.
+        ///
+        /// The mark goes when the reader does anything, and moving the caret is
+        /// one of those things — but `reveal` moves the caret *to* the symbol
+        /// on its way in, and that notification arrives before the mark is even
+        /// drawn. Comparing against the range put there tells the two apart
+        /// without a flag that has to be unset on every path out.
+        private var revealedSelection: NSRange?
+
         /// The reader's switches as this view was last told them, and the
         /// revision that answer came from. See `apply(assistance:revision:)`.
         private(set) var assistance = EditorAssistance.all
@@ -813,6 +852,14 @@ struct CodeTextView: NSViewRepresentable {
             guard revision != appliedRevision else { return }
             let isFirstLoad = appliedRevision == Int.min
             appliedRevision = revision
+
+            /// The text under the mark is about to be replaced, and this path
+            /// does not go through `textDidChange` — `isApplyingExternalText`
+            /// stops it there. Without this the mark could outlive the
+            /// characters it was drawn over, which is the one way it can lie.
+            /// Harmless on the open-and-jump path: this runs before the jump.
+            revealHighlight?.clear()
+
             if isFirstLoad {
                 apply(text: text)
             } else {
@@ -1218,6 +1265,13 @@ struct CodeTextView: NSViewRepresentable {
         private func requestRedraw(of textView: NSTextView) {
             textView.needsDisplay = true
             gutter?.needsDisplay = true
+        }
+
+        /// The reader has started scrolling by hand, which takes the mark on
+        /// the last jump away. See where this is subscribed for why it is not
+        /// the bounds change beside it.
+        @objc func readerStartedScrolling() {
+            revealHighlight?.clear()
         }
 
         /// Re-colours after a scroll settles, for a document being coloured
@@ -1651,24 +1705,50 @@ struct CodeTextView: NSViewRepresentable {
             minimap.setRows(CodeMinimapView.rows(for: text, tokens: tokens))
         }
 
-        /// Selects a range and brings it into view, centred.
+        /// Marks a range and brings it into view, centred.
         ///
         /// Centred rather than merely visible: `scrollRangeToVisible` does
         /// the least it can, so a definition one line below the fold lands
         /// on the very last row — technically visible, and with none of the
         /// surrounding code that makes it readable.
+        ///
+        /// **Marked, not selected.** This used to select the range as it
+        /// arrived, and a language server that answers "where is this defined"
+        /// with the whole definition — Elixir's returns the entire module —
+        /// turned a jump into a screen of selection blue the reader had to
+        /// click away, with the next keystroke poised to replace all of it.
+        /// So the caret goes to the symbol selecting nothing, and
+        /// `CodeRevealHighlightView` draws a box over the part of the range
+        /// worth pointing at, which `CodeRevealHighlight` derives.
+        ///
+        /// A range with nothing in it to mark — an agent asking for a line,
+        /// which arrives as an empty range — still moves the caret and still
+        /// scrolls. It draws no box, because there is nothing under one.
         func reveal(_ reveal: (id: String, range: NSRange)) {
             guard reveal.id != lastRevealID, let textView else { return }
             lastRevealID = reveal.id
 
-            let length = (textView.string as NSString).length
+            let text = textView.string as NSString
+            let length = text.length
             let clipped = NSRange(
                 location: min(reveal.range.location, length),
                 length: min(reveal.range.length, max(0, length - reveal.range.location))
             )
 
-            textView.setSelectedRange(clipped)
-            textView.scrollRangeToVisible(clipped)
+            let symbol = CodeRevealHighlight.range(for: clipped, in: text)
+            let caret = NSRange(location: symbol?.location ?? clipped.location, length: 0)
+
+            revealedSelection = caret
+            textView.setSelectedRange(caret)
+
+            if let symbol {
+                revealHighlight?.show(symbol)
+            } else {
+                revealHighlight?.clear()
+            }
+
+            let revealed = symbol ?? caret
+            textView.scrollRangeToVisible(revealed)
             if highlightsOnDemand { highlightVisibleRegion() }
 
             // Once layout has settled, for the same reason opening a file
@@ -1676,7 +1756,7 @@ struct CodeTextView: NSViewRepresentable {
             // frame it would be scrolling within.
             DispatchQueue.main.async { [weak textView] in
                 guard let textView, let scrollView = textView.enclosingScrollView else { return }
-                let rect = textView.firstRect(forCharacterRange: clipped, actualRange: nil)
+                let rect = textView.firstRect(forCharacterRange: revealed, actualRange: nil)
                 guard rect.height > 0 else { return }
                 let local = textView.convert(
                     textView.window?.convertFromScreen(rect) ?? .zero,
@@ -1837,6 +1917,7 @@ struct CodeTextView: NSViewRepresentable {
 
             gutter?.theme = theme
             minimap?.theme = theme
+            revealHighlight?.color = theme.revealHighlight
 
             // The hover card paints itself with the editor's own colours and
             // the file's language, so it has to be told both. Outside the
@@ -1949,6 +2030,16 @@ struct CodeTextView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+
+            /// The caret has left the symbol a jump marked, so the mark goes.
+            /// Every caret move but the one `reveal` makes itself — see
+            /// `revealedSelection`.
+            if textView.selectedRange() == revealedSelection {
+                revealedSelection = nil
+            } else {
+                revealHighlight?.clear()
+            }
+
             // The band follows the cursor, and so does the highlighted number
             // in the gutter — both are the same fact drawn in two places.
             gutter?.setCurrentLine(currentLineNumber(in: textView))
@@ -2171,6 +2262,11 @@ struct CodeTextView: NSViewRepresentable {
             /// redrawn when it is scrolled into.
             squiggles?.setNeedsDisplay(squiggles?.visibleRect ?? .zero)
 
+            /// The reader is typing, so the mark on the last jump has been
+            /// answered and goes. Also why that mark needs none of the care
+            /// the waves take over moving text: it never outlives an edit.
+            revealHighlight?.clear()
+
             gutter?.reload()
             scheduleMinimapRefresh()
             scheduleDiffMarkRefresh()
@@ -2266,6 +2362,10 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// A subview rather than anything this class draws itself — see
     /// `CodeSquiggleView` for why overriding `draw(_:)` here is not available.
     weak var squiggles: CodeSquiggleView?
+
+    /// The box round the symbol the last jump landed on, drawn in front of the
+    /// text by a subview for the same reason. See `CodeRevealHighlightView`.
+    weak var revealHighlight: CodeRevealHighlightView?
 
     /// Whether a row is worth offering an info glyph on.
     ///
@@ -2634,6 +2734,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
         /// this is the one moment the new size is known — `fitDocumentWidth`
         /// above changes it from inside this very pass.
         if let squiggles, squiggles.frame != bounds { squiggles.frame = bounds }
+        if let revealHighlight, revealHighlight.frame != bounds { revealHighlight.frame = bounds }
     }
 
     /// ⌘-click goes to the definition; without the modifier this is an
@@ -2641,6 +2742,12 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     override func mouseDown(with event: NSEvent) {
         hoverOffset = nil
         hideHover()
+
+        /// A click is the reader answering the last jump, so its mark goes —
+        /// including a click that lands on the caret the jump left, which
+        /// moves nothing and so tells the selection nothing. A ⌘-click clears
+        /// it here and the jump it starts draws the next one.
+        revealHighlight?.clear()
 
         guard Self.isJumpClick(event.modifierFlags), let onJumpToDefinition else {
             super.mouseDown(with: event)

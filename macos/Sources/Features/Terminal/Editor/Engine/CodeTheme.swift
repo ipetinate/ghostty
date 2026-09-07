@@ -69,6 +69,23 @@ struct CodeTheme: Equatable {
         foreground.withAlphaComponent(0.22)
     }
 
+    /// The colour of the box drawn round a symbol a jump landed on.
+    ///
+    /// Borrowed from the palette rather than added to the theme, for the same
+    /// reason as `bracketColors`: a terminal theme has sixteen colours and no
+    /// notion of this one, so a new field would be a colour invented out of
+    /// nothing and wrong for half the themes somebody might pick.
+    ///
+    /// The number slot, which is yellow in every sixteen-colour scheme — the
+    /// colour every editor marks a search hit in, and the reason it is that
+    /// slot and not the blue one: **the selection is blue**, and telling the
+    /// mark apart from a selection is the whole point of drawing it. Full
+    /// strength here; how much of it the wash and the outline take is the
+    /// drawing's business.
+    var revealHighlight: NSColor {
+        color(for: .number)
+    }
+
     /// A neutral theme, used before a host supplies one and by the tests.
     static var fallback: CodeTheme {
         CodeTheme(

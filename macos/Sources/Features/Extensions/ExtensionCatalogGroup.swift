@@ -74,10 +74,34 @@ enum ExtensionCatalogGrouping {
     }
 
     /// The order the headings appear in. Languages first, by category title,
-    /// then what an extension can add beside a language.
+    /// then what an extension can add beside a language, and themes after
+    /// all of it — see `deferred`.
     static let order: [ExtensionCatalogGroup] =
         LSPServerCategory.allCases.sorted { $0.title < $1.title }.map(ExtensionCatalogGroup.language)
-            + [.languages, .servers, .formatters, .grammars, .themes, .iconThemes, .agents, .other]
+            + [.languages, .servers, .formatters, .grammars, .iconThemes, .agents, .other, .themes]
+
+    /// The groups that go after everything else, whatever the sort says.
+    ///
+    /// Themes are most of the registry by count — ninety of the hundred and
+    /// sixteen published — so their heading stops reading as a section and
+    /// becomes a wall between the reader and every group under it. Sorting
+    /// cannot help: by name, by publisher or by date, the block is the same
+    /// size wherever it lands. It goes to the bottom, and the Themes tab is
+    /// where anyone shopping for one looks.
+    static let deferred: Set<ExtensionCatalogGroup> = [.themes]
+
+    /// The listing split at that line: what a reader scrolls through, and
+    /// what waits at the end.
+    ///
+    /// Both stores read this rather than naming themes themselves, so the
+    /// sidebar and the Settings pane cannot drift apart on it.
+    static func partitioned(_ entries: [ExtensionIndex.Entry]) -> (leading: [Group], trailing: [Group]) {
+        let all = groups(entries)
+        return (
+            all.filter { !deferred.contains($0.group) },
+            all.filter { deferred.contains($0.group) }
+        )
+    }
 
     /// Where one entry belongs.
     ///

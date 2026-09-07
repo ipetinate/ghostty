@@ -85,6 +85,17 @@ struct ExtensionCatalogGroupTests {
         #expect(groups[0].entries.map(\.id) == ["phantom.go", "phantom.zig"])
     }
 
+    @Test func themesWaitAtTheEndOfTheListing() {
+        let split = ExtensionCatalogGrouping.partitioned([
+            Self.entry("phantom.dracula", contributes: ["themes"]),
+            Self.entry("phantom.symbols", contributes: ["iconThemes"]),
+            Self.entry("phantom.go", contributes: ["languages"], categories: ["compiled"]),
+        ])
+
+        #expect(split.leading.map(\.title) == ["Compiled", "Icon Packs"])
+        #expect(split.trailing.map(\.title) == ["Themes"])
+    }
+
     @Test func everyHeadingHasItsOwnIdentity() {
         let ids = ExtensionCatalogGrouping.order.map(\.id)
         #expect(Set(ids).count == ids.count)

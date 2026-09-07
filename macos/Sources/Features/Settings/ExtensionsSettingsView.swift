@@ -145,7 +145,7 @@ struct ExtensionsSettingsView: View {
                     .controlSize(.small)
             }
             Button("Refresh") {
-                Task { await store.refresh() }
+                Task { await store.reload() }
             }
             .disabled(store.isRefreshing)
         }
@@ -214,15 +214,10 @@ struct ExtensionsSettingsView: View {
             Section { message(emptyMessage) }
         } else if !sections.entries.isEmpty {
             if kind == .all {
-                ForEach(ExtensionCatalogGrouping.groups(sections.entries)) { group in
-                    Section {
-                        ForEach(group.entries) { entry in
-                            entryRow(entry)
-                        }
-                    } header: {
-                        Label(group.title, systemImage: group.systemImage)
-                    }
-                }
+                let split = ExtensionCatalogGrouping.partitioned(sections.entries)
+                groupSections(split.leading)
+                orphanSection(sections)
+                groupSections(split.trailing)
                 Section {
                     Text("Each extension is a zip published as a GitHub release of the registry. Phantom checks its digest against the index before unpacking it.")
                         .font(.caption)
@@ -240,9 +235,28 @@ struct ExtensionsSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                orphanSection(sections)
+            }
+        } else {
+            orphanSection(sections)
+        }
+    }
+
+    @ViewBuilder
+    private func groupSections(_ list: [ExtensionCatalogGrouping.Group]) -> some View {
+        ForEach(list) { group in
+            Section {
+                ForEach(group.entries) { entry in
+                    entryRow(entry)
+                }
+            } header: {
+                Label(group.title, systemImage: group.systemImage)
             }
         }
+    }
 
+    @ViewBuilder
+    private func orphanSection(_ sections: ExtensionCatalogFilter.Sections) -> some View {
         if !sections.orphans.isEmpty {
             Section {
                 ForEach(sections.orphans) { installed in

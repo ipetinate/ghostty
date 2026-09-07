@@ -964,7 +964,6 @@ private struct DocumentView: View {
         /// preview instead, that would announce `didClose` to the language
         /// server every time somebody looked at their README.
         .onAppear {
-            lsp.didOpen(path: document.url.path, text: document.currentText)
             refreshUnderlines()
 
             /// A server may ask to edit the buffer rather than answering with
@@ -995,8 +994,17 @@ private struct DocumentView: View {
             /// on every update: the store answers once per path and ignores
             /// the rest, but a call per keystroke is a call per keystroke.
             baseline.request(path: document.url.path)
-
-            resolveDivergence()
+        }
+        /// **After the text is on screen, not before it.** Announcing a
+        /// document resolves which servers speak for it, and resolving walks
+        /// the tree for every companion server's project markers — work this
+        /// used to do inside the same update that draws the file, so a reader
+        /// waited for it before seeing a single line. `didOpen` is idempotent
+        /// per document and server, so arriving a turn later changes nothing
+        /// else.
+        .task(id: document.url.path) {
+            await Task.yield()
+            lsp.didOpen(path: document.url.path, text: document.currentText)
         }
         /// The only thing that can make an open document diverge, and the
         /// only thing that can heal it: the terminal moving. A `cd` between

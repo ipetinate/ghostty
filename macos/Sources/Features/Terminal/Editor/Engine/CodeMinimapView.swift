@@ -16,7 +16,7 @@ final class CodeMinimapView: NSView {
     }
 
     var theme: CodeTheme {
-        didSet { needsDisplay = true }
+        didSet { if theme != oldValue { needsDisplay = true } }
     }
 
     /// Top-left origin, like the text view it sits beside.

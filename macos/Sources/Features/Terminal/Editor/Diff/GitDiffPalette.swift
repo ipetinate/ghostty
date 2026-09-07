@@ -7,7 +7,7 @@ import AppKit
 /// opened inside the window. The hues are the two everyone reads as added
 /// and removed; what comes from the theme is how strongly they sit against
 /// *this* background.
-struct GitDiffPalette {
+struct GitDiffPalette: Equatable {
     let addedBackground: NSColor
     let removedBackground: NSColor
 

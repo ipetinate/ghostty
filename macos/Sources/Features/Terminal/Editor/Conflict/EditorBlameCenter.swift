@@ -81,13 +81,13 @@ final class EditorBlameCenter: ObservableObject {
     func request(path: String?, line: Int?) {
         guard let path, let line, line > 0 else {
             currentKey = nil
-            current = nil
+            publish(nil)
             return
         }
 
         guard locallyChanged[path]?.contains(line) != true else {
             currentKey = Key(path: path, line: line)
-            current = nil
+            publish(nil)
             return
         }
 
@@ -95,14 +95,14 @@ final class EditorBlameCenter: ObservableObject {
         currentKey = key
 
         if let cached = cache[key] {
-            current = cached
+            publish(cached)
             return
         }
 
         /// Nothing on screen while the answer is fetched, rather than the
         /// previous line's. Showing one line's history beside another line is
         /// worse than showing none.
-        current = nil
+        publish(nil)
 
         guard !inFlight.contains(key),
               let root = EditorChangeLookup.repositoryRoot(forPath: path)
@@ -120,9 +120,20 @@ final class EditorBlameCenter: ObservableObject {
                 /// asked. A slow `git blame` that lands after the reader has
                 /// moved on would otherwise label the wrong line.
                 guard self.currentKey == key else { return }
-                self.current = blame
+                self.publish(blame)
             }
         }
+    }
+
+    /// Publishes only an answer that differs from the one on screen.
+    ///
+    /// `@Published` notifies on assignment, and a caret move republished the
+    /// same value on every click: `DocumentView` observes this centre, so one
+    /// click laid the pane out again, reassigned the gutter's theme and diff
+    /// palette, and drew the gutter and the minimap a second time.
+    private func publish(_ line: EditorBlameLine?) {
+        guard current != line else { return }
+        current = line
     }
 
     /// Forgets a file's answers. Called when its text changes: an edit moves

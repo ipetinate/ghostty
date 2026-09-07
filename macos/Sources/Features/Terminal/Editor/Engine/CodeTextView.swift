@@ -733,6 +733,10 @@ struct CodeTextView: NSViewRepresentable {
         /// host will use, so the first update always loads.
         private var appliedRevision = Int.min
 
+        /// What `skippedRegions(around:in:)` last lexed. Dropped whenever the
+        /// text changes, which is the only thing that can make it wrong.
+        private var skippedRegionCache: (window: NSRange, ranges: [NSRange])?
+
         /// The pending minimap rebuild. See `scheduleMinimapRefresh`.
         private var minimapTask: Task<Void, Never>?
 
@@ -852,6 +856,7 @@ struct CodeTextView: NSViewRepresentable {
             guard revision != appliedRevision else { return }
             let isFirstLoad = appliedRevision == Int.min
             appliedRevision = revision
+            skippedRegionCache = nil
 
             /// The text under the mark is about to be replaced, and this path
             /// does not go through `textDidChange` — `isApplyingExternalText`
@@ -1237,16 +1242,46 @@ struct CodeTextView: NSViewRepresentable {
 
             let text = textStorage.string as NSString
             let caret = min(selection.location, text.length)
-            let window = CodeTextStorage.invalidationRange(
-                for: NSRange(location: caret, length: 0),
+
+            /// Before the window is lexed, because the lex is the whole cost
+            /// and a caret in the middle of a word cannot make a pair.
+            guard BracketMatch.isOnBracket(in: text, caret: caret) else { return nil }
+
+            return BracketMatch.pair(
                 in: text,
-                padding: BracketMatch.searchLimit
+                caret: caret,
+                skipping: skippedRegions(around: caret, in: textStorage)
             )
-            let skipped = storage.tokens(in: textStorage.string, range: window, seedWhenBehind: highlightsOnDemand)
+        }
+
+        /// The string and comment ranges the bracket scan must not count,
+        /// lexed once per block of the document rather than once per click.
+        ///
+        /// The lex is what costs: the window is `BracketMatch.searchLimit`
+        /// each way, some two hundred lines through the grammar engine, and it
+        /// ran on every caret move — a click on ordinary text paid for it and
+        /// threw the answer away. The window is aligned to a block of that
+        /// same size and kept until the text changes, so every caret inside
+        /// one block answers from the first lex, while still covering the full
+        /// distance the scan may walk from any position in that block.
+        private func skippedRegions(around caret: Int, in textStorage: NSTextStorage) -> [NSRange] {
+            let limit = BracketMatch.searchLimit
+            let text = textStorage.string as NSString
+            let block = (caret / limit) * limit
+            let window = CodeTextStorage.invalidationRange(
+                for: NSRange(location: block, length: min(limit, max(text.length - block, 0))),
+                in: text,
+                padding: limit
+            )
+
+            if let cached = skippedRegionCache, cached.window == window { return cached.ranges }
+
+            let ranges = storage
+                .tokens(in: textStorage.string, range: window, seedWhenBehind: highlightsOnDemand)
                 .filter { $0.kind == .string || $0.kind == .comment }
                 .map(\.range)
-
-            return BracketMatch.pair(in: text, caret: caret, skipping: skipped)
+            skippedRegionCache = (window, ranges)
+            return ranges
         }
 
         /// Asks for a redraw after attributes changed in bulk.
@@ -2050,18 +2085,17 @@ struct CodeTextView: NSViewRepresentable {
 
             // The band follows the cursor, and so does the highlighted number
             // in the gutter — both are the same fact drawn in two places.
-            gutter?.setCurrentLine(currentLineNumber(in: textView))
+            // Counted once: the count walks the text from its start to the
+            // caret, and it was run twice per click.
+            let line = currentLineNumber(in: textView)
+            gutter?.setCurrentLine(line)
             updateCurrentLineBand()
             highlightBracketMatch()
 
             /// Asked on every caret move, and cheap on all but the first: the
             /// centre answers a repeated question from its cache and only
             /// spawns `git blame` for a line it has not seen.
-            EditorBlameCenter.shared.request(
-                path: documentPath,
-                line: textView.selectedRange().length == 0
-                    ? currentLineNumber(in: textView)
-                    : nil)
+            EditorBlameCenter.shared.request(path: documentPath, line: line)
         }
 
         /// Moves the band to the line the insertion point is on.
@@ -2253,6 +2287,7 @@ struct CodeTextView: NSViewRepresentable {
 
             let edited = textView.selectedRange()
             storage.invalidate(from: edited.location)
+            skippedRegionCache = nil
             let region = CodeTextStorage.invalidationRange(
                 for: edited,
                 in: textStorage.string as NSString

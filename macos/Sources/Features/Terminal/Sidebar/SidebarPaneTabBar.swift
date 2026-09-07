@@ -49,7 +49,12 @@ struct SidebarPaneTabBar: View {
                     WheelScrollsHorizontally()
                 }
             }
-            .scrollIndicators(.automatic)
+            /// Never, and not for taste: with an indicator asked for, SwiftUI
+            /// reserves the 17 points a legacy one takes, the viewport ends up
+            /// taller than the row, and AppKit parks the row in the slack. One
+            /// wheel over this bar scrolled the whole switcher out of sight,
+            /// and only picking another panel brought it back.
+            .scrollIndicators(.never)
             .frame(height: Self.tabHeight)
             .onAppear { proxy.scrollTo(selection) }
             .onChange(of: selection) { pane in

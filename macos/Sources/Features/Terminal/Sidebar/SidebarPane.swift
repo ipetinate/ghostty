@@ -36,7 +36,7 @@ enum SidebarPane: String, CaseIterable, Identifiable, Codable {
         case .files: return "folder"
         case .git: return nil
         case .worktrees: return nil
-        case .extensions: return "puzzlepiece"
+        case .extensions: return "square.grid.2x2"
         }
     }
 

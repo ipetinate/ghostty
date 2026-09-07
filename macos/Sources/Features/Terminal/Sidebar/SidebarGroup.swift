@@ -212,6 +212,22 @@ final class ThemePalette: ObservableObject {
     @Published private(set) var colors: [NSColor] = []
     @Published private(set) var background: NSColor?
 
+    /// The theme's selection colours, which the editor draws its own
+    /// selection with.
+    ///
+    /// Carried here rather than read from `ThemeCatalog` at the point of use,
+    /// because this is already the one place the running theme is published
+    /// from — and because the editor engine is not allowed to name either
+    /// type. The terminal reaches the same two keys through `libghostty`;
+    /// without them here the editor fell through to AppKit's defaults, which
+    /// paint a `#476288` band and `#ffffff` glyphs whatever the theme says.
+    ///
+    /// Both stay optional. A theme that names no `selection-foreground` must
+    /// keep its token colours under the band, not have a single colour
+    /// imposed — see ``CodeTheme/selectedTextAttributes``.
+    @Published private(set) var selectionBackground: NSColor?
+    @Published private(set) var selectionForeground: NSColor?
+
     /// Phantom's interface font (see `AppFont`), mirrored here so the
     /// sidebar's rows can react to it: they already pin their own size per
     /// role, which is exactly what makes them invisible to the environment
@@ -309,11 +325,15 @@ final class ThemePalette: ObservableObject {
         else {
             colors = []
             background = nil
+            selectionBackground = nil
+            selectionForeground = nil
             return
         }
 
         colors = (0..<16).compactMap { theme.palette[$0] }
         background = theme.background
+        selectionBackground = theme.selectionBackground
+        selectionForeground = theme.selectionForeground
     }
 
     private func reloadInterfaceFontFamily() {

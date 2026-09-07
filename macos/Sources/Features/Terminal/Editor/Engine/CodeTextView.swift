@@ -1956,6 +1956,14 @@ struct CodeTextView: NSViewRepresentable {
             textView.font = configuration.font
             textView.insertionPointColor = theme.foreground
             textView.textColor = theme.foreground
+            if let code = textView as? CodeNSTextView {
+                code.selectionAttributes = (
+                    focused: theme.selectedTextAttributes,
+                    unfocused: theme.unemphasizedSelectedTextAttributes
+                )
+            } else {
+                textView.selectedTextAttributes = theme.selectedTextAttributes
+            }
             currentLineColor = configuration.highlightsCurrentLine
                 ? theme.currentLineBackground
                 : nil
@@ -2415,6 +2423,55 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// crash report did not describe. The host supplies it, because the engine
     /// may not name the logger — see `EditorEngineBoundaryTests`.
     var onDiagnosticNote: ((String) -> Void)?
+
+    /// The colours a selection is drawn with, one dictionary per focus state.
+    ///
+    /// A pair rather than the single `selectedTextAttributes` AppKit exposes,
+    /// because AppKit paints the two states differently and only tells you
+    /// about one of them: while the window is not key it swaps the band for
+    /// `NSColor.unemphasizedSelectedTextBackgroundColor` and keeps the
+    /// foreground it was given, which strands a theme's declared
+    /// selected-text colour on a grey nobody paired it with. See
+    /// ``CodeTheme/unemphasizedSelectedTextAttributes`` for the measurements.
+    ///
+    /// Set by the host when the theme changes; which of the two is in force
+    /// is this view's own business, since only the view knows when it has
+    /// focus.
+    var selectionAttributes: (focused: [NSAttributedString.Key: Any],
+                              unfocused: [NSAttributedString.Key: Any]) = ([:], [:]) {
+        didSet { applySelectionAttributes() }
+    }
+
+    /// Whether this view draws the *emphasized* selection — the focused view
+    /// of the key window, and the only state in which AppKit honours a
+    /// supplied selection background.
+    private var drawsEmphasizedSelection: Bool {
+        guard let window else { return false }
+        return window.isKeyWindow && window.firstResponder === self
+    }
+
+    private func applySelectionAttributes(emphasized: Bool? = nil) {
+        let wanted = (emphasized ?? drawsEmphasizedSelection)
+            ? selectionAttributes.focused
+            : selectionAttributes.unfocused
+        guard !wanted.isEmpty else { return }
+        selectedTextAttributes = wanted
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { applySelectionAttributes(emphasized: window?.isKeyWindow == true) }
+        return became
+    }
+
+    /// Passing `false` rather than reading the responder back: this is called
+    /// while the change is still in flight, so `window.firstResponder` is
+    /// still this view and the computed answer would be the stale one.
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { applySelectionAttributes(emphasized: false) }
+        return resigned
+    }
 
     private var isShowingDocumentation = false
 
@@ -3009,11 +3066,9 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSWindow.didResignKeyNotification,
-            object: nil
-        )
+        for name in [NSWindow.didResignKeyNotification, NSWindow.didBecomeKeyNotification] {
+            NotificationCenter.default.removeObserver(self, name: name, object: nil)
+        }
         if let window {
             NotificationCenter.default.addObserver(
                 self,
@@ -3021,7 +3076,15 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
                 name: NSWindow.didResignKeyNotification,
                 object: window
             )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(editorWindowDidBecomeKey),
+                name: NSWindow.didBecomeKeyNotification,
+                object: window
+            )
         }
+
+        applySelectionAttributes()
 
         if window == nil { dismissEverythingFloating() }
     }
@@ -3067,9 +3130,18 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// reader may come back to the *same* word, and the guard against a
     /// repeated offset would otherwise swallow the hover they asked for.
     @objc private func editorWindowDidResignKey() {
+        applySelectionAttributes(emphasized: false)
         hoverOffset = nil
         guard !hoverHoldsPointer() else { return }
         hideHover()
+    }
+
+    /// The window coming back: the selection is drawn emphasized again, so
+    /// the theme's own band and its declared selected-text colour return with
+    /// it. Nothing else here — a window becoming key is not a reason to open
+    /// or close anything.
+    @objc private func editorWindowDidBecomeKey() {
+        applySelectionAttributes()
     }
 
     /// Anything that moves the text out from under the card closes it: the

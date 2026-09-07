@@ -38,11 +38,29 @@ final class ScopeStack {
         self.names = parent.names + [scope]
     }
 
-    /// The stack with one more scope on top, or this stack unchanged when
-    /// the rule named none.
+    /// The stack with the rule's scopes on top, or this stack unchanged
+    /// when the rule named none.
+    ///
+    /// A `name` may hold **several scopes, separated by spaces**, and each
+    /// one goes on the stack. TextMate grammars use it to say two things at
+    /// once, and the second thing is usually the one a theme reads:
+    /// TypeScript names a function `"meta.definition.function.ts
+    /// entity.name.function.ts"`, JSON names an object key
+    /// `"string.quoted.double.json support.type.property-name.json"`, and
+    /// Kotlin, Swift and PHP write most of their declarations that way.
+    /// Pushed whole, the string matches no prefix a theme knows and the span
+    /// came out unpainted — which is why function names, PHP keywords and
+    /// YAML keys were plain text.
     func pushing(_ scope: String?) -> ScopeStack {
         guard let scope, !scope.isEmpty else { return self }
-        return ScopeStack(scope: scope, parent: self)
+        guard scope.contains(where: { $0.isWhitespace }) else {
+            return ScopeStack(scope: scope, parent: self)
+        }
+        var stack = self
+        for part in scope.split(whereSeparator: { $0.isWhitespace }) {
+            stack = ScopeStack(scope: String(part), parent: stack)
+        }
+        return stack
     }
 }
 
@@ -98,14 +116,17 @@ struct TokenizerState {
         /// line boundary.
         var carried: Bool
 
-        /// The byte offset the `begin` match ended at, on the line that
-        /// opened the region, and -1 once the region has been carried.
+        /// The byte offset a **zero-width** `begin` match opened this region
+        /// at, and -1 for a `begin` that consumed something or for a region
+        /// that has been carried to another line.
         ///
-        /// Kept so the scanner can recognise a region that opened and
-        /// closed without consuming anything. A grammar whose `begin` and
-        /// `end` are both zero-width would otherwise push and pop at one
-        /// offset for as long as anybody let it.
-        var entered: Int
+        /// Kept so the scanner can recognise the one region it must refuse:
+        /// the one whose `begin` and `end` are both zero-width at one
+        /// offset, which would push and pop there for as long as anybody let
+        /// it. A `begin` that consumed text cannot do that, however empty
+        /// its `end` match is, so it is not recorded here — see
+        /// `closeRegion`.
+        var emptyEntry: Int
     }
 
     /// The document's own scope, under everything.
@@ -142,7 +163,7 @@ extension TokenizerState.Frame: Equatable {
 }
 
 extension TokenizerState: Equatable {
-    /// `carried` and `entered` are deliberately not compared. They say
+    /// `carried` and `emptyEntry` are deliberately not compared. They say
     /// where on a line the frame was opened, not what the frame is, and a
     /// state handed to the next line has both of them settled — so two
     /// states that differ only in them cannot exist at a line boundary.

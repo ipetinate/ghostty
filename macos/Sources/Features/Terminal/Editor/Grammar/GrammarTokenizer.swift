@@ -147,7 +147,7 @@ private extension GrammarTokenizer {
         run.position = run.line.count
         for index in run.state.frames.indices {
             run.state.frames[index].carried = true
-            run.state.frames[index].entered = -1
+            run.state.frames[index].emptyEntry = -1
         }
     }
 
@@ -325,7 +325,7 @@ private extension GrammarTokenizer {
                 nameScopes: nameScopes,
                 contentScopes: bodyScopes,
                 carried: false,
-                entered: hit.range.upperBound))
+                emptyEntry: hit.range.isEmpty ? hit.range.upperBound : -1))
 
         run.position = max(run.position, hit.range.upperBound)
         run.anchor = run.position
@@ -334,13 +334,22 @@ private extension GrammarTokenizer {
 
     /// Closes the open region on its `end` match.
     ///
-    /// A region that opened and closed at one offset without consuming
-    /// anything would open again on the next turn, for ever. That one is
-    /// abandoned instead, and the rest of the line goes out under what was
-    /// around it.
+    /// A zero-width `end` is ordinary and closes the region where it
+    /// matched. HTML's attributes are written that way: `setup` in
+    /// `<script setup lang="ts">` opens a region whose end is
+    /// `(?=\s*+[^=\s])`, which matches empty the moment the name is read,
+    /// because an attribute with no value ends where it began. Refusing
+    /// that left the region open for the rest of the file — the whole script
+    /// block of every Vue component with `<script setup>` came out as HTML
+    /// attribute names, and so did the file after it.
+    ///
+    /// What must still be refused is narrower: a region whose `begin` was
+    /// *also* zero-width at the same offset, which would push and pop there
+    /// for ever. That one is abandoned, and the rest of the line goes out
+    /// under what was around it.
     func closeRegion(_ hit: Hit, _ run: Run) {
         guard let frame = run.state.frames.last else { return }
-        if hit.range.isEmpty, hit.range.lowerBound == frame.entered {
+        if hit.range.isEmpty, hit.range.lowerBound == frame.emptyEntry {
             run.state.frames.removeLast()
             run.stopped = true
             return

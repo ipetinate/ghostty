@@ -93,6 +93,9 @@ struct ExtensionSettingsForm: View {
             lsp.refreshInstalledCommands()
             requirements.load(directory: store.manifestDirectory(for: extensionID))
         }
+        .onReceive(NotificationCenter.default.publisher(for: LanguageTrustStore.didChangeNotification)) { _ in
+            defaultsRevision += 1
+        }
         .confirmationDialog(
             "Forget the decision for \(title)?",
             isPresented: $showForgetConfirmation,

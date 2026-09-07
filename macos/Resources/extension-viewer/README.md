@@ -1,7 +1,7 @@
 # Extension viewer — the document page for extensions
 
 Vendored from [ipetinate/phantom-extensions](https://github.com/ipetinate/phantom-extensions),
-package `packages/phantom-mdx`, **0.1.0** (see `VERSION`). This is the page
+package `packages/phantom-mdx`, **0.2.0** (see `VERSION`). This is the page
 the Extensions store loads in a `WKWebView` to draw an extension's
 `extension.mdx` or `extension.md`: the store passes the document's text and
 its folder, the page parses it, checks it against the kit's component list and
@@ -27,8 +27,8 @@ Digests (`shasum -a 256`) of this copy:
 
 ```
 2c5073fe5fbf48a73a62f2684ae3b2b965f7547a1443abf6cb76d445358cf9c5  viewer.html
-451c57171c7ac624f8b3e588963d09983161f93559fdbe78f1a87b4cf4533e4c  viewer.js
-bd97b847e803ecdfcb36df1aa037b64237547ce456576bdd7be77d812ae0d5d0  viewer.css
+f71035c1eaac5dc21bece41034592988c859c1cec048e1037640320d96e0c505  viewer.js
+2be733dbed08c4e767df987c356eed6de928baef6dcf0210a986d30fdc613d60  viewer.css
 ```
 
 The page has no network references, no inline scripts and no inline styles,

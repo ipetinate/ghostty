@@ -61,12 +61,24 @@ enum LanguageTrustStore {
         return record
     }
 
+    /// Posted whenever a decision is written or dropped.
+    ///
+    /// The record lives in `UserDefaults` and this type publishes nothing —
+    /// a security record has no business driving a view's lifecycle. But a
+    /// view that *draws* the record has to hear that it changed: approving
+    /// PHP from the prompt the editor raises left the Settings row for the
+    /// same extension still reading "Not Approved", beside a server section
+    /// that had already gone green, because nothing told the form to look
+    /// again.
+    static let didChangeNotification = Notification.Name("PhantomLanguageTrustDidChange")
+
     static func set(_ record: LanguageTrustRecord, for extensionID: String) {
         guard !extensionID.isEmpty else { return }
         var current = all
         current[extensionID] = record
         guard let data = try? JSONEncoder().encode(current) else { return }
         UserDefaults.standard.set(data, forKey: defaultsKey)
+        announce()
     }
 
     /// Drops a decision, which is the only way back from a refusal — and it
@@ -77,6 +89,11 @@ enum LanguageTrustStore {
         guard current.removeValue(forKey: extensionID) != nil else { return }
         guard let data = try? JSONEncoder().encode(current) else { return }
         UserDefaults.standard.set(data, forKey: defaultsKey)
+        announce()
+    }
+
+    private static func announce() {
+        NotificationCenter.default.post(name: didChangeNotification, object: nil)
     }
 
     /// Records an answer to a prompt.

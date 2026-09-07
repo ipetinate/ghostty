@@ -150,6 +150,144 @@ struct LanguageCatalogTests {
         #expect(catalog.contribution(forFileName: "other.lock")?.language.languageID == "locky")
     }
 
+    // MARK: Patterns
+
+    /// The three ways a language can claim a file, ranked by how much each
+    /// one commits to: a name claims one file, a pattern claims a shape, an
+    /// extension claims a suffix everybody who ever used it shares.
+    ///
+    /// All three are offered the same file at once, so the order is read off
+    /// one resolution rather than three.
+    @Test func aFileNameBeatsAPatternAndAPatternBeatsAnExtension() {
+        let catalog = LanguageCatalog.resolve(
+            manifests: [
+                manifest(
+                    directory: "c.byname",
+                    id: "c.byname",
+                    languages: #"{ "languageId": "byname", "fileNames": [".env.local"] }"#
+                ),
+                manifest(
+                    directory: "b.bypattern",
+                    id: "b.bypattern",
+                    languages: #"{ "languageId": "bypattern", "fileNamePatterns": [".env.*"] }"#
+                ),
+                manifest(
+                    directory: "a.byext",
+                    id: "a.byext",
+                    languages: #"{ "languageId": "byext", "extensions": ["local"] }"#
+                ),
+            ],
+            promotions: []
+        )
+        #expect(catalog.contribution(forFileName: ".env.local")?.language.languageID == "byname")
+        #expect(catalog.contribution(forFileName: ".env.production")?.language.languageID
+            == "bypattern")
+        #expect(catalog.contribution(forFileName: "settings.local")?.language.languageID == "byext")
+    }
+
+    /// The case the whole field exists for: a suffix nobody enumerated.
+    @Test func aPatternClaimsASuffixNoManifestCouldHaveListed() {
+        let catalog = LanguageCatalog.resolve(
+            manifests: [manifest(
+                directory: "acme.dotenv",
+                id: "acme.dotenv",
+                languages: #"{ "languageId": "dotenv", "fileNamePatterns": [".env.*"] }"#
+            )],
+            promotions: []
+        )
+        #expect(catalog.contribution(forFileName: ".env.staging-eu")?.language.languageID
+            == "dotenv")
+        #expect(catalog.contribution(forFileName: ".env")?.language.languageID == nil)
+        #expect(catalog.contribution(forFileName: ".envrc")?.language.languageID == nil)
+    }
+
+    /// Two extensions declaring the *same* glob is a token collision, so it
+    /// is settled where every other collision is: at resolution, with the
+    /// loser listed conflicted rather than dropped.
+    @Test func twoExtensionsDeclaringOneGlobConflictLikeAnyOtherClaim() {
+        let catalog = LanguageCatalog.resolve(
+            manifests: [
+                manifest(
+                    directory: "a.dotenv",
+                    id: "a.dotenv",
+                    languages: #"{ "languageId": "adotenv", "fileNamePatterns": [".env.*"] }"#
+                ),
+                manifest(
+                    directory: "b.dotenv",
+                    id: "b.dotenv",
+                    languages: #"{ "languageId": "bdotenv", "fileNamePatterns": ["  .ENV.*  "] }"#
+                ),
+            ],
+            promotions: []
+        )
+        #expect(catalog.contributed.first?.isActive == true)
+        #expect(catalog.contributed.last?.resolution
+            == .shadowed(by: .extensionID("a.dotenv"), claim: "pattern:.env.*"))
+    }
+
+    /// Two *different* globs matching one file is not a token collision and
+    /// cannot be made into one — whether two glob languages intersect is not
+    /// a question about strings. Both contributions stay active, and the file
+    /// goes to whichever of them the rank order already put first, which is
+    /// the order a promotion moves. Nothing about patterns goes around the
+    /// path the rest of the catalog uses.
+    @Test func twoOverlappingGlobsAreSettledByRankAndByPromotion() {
+        let manifests = [
+            manifest(
+                directory: "zeta.dotenv",
+                id: "zeta.dotenv",
+                languages: #"{ "languageId": "zetaenv", "fileNamePatterns": [".env.*"] }"#
+            ),
+            manifest(
+                directory: "alpha.local",
+                id: "alpha.local",
+                languages: #"{ "languageId": "alphalocal", "fileNamePatterns": ["*.local"] }"#
+            ),
+        ]
+
+        let before = LanguageCatalog.resolve(manifests: manifests, promotions: [])
+        let allActive = before.contributed.allSatisfy(\.isActive)
+        #expect(allActive)
+        #expect(before.contribution(forFileName: ".env.local")?.language.languageID
+            == "alphalocal")
+
+        let after = LanguageCatalog.resolve(
+            manifests: manifests,
+            promotions: [LanguagePromotionStore.key(
+                extensionID: "zeta.dotenv",
+                languageID: "zetaenv"
+            )]
+        )
+        #expect(after.contribution(forFileName: ".env.local")?.language.languageID == "zetaenv")
+    }
+
+    /// Promotion moves a contribution within its stage and never across one.
+    /// An extension whose only claim is a glob cannot take a file from one
+    /// that named the file outright, however far ahead the reader puts it.
+    @Test func promotingAGlobDoesNotTakeAFileFromAManifestThatNamedIt() {
+        let catalog = LanguageCatalog.resolve(
+            manifests: [
+                manifest(
+                    directory: "a.byname",
+                    id: "a.byname",
+                    languages: #"{ "languageId": "byname", "fileNames": [".env.local"] }"#
+                ),
+                manifest(
+                    directory: "z.bypattern",
+                    id: "z.bypattern",
+                    languages: #"{ "languageId": "bypattern", "fileNamePatterns": [".env.*"] }"#
+                ),
+            ],
+            promotions: [LanguagePromotionStore.key(
+                extensionID: "z.bypattern",
+                languageID: "bypattern"
+            )]
+        )
+        #expect(catalog.contribution(forFileName: ".env.local")?.language.languageID == "byname")
+        #expect(catalog.contribution(forFileName: ".env.production")?.language.languageID
+            == "bypattern")
+    }
+
     // MARK: Two extensions, one file type
 
     /// The manifests are handed over in the order that would win if

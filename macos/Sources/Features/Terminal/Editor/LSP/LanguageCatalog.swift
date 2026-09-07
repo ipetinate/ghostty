@@ -251,15 +251,33 @@ struct LanguageCatalog: Equatable {
     /// The contribution in force for a file, or nil when this build's own
     /// tables own it.
     ///
-    /// **A whole file name beats an extension**, because a name is the more
-    /// specific statement — `go.mod` is Go, and `.mod` is a Fortran module
-    /// as often as it is anything else.
+    /// **A whole file name beats a pattern, and a pattern beats an
+    /// extension**, in order of how much each one commits to. A name names
+    /// one file and nothing else — `go.mod` is Go, and `.mod` is a Fortran
+    /// module as often as it is anything else. A pattern names a shape, so
+    /// `.env.*` should lose to a manifest that went to the trouble of
+    /// listing `.env.local` and win over one that only said `local`. An
+    /// extension is the weakest statement of the three: it claims a suffix
+    /// every language that ever used it shares.
+    ///
+    /// Each stage searches `contributed` in its own rank order, so a
+    /// promotion moves a contribution ahead of its rivals *within* a stage
+    /// and never across one: promoting an extension whose claim is a pattern
+    /// does not take a file off an extension that named it outright.
     func contribution(forFileName fileName: String) -> Contributed? {
         let lowered = fileName.lowercased()
         if let byName = contributed.first(where: {
             $0.isActive && $0.language.fileNames.contains(lowered)
         }) {
             return byName
+        }
+
+        if let byPattern = contributed.first(where: { candidate in
+            candidate.isActive && candidate.language.filePatterns.contains {
+                FileNamePattern.matches($0, name: lowered)
+            }
+        }) {
+            return byPattern
         }
 
         let ext = (lowered as NSString).pathExtension

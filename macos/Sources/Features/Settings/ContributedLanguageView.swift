@@ -247,7 +247,9 @@ struct ContributedLanguageSection: View {
     }
 
     private var fileTypes: String {
-        (contributed.language.fileExtensions.map { "." + $0 } + contributed.language.fileNames)
+        (contributed.language.fileExtensions.map { "." + $0 }
+            + contributed.language.fileNames
+            + contributed.language.filePatterns)
             .joined(separator: ", ")
     }
 

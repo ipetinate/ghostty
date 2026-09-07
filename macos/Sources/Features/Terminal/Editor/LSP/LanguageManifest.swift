@@ -432,6 +432,11 @@ struct LanguageContribution: Equatable, Sendable {
     /// not decide anything — `mix.lock`, `go.mod`.
     let fileNames: [String]
 
+    /// Lower-cased globs matched against a file's name, for the languages
+    /// whose set of names is open — `.env.*`. See `FileNamePattern` for the
+    /// dialect and for why it is only two characters wide.
+    let filePatterns: [String]
+
     let lineComment: String?
     let blockComment: BlockComment?
     let category: LSPServerCategory
@@ -446,10 +451,19 @@ struct LanguageContribution: Equatable, Sendable {
     /// Every claim this contribution makes on a file, as opaque tokens. The
     /// catalog resolves conflicts on these and nothing else, so extensions,
     /// file names and the language id itself are compared the same way.
+    ///
+    /// A pattern is a token like the rest, which settles two extensions that
+    /// declare the *same* glob. Two that declare **different** globs both
+    /// matching one file — `.env.*` and `*.local` — are not a token
+    /// collision and cannot be made into one: whether two glob languages
+    /// intersect is not a question about strings. Those are settled at
+    /// lookup instead, by the rank order `contributed` is already sorted in,
+    /// so the reader's promotion decides there exactly as it decides here.
     var claims: [String] {
         ["lang:" + languageID]
             + fileExtensions.map { "ext:" + $0 }
             + fileNames.map { "name:" + $0 }
+            + filePatterns.map { "pattern:" + $0 }
     }
 
     // MARK: Parsing
@@ -463,6 +477,7 @@ struct LanguageContribution: Equatable, Sendable {
 
         let fileExtensions = self.fileExtensions(from: json["extensions"])
         let fileNames = self.fileNames(from: json["fileNames"])
+        let filePatterns = self.filePatterns(from: json["fileNamePatterns"])
         let lineComment = commentMarker(json["lineComment"])
         let blockComment = self.blockComment(json["blockComment"])
 
@@ -482,6 +497,7 @@ struct LanguageContribution: Equatable, Sendable {
             displayName: LanguageManifest.displayString(json["name"]) ?? languageID,
             fileExtensions: fileExtensions,
             fileNames: fileNames,
+            filePatterns: filePatterns,
             lineComment: lineComment,
             blockComment: blockComment,
             category: LSPServerCategory(rawValue: LanguageManifest.string(json["category"]) ?? "")
@@ -540,6 +556,21 @@ struct LanguageContribution: Equatable, Sendable {
             return seen.insert(text).inserted ? text : nil
         }
         .prefix(maxFileTypes)
+        .map { $0 }
+    }
+
+    /// Globs, in the canonical form `FileNamePattern.valid` defines, capped
+    /// at `FileNamePattern.maxPatterns` rather than at `maxFileTypes`: each
+    /// one is work done per file the reader opens, where a file name is a
+    /// dictionary lookup.
+    static func filePatterns(from value: Any?) -> [String] {
+        let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
+        var seen: Set<String> = []
+        return raw.compactMap { candidate -> String? in
+            guard let text = FileNamePattern.valid(candidate) else { return nil }
+            return seen.insert(text).inserted ? text : nil
+        }
+        .prefix(FileNamePattern.maxPatterns)
         .map { $0 }
     }
 

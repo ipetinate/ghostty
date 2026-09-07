@@ -301,6 +301,82 @@ struct LanguageManifestTests {
         #expect(manifest.languages.first?.fileExtensions == ["ex", "exs"])
     }
 
+    // MARK: File name patterns
+
+    /// The dialect itself is `FileNamePatternTests`' subject, against the
+    /// table the registry shares. What is checked here is the field: a bad
+    /// element costs that element, the survivors are canonical, and a pattern
+    /// that would reach outside the file it is deciding about never lands.
+    @Test func patternsAreCanonicalAndOneBadElementCostsThatElement() throws {
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{
+              "languageId": "dotenv",
+              "fileNamePatterns": [".ENV.*", 7, null, "  *.env  ", "../*.env", "*.{a,b}", ".env.*"]
+            }]
+          }
+        }
+        """#))
+        #expect(manifest.languages.first?.filePatterns == [".env.*", "*.env"])
+    }
+
+    @Test func patternsAreCappedAndTheLanguageSurvivesTheCap() throws {
+        let patterns = (0..<(FileNamePattern.maxPatterns + 10))
+            .map { #""p\#($0).*""# }
+            .joined(separator: ", ")
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{
+              "languageId": "dotenv",
+              "extensions": ["env"],
+              "fileNamePatterns": [\#(patterns)]
+            }]
+          }
+        }
+        """#))
+        let language = try #require(manifest.languages.first)
+        #expect(language.filePatterns.count == FileNamePattern.maxPatterns)
+        #expect(language.fileExtensions == ["env"])
+    }
+
+    /// VS Code spells the key `filenamePatterns`; this format spells it the
+    /// way it spells `fileNames`. An author who copies the VS Code key gets
+    /// nothing here — which is why the registry refuses that spelling by name
+    /// rather than letting a published manifest claim files it never gets.
+    @Test func theVSCodeSpellingOfTheKeyIsNotRead() throws {
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{ "languageId": "dotenv", "filenamePatterns": [".env.*"] }]
+          }
+        }
+        """#))
+        #expect(manifest.languages.first?.filePatterns.isEmpty == true)
+    }
+
+    @Test func aPatternIsAClaimLikeAnyOtherClaim() throws {
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{
+              "languageId": "dotenv",
+              "extensions": ["env"],
+              "fileNames": ["dotenv"],
+              "fileNamePatterns": [".env.*"]
+            }]
+          }
+        }
+        """#))
+        #expect(manifest.languages.first?.claims
+            == ["lang:dotenv", "ext:env", "name:dotenv", "pattern:.env.*"])
+    }
+
     @Test func aLanguageWithNoUsableIDIsDroppedAndItsSiblingsSurvive() throws {
         let manifest = try #require(parse(#"""
         {

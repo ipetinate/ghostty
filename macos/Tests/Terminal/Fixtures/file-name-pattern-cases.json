@@ -1,0 +1,259 @@
+{
+  "note": [
+    "The shared conformance table for the fileNamePatterns glob dialect.",
+    "Two byte-identical copies exist, and neither repository can read the other's:",
+    "  phantom/macos/Tests/Terminal/Fixtures/file-name-pattern-cases.json",
+    "  phantom-extensions/packages/registry/test/file-name-pattern-cases.json",
+    "Both test suites hash this file and compare the digest against a constant they",
+    "declare, so editing one copy fails that repository's tests until the digest is",
+    "updated - which is the moment to copy the file across and update the other one."
+  ],
+  "limits": {
+    "maxLength": 64,
+    "maxPatterns": 32,
+    "maxNameLength": 255
+  },
+  "accepted": [
+    {
+      "pattern": ".env.*",
+      "canonical": ".env.*"
+    },
+    {
+      "pattern": "*.env",
+      "canonical": "*.env"
+    },
+    {
+      "pattern": "*",
+      "canonical": "*"
+    },
+    {
+      "pattern": "?",
+      "canonical": "?"
+    },
+    {
+      "pattern": "makefile.*",
+      "canonical": "makefile.*"
+    },
+    {
+      "pattern": ".env.local",
+      "canonical": ".env.local",
+      "why": "a wildcard is not required, only pointless"
+    },
+    {
+      "pattern": "  .ENV.*  ",
+      "canonical": ".env.*",
+      "why": "trimmed of spaces and tabs, then lower-cased"
+    },
+    {
+      "pattern": "\t*.ENV\t",
+      "canonical": "*.env"
+    },
+    {
+      "pattern": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*",
+      "canonical": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*",
+      "why": "exactly maxLength scalars"
+    },
+    {
+      "pattern": "caf?.txt",
+      "canonical": "caf?.txt",
+      "why": "non-ASCII names are matched scalar by scalar"
+    }
+  ],
+  "rejected": [
+    {
+      "pattern": "",
+      "why": "empty"
+    },
+    {
+      "pattern": "   ",
+      "why": "empty once trimmed"
+    },
+    {
+      "pattern": ".",
+      "why": "the current directory is not a file name"
+    },
+    {
+      "pattern": "..",
+      "why": "the parent directory is not a file name"
+    },
+    {
+      "pattern": ".env/*",
+      "why": "a pattern sees a name, never a path"
+    },
+    {
+      "pattern": "src\\*.env",
+      "why": "a backslash is a separator too"
+    },
+    {
+      "pattern": "*.{js,ts}",
+      "why": "alternation is not in the dialect; write one pattern per alternative"
+    },
+    {
+      "pattern": "[abc].txt",
+      "why": "character classes are not in the dialect"
+    },
+    {
+      "pattern": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*",
+      "why": "longer than maxLength scalars"
+    },
+    {
+      "pattern": ".env.‮lacol",
+      "why": "a bidirectional override decides what the row appears to say"
+    },
+    {
+      "pattern": ".env.\nlocal",
+      "why": "a newline is a control scalar"
+    },
+    {
+      "pattern": ".env.​local",
+      "why": "a zero-width space is invisible padding"
+    }
+  ],
+  "matches": [
+    {
+      "pattern": ".env.*",
+      "name": ".env.local",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.production",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.staging-eu",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.local.bak",
+      "matches": true,
+      "why": "a star crosses dots"
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.",
+      "matches": true,
+      "why": "a star matches an empty run"
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env",
+      "matches": false,
+      "why": "the literal trailing dot is not there"
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".envrc",
+      "matches": false
+    },
+    {
+      "pattern": ".env.*",
+      "name": "app.env.local",
+      "matches": false,
+      "why": "the whole name has to match"
+    },
+    {
+      "pattern": "*.env",
+      "name": ".dev.env",
+      "matches": true
+    },
+    {
+      "pattern": "*.env",
+      "name": ".env",
+      "matches": true
+    },
+    {
+      "pattern": "*.env",
+      "name": "env",
+      "matches": false
+    },
+    {
+      "pattern": "*",
+      "name": "anything.txt",
+      "matches": true
+    },
+    {
+      "pattern": "*",
+      "name": "",
+      "matches": true,
+      "why": "a star matches an empty run"
+    },
+    {
+      "pattern": "?.txt",
+      "name": "a.txt",
+      "matches": true
+    },
+    {
+      "pattern": "?.txt",
+      "name": "ab.txt",
+      "matches": false
+    },
+    {
+      "pattern": "?.txt",
+      "name": ".txt",
+      "matches": false,
+      "why": "a question mark is exactly one scalar"
+    },
+    {
+      "pattern": ".env.?",
+      "name": ".env.a",
+      "matches": true
+    },
+    {
+      "pattern": "a.b",
+      "name": "a.b",
+      "matches": true
+    },
+    {
+      "pattern": "a.b",
+      "name": "axb",
+      "matches": false,
+      "why": "a dot is a literal"
+    },
+    {
+      "pattern": "*.*.env",
+      "name": "a.b.env",
+      "matches": true
+    },
+    {
+      "pattern": "*.*.env",
+      "name": "a.env",
+      "matches": false
+    },
+    {
+      "pattern": "*a*b*",
+      "name": "xxaxxbxx",
+      "matches": true
+    },
+    {
+      "pattern": "*a*b*",
+      "name": "xxbxxaxx",
+      "matches": false
+    },
+    {
+      "pattern": "makefile.*",
+      "name": "makefile.am",
+      "matches": true
+    },
+    {
+      "pattern": "caf?.txt",
+      "name": "café.txt",
+      "matches": true,
+      "why": "one precomposed scalar"
+    },
+    {
+      "pattern": "*a*a*a*a*a*a*a*a*a*a*b",
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "matches": false,
+      "why": "the input that hangs a backtracking matcher; this one has to answer"
+    },
+    {
+      "pattern": "*",
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "matches": false,
+      "why": "longer than maxNameLength, so the matcher refuses to pay for it"
+    }
+  ]
+}

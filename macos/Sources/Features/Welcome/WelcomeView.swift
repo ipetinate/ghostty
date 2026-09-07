@@ -1,12 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// The welcome window's three steps.
+/// The welcome window's four steps.
 ///
-/// Hero, then what the app does, then the agents — in that order because the
-/// last one is the only one that writes anything, and a reader who has just met
-/// this app should know what an agent hook *is* before being offered six of
-/// them. It is also the only step with a way past it that does nothing: Skip.
+/// Hero, then what the app does, then where the sidebar's tabs go, then the
+/// agents — in that order because the agents step is the one that installs
+/// things on the machine, and a reader who has just met this app should know
+/// what an agent hook *is* before being offered six of them. It is also the
+/// only step with a way past it that does nothing: Skip.
+///
+/// The placement step sits third because it is a choice about this window's
+/// own shape, made against the sidebar the step before it has just named — and
+/// because it takes effect on the click rather than on Finish, so it has
+/// nothing to do with the agents step's plan.
 struct WelcomeView: View {
     let close: () -> Void
 
@@ -15,10 +21,24 @@ struct WelcomeView: View {
     /// steps size themselves against it — see `WelcomeBasicsStep.cardHeight`.
     static let chromeHeight: CGFloat = 132
 
-    private enum Step: Int, CaseIterable {
+    /// Internal rather than private so the order, and each step's own name,
+    /// can be held by a test.
+    enum Step: Int, CaseIterable {
         case hero
         case basics
+        case layout
         case agents
+
+        /// What the header calls this step, beside the app's name. Nil for
+        /// the hero, which *is* the name.
+        var title: String? {
+            switch self {
+            case .hero: return nil
+            case .basics: return "What this app does"
+            case .layout: return "Where the tabs go"
+            case .agents: return "Your agents"
+            }
+        }
     }
 
     @State private var step: Step = .hero
@@ -128,9 +148,11 @@ struct WelcomeView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .matchedGeometryEffect(id: "title", in: hero)
 
-            Text(step == .basics ? "What this app does" : "Your agents")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+            if let title = step.title {
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer(minLength: 0)
         }
@@ -138,7 +160,7 @@ struct WelcomeView: View {
         .padding(.vertical, 12)
     }
 
-    // MARK: Steps two and three
+    // MARK: Steps two, three and four
 
     @ViewBuilder
     private var content: some View {
@@ -147,6 +169,10 @@ struct WelcomeView: View {
             EmptyView()
         case .basics:
             WelcomeBasicsStep()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+        case .layout:
+            WelcomeTabPlacementStep()
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
         case .agents:
@@ -291,6 +317,9 @@ struct WelcomeView: View {
             Button("Start") { advance(to: .basics) }
                 .keyboardShortcut(.defaultAction)
         case .basics:
+            Button("Next") { advance(to: .layout) }
+                .keyboardShortcut(.defaultAction)
+        case .layout:
             Button("Next") { advance(to: .agents) }
                 .keyboardShortcut(.defaultAction)
         case .agents:

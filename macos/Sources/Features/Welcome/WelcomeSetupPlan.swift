@@ -138,6 +138,24 @@ enum WelcomeSetupPlan {
     /// what the reader is shown, and "install hooks for Claude Code" beside an
     /// agent that has had them since March is a sentence that makes the panel
     /// less trustworthy, not more.
+    /// Whether the card's one switch can be moved.
+    ///
+    /// **Anything switched on can be switched off.** This was
+    /// `isInstalled && !isComplete`, which disabled the switch in the two
+    /// cases it exists for: an agent that is fully set up could never be
+    /// taken apart, and an agent that is *not* on this machine but has hooks
+    /// or an MCP entry left behind — from a machine that had it once — drew
+    /// the switch on with no way to turn it off. The card shows the install
+    /// hint in place of the checkboxes for a missing agent, so that switch
+    /// was the only control there was.
+    ///
+    /// On is still refused for an agent that is not here: there is nothing
+    /// to point hooks or an entry at until it is installed.
+    static func canChoose(hasProbed: Bool, isInstalled: Bool, isChosen: Bool) -> Bool {
+        guard hasProbed else { return false }
+        return isInstalled || isChosen
+    }
+
     static func items(
         selection: [CodingAgent: Selection],
         state: [CodingAgent: AgentState]

@@ -135,17 +135,17 @@ struct WelcomeAgentCard: View {
     }
 
     private var canChoose: Bool {
-        hasProbed && isInstalled && !state.isComplete
+        WelcomeSetupPlan.canChoose(
+            hasProbed: hasProbed, isInstalled: isInstalled, isChosen: isChosen)
     }
 
     private var switchHelp: String {
         if !hasProbed { return "Looking for it on your PATH…" }
+        if isChosen {
+            return "Take \(agent.displayName)'s hooks, MCP entry and buttons back out when you press Finish"
+        }
         if !isInstalled { return "Install \(agent.displayName) first" }
         return "Set \(agent.displayName) up when you press Finish"
-    }
-
-    private var manageHelp: String {
-        "\(agent.displayName) is set up — change or remove it in Settings"
     }
 
     private var subtitle: String {

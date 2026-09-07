@@ -37,10 +37,10 @@ struct CodeTheme: Equatable {
     /// The band behind selected text, or nil for a theme that names none.
     var selectionBackground: NSColor?
 
-    /// The colour selected glyphs take, or nil for a theme that names none.
+    /// The colour selected glyphs take in the **terminal**, carried here so
+    /// one type answers for the theme's whole selection.
     ///
-    /// Nil is the interesting case and the common one: a theme silent about
-    /// selected text keeps the code's own colours under the band.
+    /// The editor does not use it — see `selectedTextAttributes`.
     var selectionForeground: NSColor?
 
     /// What the text view paints the selection with while it has focus.
@@ -59,18 +59,26 @@ struct CodeTheme: Equatable {
     /// The band comes from the theme's `selection-background` and falls back
     /// to `NSColor.selectedTextBackgroundColor` — the `#476288` that was
     /// measured — for a theme that declares none.
+    ///
+    /// **`selection-foreground` is deliberately not honoured here, and the
+    /// count is the reason.** All 606 themes installed on the machine this
+    /// was measured on declare it, 246 of them equal to their plain
+    /// foreground, because these files are terminal palettes from the
+    /// Ghostty and iTerm collections and in a terminal that key means "the
+    /// ink of a selected cell". Honouring it in the editor left the
+    /// selection monochrome on every one of them — in the theme's colour
+    /// rather than white, which is the same defect one shade quieter. The
+    /// only theme it appeared fixed under was the one that omits the key.
+    ///
+    /// The terminal still honours it, on the Zig side, where it means what
+    /// it was written to mean.
     var selectedTextAttributes: [NSAttributedString.Key: Any] {
-        var attributes = unemphasizedSelectedTextAttributes
-        if let selectionForeground {
-            attributes[.foregroundColor] = selectionForeground
-        }
-        return attributes
+        unemphasizedSelectedTextAttributes
     }
 
     /// What it paints the selection with while the window is not key.
     ///
-    /// The band only — no `selection-foreground`, however loudly the theme
-    /// declared one. AppKit substitutes
+    /// The band only, as with focus. AppKit substitutes
     /// `NSColor.unemphasizedSelectedTextBackgroundColor` for the band in this
     /// state and keeps whatever foreground it was handed: measured `#464646`
     /// dark and `#dcdcdc` light. A theme picks its selected-text colour

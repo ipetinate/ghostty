@@ -26,10 +26,6 @@ struct EditorSelectionColorTests {
         theme.selectedTextAttributes[.backgroundColor] as? NSColor
     }
 
-    private func foreground(of theme: CodeTheme) -> NSColor? {
-        theme.selectedTextAttributes[.foregroundColor] as? NSColor
-    }
-
     @Test func theBandComesFromTheTheme() {
         let band = NSColor(hex: "#44475a")!
         let theme = EditorTheme.make(
@@ -53,9 +49,15 @@ struct EditorSelectionColorTests {
         #expect(theme.selectedTextAttributes[.foregroundColor] == nil)
     }
 
-    /// A theme that names one is asking for it, which is what the key means
-    /// wherever else it is honoured.
-    @Test func aDeclaredForegroundIsHonoured() {
+    /// A theme that names one is asking for it *in the terminal*, which is
+    /// where the key comes from and where it still holds. The editor reads
+    /// none of it.
+    ///
+    /// All 606 themes installed on the machine this was measured on declare
+    /// the key, 246 of them equal to their plain foreground — they are
+    /// terminal palettes, and honouring it here left the selection
+    /// monochrome on every theme but the one that omits it.
+    @Test func aDeclaredForegroundReachesTheThemeAndNotTheEditor() {
         let ink = NSColor(hex: "#4a4543")!
         let theme = EditorTheme.make(
             colors: samplePalette,
@@ -63,7 +65,8 @@ struct EditorSelectionColorTests {
             selectionBackground: NSColor(hex: "#a5a2a2")!,
             selectionForeground: ink
         )
-        #expect(foreground(of: theme) == ink)
+        #expect(theme.selectionForeground == ink)
+        #expect(theme.selectedTextAttributes[.foregroundColor] == nil)
     }
 
     /// No `selection-background` means the system's band rather than no band:
@@ -82,7 +85,7 @@ struct EditorSelectionColorTests {
         #expect(theme.selectedTextAttributes[.foregroundColor] == nil)
     }
 
-    /// The unfocused dictionary drops a declared foreground on purpose.
+    /// Neither dictionary carries a foreground, focused or not.
     ///
     /// AppKit swaps the band for its own grey while the window is not key and
     /// keeps the foreground it was handed. Catppuccin Mocha's `#1e1e2e` reads
@@ -97,7 +100,7 @@ struct EditorSelectionColorTests {
             selectionBackground: NSColor(hex: "#f5e0dc")!,
             selectionForeground: NSColor(hex: "#1e1e2e")!
         )
-        #expect(theme.selectedTextAttributes[.foregroundColor] != nil)
+        #expect(theme.selectedTextAttributes[.foregroundColor] == nil)
         #expect(theme.unemphasizedSelectedTextAttributes[.foregroundColor] == nil)
     }
 

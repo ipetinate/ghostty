@@ -64,7 +64,7 @@ struct ExtensionKindTabs: View {
                 }
             }
             .padding(.vertical, 1)
-            /// `.scrollIndicators(.hidden)` alone left a permanent grey band
+            /// The `.scrollIndicators` modifier alone left a permanent grey band
             /// under the row, wider than the tabs are tall: with scroll bars
             /// set to always show, AppKit gives the scroll view a *legacy*
             /// scroller, which takes a strip of layout for itself and pays no
@@ -76,7 +76,11 @@ struct ExtensionKindTabs: View {
                 WheelScrollsHorizontally()
             }
         }
-        .scrollIndicators(.hidden)
+        /// Never rather than hidden: hidden still had SwiftUI reserve the 17
+        /// points a legacy indicator takes, and a viewport taller than the row
+        /// is what let AppKit park the tabs out of their band. See
+        /// `EditorTabBar`, where the same wheel left the same gap.
+        .scrollIndicators(.never)
     }
 
     private func tab(_ kind: ExtensionCatalogFilter.Kind) -> some View {

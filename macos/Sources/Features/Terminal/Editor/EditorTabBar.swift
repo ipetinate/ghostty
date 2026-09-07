@@ -142,10 +142,15 @@ struct EditorTabBar: View {
             // view with nothing to overflow does not scroll. The row is as
             // wide as its tabs; the background behind it fills the rest.
         }
-        // Visible while scrolling, not never: with enough tabs to fill the
-        // bar there was no way to reach the rest and nothing to say they were
-        // there. `.never` hid the only affordance the row had.
-        .scrollIndicators(.automatic)
+        // Never, because there is no indicator to show and asking for one
+        // costs the row its band. `InvisibleScrollers` leaves a scroller that
+        // draws nothing, so `.automatic` showed the reader nothing either —
+        // and it still had SwiftUI reserve the 17 points a legacy indicator
+        // takes, which made the viewport taller than the tabs. AppKit parked
+        // the row at the far end of that slack and the tabs sat clipped at the
+        // top of the bar, with an empty strip under them, until the selection
+        // changed.
+        .scrollIndicators(.never)
         // Taller than the tabs by exactly the strip the overlay scroller
         // needs. Two things come out of that gap: the scroller stops being
         // drawn over the tab labels and over the rule at the bottom of the

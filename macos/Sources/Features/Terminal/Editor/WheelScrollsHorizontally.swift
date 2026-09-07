@@ -78,10 +78,33 @@ struct WheelScrollsHorizontally: View {
                 ? event.scrollingDeltaY
                 : event.scrollingDeltaY * 16
 
-            let target = min(max(clipView.bounds.origin.x - step, 0), overflow)
-            clipView.scroll(to: NSPoint(x: target, y: clipView.bounds.origin.y))
+            clipView.scroll(
+                to: WheelScrollsHorizontally.destination(
+                    in: clipView, step: step, overflow: overflow))
             scrollView.reflectScrolledClipView(clipView)
             return nil
         }
+    }
+
+    /// Where a wheel step of `step` points leaves the row, in the clip view's
+    /// own coordinates.
+    ///
+    /// **The vertical half is asked of the clip view rather than kept.**
+    /// `NSClipView.scroll(to:)` commits the point it is handed without putting
+    /// it through `constrainBoundsRect`, so carrying the current `origin.y`
+    /// over re-commits whatever the clip view happens to hold — and on screen
+    /// it held 17 points, the strip a legacy scroll indicator reserves. That
+    /// strip makes the viewport taller than the row, AppKit parks the row at
+    /// the far end of the slack, and the tabs sat clipped at the top of their
+    /// band with an empty strip under them until the tab selection changed and
+    /// SwiftUI laid the row out again. A tab strip has nothing to scroll
+    /// vertically, so the constrained answer is the only y worth committing.
+    static func destination(in clipView: NSClipView, step: CGFloat, overflow: CGFloat) -> NSPoint {
+        let x = min(max(clipView.bounds.origin.x - step, 0), overflow)
+        let proposed = NSRect(
+            origin: NSPoint(x: x, y: clipView.bounds.origin.y),
+            size: clipView.bounds.size
+        )
+        return clipView.constrainBoundsRect(proposed).origin
     }
 }

@@ -38,6 +38,27 @@ struct OnigRegexTests {
         #expect(groups[2] == 0..<1)
     }
 
+    /// Oniguruma stops numbering plain groups as soon as a pattern uses a
+    /// named one, and a TextMate grammar asks for its captures by number
+    /// however the pattern was written.
+    ///
+    /// This is Kotlin's class declaration, near enough: two numbered groups
+    /// and a named one that carries a recursive call so the type parameters
+    /// nest. Without the bridge asking for numbered captures the match
+    /// succeeded and reported no groups, and the declaration painted
+    /// nothing — Swift, Kotlin, Go and Markdown together lost 154
+    /// characters to patterns of this shape.
+    @Test func numbersPlainGroupsEvenBesideANamedOne() throws {
+        let regex = try #require(OnigRegex(
+            pattern: "\\b(class)\\s+(\\w+)\\s*(?<GROUP><([^<>]|\\g<GROUP>)+>)?"))
+        let groups = try #require(regex.firstMatch(in: "data class Box<List<Int>>"))
+
+        #expect(regex.captureCount == 5)
+        #expect(groups[1] == 5..<10)
+        #expect(groups[2] == 11..<14)
+        #expect(groups[3] == 14..<25)
+    }
+
     /// The reason this bridge exists. A TextMate `end` pattern refers back to
     /// a group its `begin` captured, which is how Lua's `--[==[` finds the
     /// `]==]` that closes it and no other.

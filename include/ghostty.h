@@ -1284,6 +1284,10 @@ GHOSTTY_API bool ghostty_benchmark_cli(const char*, const char*);
 // A compiled regex is not thread-safe to search from two threads at once,
 // because Oniguruma writes match positions through the caller's buffer.
 // Compile one per thread, or serialise.
+//
+// Plain groups keep their numbers even in a pattern that also names one,
+// which is not Oniguruma's default. A TextMate grammar asks for its
+// captures by number however the pattern was written.
 GHOSTTY_API ghostty_regex_t ghostty_regex_new(const char*, uintptr_t);
 GHOSTTY_API void ghostty_regex_free(ghostty_regex_t);
 

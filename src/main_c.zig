@@ -195,6 +195,16 @@ const Regex = struct {
     const retry_limit = 1_000_000;
 };
 
+/// Compiles a pattern, or returns null when Oniguruma refuses it.
+///
+/// `capture_group` is on because a TextMate grammar reads its captures by
+/// number however the pattern was written, and Oniguruma stops numbering
+/// plain groups as soon as a pattern uses a named one. Kotlin declares a
+/// class with `(class)\s+(\w+)\s*(?<GROUP><…>)?` and asks for groups 1 and
+/// 2; without the option the match succeeded and reported no groups, so the
+/// declaration painted nothing. Patterns of that shape in Swift, Kotlin, Go
+/// and Markdown were 154 of the 185 characters this engine still coloured
+/// differently from vscode-textmate over 30 sample files.
 pub export fn ghostty_regex_new(ptr: [*]const u8, len: usize) ?*Regex {
     const alloc = global.alloc();
     const self = alloc.create(Regex) catch return null;
@@ -202,7 +212,7 @@ pub export fn ghostty_regex_new(ptr: [*]const u8, len: usize) ?*Regex {
 
     self.regex = oni.Regex.init(
         ptr[0..len],
-        .{},
+        .{ .capture_group = true },
         oni.Encoding.utf8,
         oni.Syntax.default,
         null,

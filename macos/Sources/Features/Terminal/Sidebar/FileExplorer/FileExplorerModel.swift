@@ -102,6 +102,28 @@ final class FileExplorerModel: ObservableObject {
     /// The matches for `filter`, or nil while it is empty.
     @Published private(set) var matches: [FileRow]?
 
+    /// What the excludes field holds, verbatim.
+    ///
+    /// Text rather than a parsed list, because a half-typed pattern has to
+    /// survive the keystroke after it: storing the parse would delete
+    /// `(build|dis` the moment it was typed and leave the field empty under
+    /// the reader's cursor.
+    @Published var excludeText: String = storedExcludeText {
+        didSet {
+            guard excludeText != oldValue else { return }
+            UserDefaults.standard.set(excludeText, forKey: Self.excludeTextKey)
+            excludes = FileExplorerSearchExcludes.parse(excludeText)
+            scheduleFilter()
+        }
+    }
+
+    /// `excludeText` as the search reads it, and as the chips draw it.
+    ///
+    /// Parsed once per edit rather than once per search: the search runs off
+    /// the main actor and the chips redraw on it, and neither should be
+    /// compiling the same eight patterns again.
+    @Published private(set) var excludes = FileExplorerSearchExcludes.parse(storedExcludeText)
+
     @Published private(set) var isSearching = false
 
     private var filterTask: Task<Void, Never>?
@@ -156,10 +178,32 @@ final class FileExplorerModel: ObservableObject {
 
     static let showHiddenKey = "FileExplorerShowHiddenFiles"
 
+    /// Beside `showHiddenKey` in `UserDefaults`, because it is the same kind
+    /// of thing: one answer for the whole app, kept across launches, and
+    /// read by whatever surface asks. There is no second store to keep in
+    /// step, and an explorer in another window takes the change through the
+    /// same notification the hidden-files toggle already rides.
+    static let excludeTextKey = "FileExplorerSearchExcludes"
+
+    /// Whether the excludes section under the search field is open.
+    ///
+    /// The view owns it through `@AppStorage` — it is the disclosure's
+    /// state and nothing in the model reads it — but the key lives here so
+    /// the explorer's preference keys are one list rather than two.
+    static let excludesExpandedKey = "FileExplorerSearchExcludesExpanded"
+
     /// The toggle's starting value: whatever the reader last chose, or the
     /// default when they never chose.
     private static var storedShowHidden: Bool {
         showHidden(stored: UserDefaults.standard.object(forKey: showHiddenKey))
+    }
+
+    /// Empty until the reader writes something. No seeded default: the
+    /// directories worth skipping unasked are already in
+    /// `skippedDirectories`, and a field that arrives pre-filled reads as
+    /// the app's opinion rather than the reader's.
+    private static var storedExcludeText: String {
+        UserDefaults.standard.string(forKey: excludeTextKey) ?? ""
     }
 
     /// Turns the stored preference into the toggle's value.
@@ -222,18 +266,35 @@ final class FileExplorerModel: ObservableObject {
         }
     }
 
-    /// Takes whatever is in `UserDefaults` for the two preferences this
-    /// model shares with the Settings window.
+    /// Takes whatever is in `UserDefaults` for the preferences this model
+    /// holds a copy of.
     ///
-    /// Assigning is enough: both properties write themselves back in
-    /// `didSet` — the same value, harmlessly — and reload what needs
-    /// reloading, which is exactly what an external change should do.
+    /// Assigning is enough: each property writes itself back in `didSet` —
+    /// the same value, harmlessly — and reloads what needs reloading, which
+    /// is exactly what an external change should do.
+    ///
+    /// The first two are the ones Settings also draws. The excludes line is
+    /// here for the other reason the same mechanism serves: one model per
+    /// window, and a pattern typed in one window is meant to hold in the
+    /// next one too.
     private func adoptStoredPreferences() {
         let hidden = Self.storedShowHidden
         if hidden != showHiddenFiles { showHiddenFiles = hidden }
 
         let mode = WorkspaceRootMode.stored
         if mode != rootMode { rootMode = mode }
+
+        let excluded = Self.storedExcludeText
+        if excluded != excludeText { excludeText = excluded }
+    }
+
+    /// Drops one pattern and writes the rest back to the field.
+    ///
+    /// The chip is the only way out of a pattern that is hiding something
+    /// the reader wants, and it has to work without them finding the right
+    /// comma in a line they wrote a week ago.
+    func removeExclude(_ pattern: FileExplorerSearchExcludes.Pattern) {
+        excludeText = excludes.removing(pattern).text
     }
 
     // MARK: Root
@@ -714,8 +775,14 @@ final class FileExplorerModel: ObservableObject {
             guard !Task.isCancelled else { return }
 
             let showHidden = self?.showHiddenFiles ?? false
+            let excludes = self?.excludes ?? .empty
             let found = await Task.detached(priority: .userInitiated) {
-                Self.search(query: query, under: root, showHidden: showHidden)
+                Self.search(
+                    query: query,
+                    under: root,
+                    showHidden: showHidden,
+                    excludes: excludes
+                )
             }.value
 
             guard !Task.isCancelled else { return }
@@ -733,30 +800,46 @@ final class FileExplorerModel: ObservableObject {
     /// with a result cap that ordering decides *which* results you get.
     /// `.git`, `node_modules` and the other build directories are skipped —
     /// searching them finds thousands of matches nobody meant.
+    ///
+    /// `excludes` is the reader's own list, added to that one rather than
+    /// replacing it: the built-in set is what every project needs and the
+    /// field is what this project needs. An excluded directory is never
+    /// queued, so its subtree costs nothing — the point of the field is the
+    /// directory that is expensive to read, and a filter applied to results
+    /// after the walk would have read it anyway.
     nonisolated static func search(
         query: String,
         under root: URL,
-        showHidden: Bool
+        showHidden: Bool,
+        excludes: FileExplorerSearchExcludes = .empty
     ) -> [FileRow] {
         let needle = query.lowercased()
         var results: [FileRow] = []
-        var queue = [root.path]
+        var queue = [(path: root.path, relative: "")]
 
         while !queue.isEmpty, results.count < matchLimit {
             let directory = queue.removeFirst()
             let children = scan(
-                directory: URL(fileURLWithPath: directory),
+                directory: URL(fileURLWithPath: directory.path),
                 showHidden: showHidden
             )
 
             for child in children where results.count < matchLimit {
+                let relative = directory.relative.isEmpty
+                    ? child.name
+                    : directory.relative + "/" + child.name
+                guard !excludes.excludes(
+                    relativePath: relative,
+                    isDirectory: child.isDirectory
+                ) else { continue }
+
                 if child.name.lowercased().contains(needle) {
                     // Depth zero: matches are a flat list, not a tree, so
                     // nothing is indented against a parent that isn't shown.
                     results.append(FileRow(node: child, depth: 0))
                 }
                 guard child.isDirectory, !skippedDirectories.contains(child.name) else { continue }
-                queue.append(child.path)
+                queue.append((path: child.path, relative: relative))
             }
         }
         return results

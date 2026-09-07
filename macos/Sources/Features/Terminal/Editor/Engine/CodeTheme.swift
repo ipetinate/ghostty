@@ -34,6 +34,60 @@ struct CodeTheme: Equatable {
     var currentLineNumber: NSColor
     var currentLineBackground: NSColor?
 
+    /// The band behind selected text, or nil for a theme that names none.
+    var selectionBackground: NSColor?
+
+    /// The colour selected glyphs take, or nil for a theme that names none.
+    ///
+    /// Nil is the interesting case and the common one: a theme silent about
+    /// selected text keeps the code's own colours under the band.
+    var selectionForeground: NSColor?
+
+    /// What the text view paints the selection with while it has focus.
+    ///
+    /// **A background, and a foreground only when the theme asked for one.**
+    /// AppKit's default dictionary carries `NSColor.selectedTextColor`, which
+    /// measured `#ffffff` under this appearance and replaced every token
+    /// colour inside the selected range: selecting a line turned it
+    /// monochrome and dropping the selection brought its colours back. That
+    /// is right for a terminal, where selected text taking one colour is
+    /// what every terminal does, and wrong for a code editor, where the band
+    /// is drawn *behind* code that keeps its colours. This app is both, which
+    /// is why the terminal's behaviour reached the editor and read as
+    /// deliberate. Omitting `.foregroundColor` is the whole of the repair.
+    ///
+    /// The band comes from the theme's `selection-background` and falls back
+    /// to `NSColor.selectedTextBackgroundColor` — the `#476288` that was
+    /// measured — for a theme that declares none.
+    var selectedTextAttributes: [NSAttributedString.Key: Any] {
+        var attributes = unemphasizedSelectedTextAttributes
+        if let selectionForeground {
+            attributes[.foregroundColor] = selectionForeground
+        }
+        return attributes
+    }
+
+    /// What it paints the selection with while the window is not key.
+    ///
+    /// The band only — no `selection-foreground`, however loudly the theme
+    /// declared one. AppKit substitutes
+    /// `NSColor.unemphasizedSelectedTextBackgroundColor` for the band in this
+    /// state and keeps whatever foreground it was handed: measured `#464646`
+    /// dark and `#dcdcdc` light. A theme picks its selected-text colour
+    /// against its *own* band, so on that grey the pairing is one nobody
+    /// chose. Of the 606 themes installed here, 206 fall under 3.0:1 that
+    /// way and 143 of those clear 4.5:1 on the band they declared.
+    /// Catppuccin Mocha is the extreme: `#1e1e2e` reads 12.95:1 on its own
+    /// `#f5e0dc` and 1.74:1 on the grey, which on screen is a selection with
+    /// no readable text in it at all.
+    ///
+    /// The tokens' own colours are legible there — Mocha's measure 4.48:1 to
+    /// 7.43:1 on `#464646` — so an unfocused selection is given the same
+    /// treatment as a theme that named no selected-text colour.
+    var unemphasizedSelectedTextAttributes: [NSAttributedString.Key: Any] {
+        [.backgroundColor: selectionBackground ?? .selectedTextBackgroundColor]
+    }
+
     func color(for kind: TokenKind) -> NSColor {
         tokens[kind] ?? foreground
     }

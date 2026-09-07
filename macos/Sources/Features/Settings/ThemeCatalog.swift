@@ -41,6 +41,16 @@ struct TerminalTheme: Identifiable, Equatable {
     var cursorColor: NSColor?
     var selectionBackground: NSColor?
 
+    /// The colour the theme asks selected text to take, when it names one.
+    ///
+    /// Optional, and honoured only when present, which is the point of
+    /// parsing it separately from the band. AppKit's own default replaces
+    /// every selected glyph with `NSColor.selectedTextColor` — `#ffffff`
+    /// under this appearance — so a theme that says nothing about selected
+    /// text had white forced on it and lost its syntax colouring for exactly
+    /// the selected range. See ``CodeTheme/selectedTextAttributes``.
+    var selectionForeground: NSColor?
+
     /// The 16 ANSI palette entries, indexed 0-15 where present.
     var palette: [Int: NSColor] = [:]
 
@@ -186,6 +196,7 @@ final class ThemeCatalog: ObservableObject {
             case "foreground": theme.foreground = NSColor(hex: value)
             case "cursor-color": theme.cursorColor = NSColor(hex: value)
             case "selection-background": theme.selectionBackground = NSColor(hex: value)
+            case "selection-foreground": theme.selectionForeground = NSColor(hex: value)
             case "palette":
                 let parts = value.split(separator: "=", maxSplits: 1)
                 guard parts.count == 2,

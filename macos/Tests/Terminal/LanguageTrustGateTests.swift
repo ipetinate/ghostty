@@ -166,9 +166,8 @@ struct UntrustedLanguageDegradationTests {
             resolvedPath: inside,
             workspaceRoot: Self.workspace
         )
-        let approved = LanguageTrust.record(for: subject, decision: .allowed)
         #expect(
-            LanguageTrust.verdict(for: subject, record: approved)
+            LanguageTrust.verdict(for: subject, record: nil)
                 == .deny(.commandInsideWorkspace(path: inside))
         )
 
@@ -293,13 +292,17 @@ struct UntrustedLanguageDegradationTests {
             workspaceRoot: Self.workspace
         )
 
-        #expect(LanguageTrust.verdict(for: subject, record: nil) == .ask(.firstRun))
+        #expect(LanguageTrust.verdict(for: subject, record: nil) == .allow)
         try expectTheLanguageIsWhole(catalog)
 
-        let refused = LanguageTrust.record(
-            for: subject,
+        let refused = LanguageTrustRecord(
+            recordVersion: LanguageTrustStore.currentRecordVersion,
+            digest: contributed.provenance.digest,
+            command: "",
+            resolvedPath: "",
+            manifestPath: contributed.provenance.manifestPath,
             decision: .refused,
-            at: Date(timeIntervalSince1970: 1_700_000_000)
+            decidedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
         #expect(
             LanguageTrust.verdict(for: subject, record: refused)
@@ -409,7 +412,7 @@ struct LanguageTrustGatePlacementTests {
             """
             LSPCenter resolves servers through LanguageResolver, which lets a \
             manifest supply a command, but never calls LanguageTrustGate.allowsLaunch. \
-            That is a path from a file in ~/.config to Process.run with nothing asked. \
+            That is a path from a file in ~/.config to Process.run with nothing checked. \
             Put the gate back in server(for:definition:), or take the resolver out.
             """
         )

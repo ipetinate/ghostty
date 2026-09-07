@@ -96,21 +96,28 @@ enum LanguageTrustStore {
         NotificationCenter.default.post(name: didChangeNotification, object: nil)
     }
 
-    /// Records an answer to a prompt.
-    static func remember(
-        _ decision: LanguageTrustRecord.Decision,
-        for subject: LanguageTrust.Subject
-    ) {
-        guard case .manifest(let provenance) = subject.origin else { return }
+    /// Records a refusal taken in Settings.
+    ///
+    /// There is no launch to describe here — no command has been located and
+    /// none is about to run — because what the reader is refusing is the
+    /// extension, not one program of it. The fields a launch would fill are
+    /// left empty rather than guessed at: nothing compares them, and a
+    /// plausible-looking path nobody wrote would be a lie in the record.
+    static func refuse(extensionID: String, digest: String, manifestPath: String) {
         set(
-            LanguageTrust.record(
-                for: subject,
-                decision: decision,
-                extending: record(for: provenance.extensionID)
+            LanguageTrustRecord(
+                recordVersion: currentRecordVersion,
+                digest: digest,
+                command: "",
+                resolvedPath: "",
+                manifestPath: manifestPath,
+                decision: .refused,
+                decidedAt: Date()
             ),
-            for: provenance.extensionID
+            for: extensionID
         )
     }
+
 }
 
 /// Which contributed languages the user has chosen to put ahead of the

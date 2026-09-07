@@ -185,8 +185,8 @@ struct LSPServerOverrideStoreTests {
             #expect(effective.command == "/custom/elixir-ls")
             #expect(effective.origin == .manifest(provenance))
 
-            /// Stated as the thing that actually matters: the gate still has
-            /// something to ask about.
+            /// Stated as the thing that actually matters: an override changes
+            /// which program runs, and the gate still judges that program.
             #expect(
                 LanguageTrust.verdict(
                     for: LanguageTrust.Subject(
@@ -197,7 +197,7 @@ struct LSPServerOverrideStoreTests {
                         workspaceRoot: "/Users/x/project"
                     ),
                     record: nil
-                ) == .ask(.firstRun)
+                ) == .allow
             )
         }
     }

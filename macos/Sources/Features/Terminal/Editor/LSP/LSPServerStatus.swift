@@ -75,7 +75,7 @@ enum LSPServerStatus: Equatable, Sendable {
     var summary: String {
         switch self {
         case .notInstalled: return "isn't installed"
-        case .notApproved: return "isn't approved to run — you can change that in Settings"
+        case .notApproved: return "is refused in Settings, so it did not start"
         case .starting: return "is starting"
         case .running: return "is running"
         case .failedToStart(let reason): return "didn't start: \(reason)"

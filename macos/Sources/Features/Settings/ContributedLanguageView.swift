@@ -26,12 +26,6 @@ enum ContributedStatus: Equatable {
     /// the most common one for a language pack.
     case noServer
 
-    /// Never approved. The language works; only the process waits.
-    case untrusted
-
-    /// Approved once, but something the approval named has changed.
-    case needsReapproval(String)
-
     /// The user said no, and it stuck.
     case refused
 
@@ -93,16 +87,6 @@ enum ContributedStatus: Equatable {
         switch verdict {
         case .allow:
             return .ready
-        case .ask(.firstRun):
-            return .untrusted
-        case .ask(.manifestChanged):
-            return .needsReapproval("the manifest changed since you approved it")
-        case .ask(.commandChanged(let previous)):
-            return .needsReapproval("it used to run \(previous)")
-        case .ask(.commandPathChanged(let previous)):
-            return .needsReapproval("the command used to resolve to \(previous)")
-        case .ask(.manifestMoved(let previous)):
-            return .needsReapproval("the manifest moved from \(previous)")
         case .deny(.refusedByUser):
             return .refused
         case .deny(.commandInsideWorkspace(let path)):
@@ -114,10 +98,8 @@ enum ContributedStatus: Equatable {
 
     var title: String {
         switch self {
-        case .ready: return "Approved"
+        case .ready: return "Allowed"
         case .noServer: return "No Server"
-        case .untrusted: return "Not Approved"
-        case .needsReapproval: return "Approval Out of Date"
         case .refused: return "Refused"
         case .needsNewerApp: return "Needs a Newer Phantom"
         case .unidentified: return "Missing Extension ID"
@@ -130,7 +112,6 @@ enum ContributedStatus: Equatable {
         switch self {
         case .ready: return "checkmark.seal"
         case .noServer: return "text.aligncenter"
-        case .untrusted, .needsReapproval: return "questionmark.circle"
         case .refused, .blocked: return "hand.raised"
         case .needsNewerApp: return "arrow.up.circle"
         case .unidentified: return "exclamationmark.triangle"
@@ -146,7 +127,7 @@ enum ContributedStatus: Equatable {
         switch self {
         case .ready: return .green
         case .noServer, .shadowed: return .secondary
-        case .untrusted, .needsReapproval, .needsNewerApp: return .orange
+        case .needsNewerApp: return .orange
         case .refused, .blocked, .unidentified: return .red
         }
     }
@@ -157,21 +138,17 @@ enum ContributedStatus: Equatable {
     var explanation: String {
         switch self {
         case .ready:
-            return "You approved this extension's server. It starts when you open a file of this kind."
+            return "Installing this extension is what allows its server to run. It starts when you open a file of this kind."
         case .noServer:
-            return "This extension contributes highlighting, comments and keywords for this language, and no server. There is nothing to approve."
-        case .untrusted:
-            return "The language works — files highlight, comments toggle, words complete from the buffer. Only the server waits: Phantom asks before starting it, the first time you open a file of this kind."
-        case .needsReapproval(let reason):
-            return "You approved this before, but \(reason). Phantom will ask again the next time you open a file of this kind."
+            return "This extension contributes highlighting, comments and keywords for this language, and no server. There is nothing to allow."
         case .refused:
-            return "You told Phantom not to run this server, and that answer is kept. Forgetting the decision below is the only way back — a refusal that expired on its own would be one you eventually clicked past."
+            return "You told Phantom not to run this extension's programs, and that answer is kept. Allowing it again below is the only way back — a refusal that expired on its own would be one you eventually clicked past."
         case .needsNewerApp(let declared):
             return "The manifest declares schema version \(declared), which this build cannot read. Its language half still works; its server half was discarded rather than guessed at, because a later schema is free to change what `command` means."
         case .unidentified:
             return "The manifest has no usable id, so there is nowhere for an approval to live — a trust record is keyed by identity precisely so it is not keyed by a path. The language works; the server does not."
         case .blocked(let what):
-            return "Phantom will not run \(what), and will not offer to ask. A command that needs a shell, or one that resolves inside the workspace you opened, is refused outright."
+            return "Phantom will not run \(what), whatever you allow. A command that needs a shell, or one that resolves inside the workspace you opened, is refused outright."
         case .shadowed(let owner, let claim):
             return "\(owner) already claims \(claim), so this contribution is parsed and listed but not in effect. Copying a file into a directory must never change a language you already had."
         }

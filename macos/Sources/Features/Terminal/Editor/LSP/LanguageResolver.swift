@@ -284,6 +284,39 @@ final class LanguageResolver: ObservableObject {
         Self.noteResolutionChanged()
     }
 
+    /// Records a refusal, and stops what it refused.
+    ///
+    /// The gate is asked when a server starts, so a server already running
+    /// was asked before this answer existed. Without terminating it, turning
+    /// the switch off is a setting that appears to do nothing until the file
+    /// is closed and opened again.
+    func refuseTrust(extensionID: String, digest: String, manifestPath: String) {
+        LanguageTrustStore.refuse(
+            extensionID: extensionID,
+            digest: digest,
+            manifestPath: manifestPath
+        )
+        let commands = serverCommands(ofExtension: extensionID)
+        if !commands.isEmpty { _ = LSPCenter.shared.restart(commands: commands) }
+        Self.noteResolutionChanged()
+    }
+
+    /// Every command one extension can start a server with, however it
+    /// contributes it: a language's own server, or a companion attached to
+    /// somebody else's language.
+    private func serverCommands(ofExtension extensionID: String) -> Set<String> {
+        var commands: Set<String> = []
+        for contributed in catalog.contributed
+        where contributed.provenance.extensionID == extensionID {
+            if let command = contributed.language.server?.command { commands.insert(command) }
+        }
+        for contributed in catalog.servers
+        where contributed.provenance.extensionID == extensionID {
+            commands.insert(contributed.server.command)
+        }
+        return commands.filter { !$0.isEmpty }
+    }
+
     /// Tells the open documents to introduce themselves again.
     ///
     /// Without it, undoing a refusal is a setting that appears to do

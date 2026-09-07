@@ -32,12 +32,12 @@ struct LSPServerStatusTests {
     }
 
     /// A withheld server is not a broken one, and the sentence has to say so
-    /// — with the way back, since the decision is reversible from Settings
-    /// and nowhere else. A reader told "didn't start" would go looking for a
-    /// fault in a server that is behaving correctly by not existing.
-    @Test func aWithheldServerSaysItIsAPermissionAndNotAFault() {
+    /// — naming Settings, which is where the refusal was made and the only
+    /// place it can be lifted. A reader told "didn't start" would go looking
+    /// for a fault in a server that is behaving correctly by not existing.
+    @Test func aWithheldServerSaysItIsARefusalAndNotAFault() {
         let summary = LSPServerStatus.notApproved.summary
-        #expect(summary.contains("approved"))
+        #expect(summary.contains("refused"))
         #expect(summary.contains("Settings"))
         #expect(!summary.contains("didn't start"))
     }

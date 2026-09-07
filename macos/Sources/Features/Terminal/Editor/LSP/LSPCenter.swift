@@ -1916,19 +1916,14 @@ final class LSPCenter: ObservableObject {
             return nil
         }
 
-        /// The gate. It sits *after* `locate` because what gets recorded is
-        /// an answer about a path: "not installed" is not a trust question,
-        /// and until the name has resolved there is nothing to show the user
-        /// and nothing an approval could be pinned to. It sits *before* the
-        /// status becomes `.starting`, so the window is not claiming to start
-        /// something while a sheet is still asking whether it may.
+        /// The gate. It sits *after* `locate` because the hardenings judge
+        /// where the command resolved, and "not installed" is not a trust
+        /// question. It sits *before* the status becomes `.starting`, so a
+        /// refused server never claims to be starting.
         ///
-        /// A compiled-in definition returns `true` without a lookup and
-        /// without a prompt — see `LSPServerOrigin`. The key stays in
-        /// `starting` for the whole await, which is deliberate: a hover that
-        /// arrives while the prompt is up waits for the answer rather than
-        /// being told there is no server.
-        guard await LanguageTrustGate.allowsLaunch(
+        /// A compiled-in definition returns `true` without a lookup — see
+        /// `LSPServerOrigin`.
+        guard LanguageTrustGate.allowsLaunch(
             of: definition,
             resolvedPath: resolvedPath,
             workspaceRoot: key.root

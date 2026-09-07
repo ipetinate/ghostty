@@ -28,7 +28,6 @@ struct ExtensionSettingsForm: View {
     @State private var defaultsRevision = 0
 
     @State private var runningCommand: String?
-    @State private var showForgetConfirmation = false
 
     private var installed: InstalledExtension? {
         store.installed.first { $0.id == extensionID }
@@ -89,19 +88,6 @@ struct ExtensionSettingsForm: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: LanguageTrustStore.didChangeNotification)) { _ in
             defaultsRevision += 1
-        }
-        .confirmationDialog(
-            "Forget the decision for \(title)?",
-            isPresented: $showForgetConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Forget", role: .destructive) {
-                LanguageResolver.shared.forgetTrust(extensionID: extensionID)
-                defaultsRevision += 1
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Phantom will ask again the next time you open a file this extension claims.")
         }
     }
 
@@ -248,29 +234,48 @@ struct ExtensionSettingsForm: View {
     @ViewBuilder
     private var trustSection: some View {
         Section {
+            Toggle("Run This Extension's Programs", isOn: Binding(
+                get: { LanguageTrustStore.record(for: extensionID)?.decision != .refused },
+                set: { setRunsPrograms($0) }
+            ))
+
             if let record = LanguageTrustStore.record(for: extensionID) {
-                LabeledContent("Decided") {
+                LabeledContent("Refused") {
                     Text(record.decidedAt.formatted(date: .abbreviated, time: .shortened))
                         .foregroundStyle(.secondary)
                 }
-                Button(role: .destructive) {
-                    showForgetConfirmation = true
-                } label: {
-                    Text("Forget Decision")
-                }
-            } else {
-                Text("Nothing decided yet. Phantom asks the first time it would start one of this extension's servers.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
             Text("Trust")
         } footer: {
-            Text("Approval gates exactly one thing: starting a server process. Everything else this extension contributes — highlighting, comments, keywords — works whether or not you ever approve it, which is what makes “Don't Run” a usable answer instead of a broken editor.")
+            Text("On by default, because installing an extension is what allows it to run: asking again the first time you open a file is a dialog that teaches you to click past dialogs. Turning it off stops exactly one thing — starting a server or a formatter process. Everything else this extension contributes, highlighting, comments and keywords, works either way.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .id(defaultsRevision)
+    }
+
+    /// Writes a refusal, or takes one back by forgetting it.
+    ///
+    /// Allowed is the *absence* of a record rather than a record saying yes.
+    /// A stored yes would have to name what it covers — a digest, a command,
+    /// a path — and then go stale the moment any of them changed, which is
+    /// the re-asking this switch exists instead of.
+    private func setRunsPrograms(_ runs: Bool) {
+        defer { defaultsRevision += 1 }
+        guard !runs else {
+            LanguageResolver.shared.forgetTrust(extensionID: extensionID)
+            return
+        }
+        LanguageResolver.shared.refuseTrust(
+            extensionID: extensionID,
+            digest: digest ?? "",
+            manifestPath: manifestURL?.path ?? ""
+        )
+    }
+
+    private var digest: String? {
+        contributedLanguages.first?.provenance.digest
+            ?? contributedServers.first?.provenance.digest
     }
 }

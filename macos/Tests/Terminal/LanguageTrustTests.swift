@@ -9,6 +9,7 @@ import Testing
 /// and the workspace root as values instead of looking them up. A gate whose
 /// policy can only be exercised by launching something is a gate nobody
 /// tests.
+@Suite(.serialized)
 struct LanguageTrustTests {
     private static let provenance = ExtensionProvenance(
         extensionID: "acme.elixir",
@@ -69,68 +70,55 @@ struct LanguageTrustTests {
         #expect(LanguageTrust.verdict(for: builtIn, record: nil) == .allow)
     }
 
-    // MARK: First run and remembering
+    // MARK: Installing is the consent
 
-    @Test func anUnknownExtensionIsAskedAbout() {
-        #expect(LanguageTrust.verdict(for: subject(), record: nil) == .ask(.firstRun))
+    /// The rule this whole type turns on: an extension nobody has refused
+    /// runs, because putting it in the extensions directory is the answer.
+    @Test func anExtensionWithNoRecordIsAllowed() {
+        #expect(LanguageTrust.verdict(for: subject(), record: nil) == .allow)
     }
 
-    @Test func anApprovalForTheseExactBytesIsHonoured() {
+    @Test func anExplicitAllowanceIsHonoured() {
         #expect(LanguageTrust.verdict(for: subject(), record: record()) == .allow)
     }
 
-    /// A prompt that reappears on every `.ex` file is a prompt that gets
-    /// approved by accident, so an unchanged approval is not re-asked.
-    @Test func anApprovalIsNotReAskedForASecondFile() {
-        let first = LanguageTrust.verdict(for: subject(), record: record())
-        let second = LanguageTrust.verdict(for: subject(), record: record())
-        #expect(first == .allow)
-        #expect(second == .allow)
-    }
+    // MARK: What used to invalidate an approval
 
-    // MARK: Invalidation
-
-    @Test func changedManifestBytesInvalidateAnApproval() {
+    /// Four rules used to send the reader back to a dialog: rewritten
+    /// manifest bytes, a different command, a manifest that moved, a command
+    /// that resolved somewhere new. Each of them is a thing an ordinary
+    /// update does, and the answer to all four is now the same.
+    @Test func changedManifestBytesDoNotStopIt() {
         #expect(
             LanguageTrust.verdict(for: subject(digest: "bb22"), record: record(digest: "aa11"))
-                == .ask(.manifestChanged)
+                == .allow
         )
     }
 
-    /// Compared separately from the digest so the prompt can say *what*
-    /// changed — "it now wants to run something else" is a different
-    /// sentence from "the file changed", and the user needs the first one.
-    @Test func aChangedCommandInvalidatesAnApprovalAndSaysWhat() {
+    @Test func aChangedCommandDoesNotStopIt() {
         #expect(
             LanguageTrust.verdict(
                 for: subject(command: "elixir-ls-next"),
                 record: record(command: "elixir-ls")
-            ) == .ask(.commandChanged(previous: "elixir-ls"))
+            ) == .allow
         )
     }
 
-    /// Moving the manifest invalidates: the record names where the file was,
-    /// and an approval does not follow it to a new home.
-    @Test func aMovedManifestInvalidatesAnApproval() {
+    @Test func aMovedManifestDoesNotStopIt() {
         #expect(
             LanguageTrust.verdict(
                 for: subject(),
                 record: record(manifestPath: "/somewhere/else/extension.json")
-            ) == .ask(.manifestMoved(previous: "/somewhere/else/extension.json"))
+            ) == .allow
         )
     }
 
-    /// A *path* that has moved, not a binary whose contents changed. Pinning
-    /// the contents would re-prompt after every `brew upgrade` and train the
-    /// user to click through — worse than not checking. A path that moved
-    /// usually means something new is earlier on `PATH`, which is the case
-    /// worth interrupting for.
-    @Test func aCommandThatNowResolvesElsewhereInvalidatesAnApproval() {
+    @Test func aCommandThatNowResolvesElsewhereDoesNotStopIt() {
         #expect(
             LanguageTrust.verdict(
                 for: subject(resolvedPath: "/usr/local/bin/elixir-ls"),
                 record: record(resolvedPath: "/opt/homebrew/bin/elixir-ls")
-            ) == .ask(.commandPathChanged(previous: "/opt/homebrew/bin/elixir-ls"))
+            ) == .allow
         )
     }
 
@@ -197,10 +185,8 @@ struct LanguageTrustTests {
         )
     }
 
-    /// A bundled manifest is trusted by where it is, which assumes the app's
-    /// own `Resources` are not writable — true of a signed, installed app
-    /// and **false of a local ad-hoc build**.
-    @Test func aBundledManifestIsTrustedByOrigin() {
+    /// A bundled manifest was never asked about either, and still is not.
+    @Test func aBundledManifestIsAllowed() {
         let bundled = ExtensionProvenance(
             extensionID: "phantom.elixir",
             digest: "cc33",
@@ -212,125 +198,43 @@ struct LanguageTrustTests {
 
     // MARK: The record
 
-    @Test func theRecordCapturesEverythingTheVerdictCompares() {
-        let written = LanguageTrust.record(
-            for: subject(),
-            decision: .allowed,
-            at: Date(timeIntervalSince1970: 42)
-        )
-        #expect(written.recordVersion == LanguageTrustStore.currentRecordVersion)
-        #expect(written.digest == "aa11")
-        #expect(written.command == "elixir-ls")
-        #expect(written.resolvedPath == "/opt/homebrew/bin/elixir-ls")
-        #expect(written.manifestPath == Self.provenance.manifestPath)
-        #expect(written.decision == .allowed)
-        #expect(written.decidedAt == Date(timeIntervalSince1970: 42))
-
-        #expect(LanguageTrust.verdict(for: subject(), record: written) == .allow)
-    }
-}
-
-/// The prompt's text, which is the whole of the control.
-///
-/// Only the strings are tested. Presentation is not: the test host has no
-/// event loop, and anything reaching `runModal` or `orderFront` hangs the
-/// entire suite — the trap documented in `CodeHoverPersistenceTests`.
-struct LanguageTrustAlertTests {
-    private func request(
-        extensionName: String = "Elixir",
-        publisher: String = "acme",
-        command: String = "elixir-ls",
-        arguments: [String] = ["--stdio"],
-        change: LanguageTrust.Change = .firstRun
-    ) -> LanguageTrustAlert.Request {
-        LanguageTrustAlert.Request(
-            extensionName: extensionName,
-            extensionID: "acme.elixir",
-            publisher: publisher,
-            extensionVersion: "1.2.0",
-            languageName: "Elixir",
-            command: command,
-            arguments: arguments,
-            resolvedPath: "/opt/homebrew/bin/elixir-ls",
-            manifestPath: "/Users/x/.config/phantom/extensions/acme.elixir/extension.json",
-            change: change
-        )
-    }
-
-    /// The finding this test exists for: without escaping, a right-to-left
-    /// override in a manifest's `name` reverses the text after it, and the
-    /// dialog can be made to display a command other than the one being
-    /// approved.
-    @Test func aNameWithABidirectionalOverrideComesBackEscaped() {
-        let message = LanguageTrustAlert.messageText(
-            for: request(extensionName: "Elixir\u{202E}gnp yb")
-        )
-        #expect(!message.unicodeScalars.contains("\u{202E}"))
-        #expect(message.contains("\\u{202E}"))
-    }
-
-    /// A newline would add a line to the dialog, and a line the manifest
-    /// controls can restate the command.
-    @Test func aNewlineInAManifestStringCannotAddALine() {
-        let detail = LanguageTrustAlert.detailText(
-            for: request(command: "elixir-ls", arguments: ["--stdio\nCommand: /bin/sh"])
-        )
-        #expect(!detail.contains("\nCommand: /bin/sh"))
-        #expect(detail.contains("\\u{A}"))
-    }
-
-    @Test func everyPartOfTheDetailBlockIsEscaped() {
-        for scalar in ["\u{202E}", "\u{200B}", "\u{2028}", "\u{0}", "\u{FEFF}"] {
-            let detail = LanguageTrustAlert.detailText(for: request(command: "elixir\(scalar)-ls"))
-            let dangerous = scalar.unicodeScalars.first!
-            #expect(!detail.unicodeScalars.contains(dangerous), "\(scalar) survived")
+    /// The record a refusal writes carries the identity and the decision.
+    /// The command and the path it would have resolved to are left empty
+    /// rather than guessed: nothing compares them, and there is no launch to
+    /// read them from — the reader refused the extension in Settings.
+    @Test func aRefusalRecordsTheIdentityAndTheDecision() {
+        withCleanTrustDefaults {
+            LanguageTrustStore.refuse(
+                extensionID: Self.provenance.extensionID,
+                digest: Self.provenance.digest,
+                manifestPath: Self.provenance.manifestPath
+            )
+            let written = LanguageTrustStore.record(for: Self.provenance.extensionID)
+            #expect(written?.recordVersion == LanguageTrustStore.currentRecordVersion)
+            #expect(written?.digest == "aa11")
+            #expect(written?.manifestPath == Self.provenance.manifestPath)
+            #expect(written?.decision == .refused)
+            #expect(written?.command == "")
+            #expect(written?.resolvedPath == "")
+            #expect(LanguageTrust.verdict(for: subject(), record: written) != .allow)
         }
     }
 
-    @Test func theDetailBlockNamesWhatWillActuallyRun() {
-        let detail = LanguageTrustAlert.detailText(for: request())
-        #expect(detail.contains("elixir-ls --stdio"))
-        #expect(detail.contains("/opt/homebrew/bin/elixir-ls"))
-        #expect(detail.contains("extensions/acme.elixir/extension.json"))
-        #expect(detail.contains("acme.elixir"))
-    }
-
-    /// Saying so is the point: the app is not sandboxed, and an approved
-    /// server has everything the person running Phantom has.
-    @Test func theProseSaysItRunsAsTheUser() {
-        let text = LanguageTrustAlert.informativeText(for: request())
-        #expect(text.contains("runs as you"))
-        #expect(text.contains("keychain"))
-        #expect(text.contains("asks again"))
-        #expect(text.contains("Settings"))
-    }
-
-    @Test func aRepeatPromptSaysWhyItIsBack() {
-        #expect(LanguageTrustAlert.changeText(for: .firstRun) == nil)
-        #expect(LanguageTrustAlert.changeText(for: .manifestChanged)?.contains("changed") == true)
-        #expect(
-            LanguageTrustAlert.changeText(for: .commandChanged(previous: "old-ls"))?
-                .contains("old-ls") == true
-        )
-        #expect(
-            LanguageTrustAlert.changeText(for: .manifestMoved(previous: "/old/path"))?
-                .contains("/old/path") == true
-        )
-    }
-
-    @Test func anUnnamedPublisherIsNamedAsUnidentifiedRatherThanLeftBlank() {
-        let text = LanguageTrustAlert.informativeText(for: request(publisher: ""))
-        #expect(text.contains("unidentified publisher"))
+    private func withCleanTrustDefaults(_ body: () -> Void) {
+        let key = LanguageTrustStore.defaultsKey
+        let stored = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.removeObject(forKey: key)
+        defer {
+            if let stored {
+                UserDefaults.standard.set(stored, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        body()
     }
 }
 
-/// Trust and promotion, saved and read back.
-///
-/// Serialized, and in one suite with everything else that touches these two
-/// keys, for the reason `LSPServerOverrideStoreTests` spells out: these tests
-/// save and restore the real defaults a locally-running Phantom reads, and
-/// interleaved save/restore pairs from concurrent suites put back the wrong
-/// snapshot.
 @Suite(.serialized)
 struct LanguageTrustStoreTests {
     private func withCleanDefaults(_ body: () -> Void) {
@@ -378,10 +282,12 @@ struct LanguageTrustStoreTests {
         }
     }
 
-    /// A record this build cannot decode reads as **absent**, which means
-    /// the user is asked again. Absent must never mean allowed — so the
-    /// verdict for one is asserted here too, not only the store's answer.
-    @Test func aRecordFromALaterVersionReadsAsAbsent() {
+    /// A record this build cannot decode reads as **absent**, and absent now
+    /// means allowed, because installing the extension was the consent. The
+    /// verdict is asserted here and not only the store's answer: the
+    /// direction matters, and it is the reason a field that changes what a
+    /// *refusal* covers has to come with a version bump.
+    @Test func aRecordFromALaterVersionReadsAsAbsentAndTheExtensionRuns() {
         withCleanDefaults {
             LanguageTrustStore.set(
                 record(recordVersion: LanguageTrustStore.currentRecordVersion + 1),
@@ -405,7 +311,7 @@ struct LanguageTrustStoreTests {
                 LanguageTrust.verdict(
                     for: subject,
                     record: LanguageTrustStore.record(for: "acme.elixir")
-                ) == .ask(.firstRun)
+                ) == .allow
             )
         }
     }
@@ -432,7 +338,7 @@ struct LanguageTrustStoreTests {
     }
 
     /// The only way back from a refusal, and it is reachable from Settings
-    /// alone — never from the prompt and never from an extension.
+    /// alone — never from an extension.
     @Test func forgettingClearsARefusal() {
         withCleanDefaults {
             LanguageTrustStore.set(record(decision: .refused), for: "acme.elixir")
@@ -451,26 +357,20 @@ struct LanguageTrustStoreTests {
         }
     }
 
-    @Test func rememberWritesUnderTheProvenanceIdentity() {
+    /// Keyed by extension id, which is what makes one answer cover every
+    /// language and every program the extension contributes.
+    @Test func aRefusalIsWrittenUnderTheExtensionIdentity() {
         withCleanDefaults {
-            let subject = LanguageTrust.Subject(
-                origin: .manifest(ExtensionProvenance(
-                    extensionID: "acme.elixir",
-                    digest: "aa11",
-                    manifestPath: "/x/extension.json",
-                    scope: .user
-                )),
+            LanguageTrustStore.refuse(
+                extensionID: "acme.elixir",
                 digest: "aa11",
-                command: "elixir-ls",
-                resolvedPath: "/opt/homebrew/bin/elixir-ls",
-                workspaceRoot: nil
+                manifestPath: "/x/extension.json"
             )
-
-            LanguageTrustStore.remember(.refused, for: subject)
 
             let stored = LanguageTrustStore.record(for: "acme.elixir")
             #expect(stored?.decision == .refused)
             #expect(stored?.manifestPath == "/x/extension.json")
+            #expect(LanguageTrustStore.record(for: "other.gleam") == nil)
         }
     }
 

@@ -1749,13 +1749,13 @@ private struct DocumentView: View {
                     tool: formatter.displayName, hint: formatter.installHint)
                 return apply(.failed(missing.reason), trigger: trigger, at: path, to: text, since: revision)
             }
-            guard await LanguageTrustGate.allowsRun(
+            guard LanguageTrustGate.allowsRun(
                 of: formatter,
                 resolvedPath: resolvedPath,
                 workspaceRoot: LSPCenter.workspaceRoot(for: path))
             else {
                 return apply(
-                    .failed("\(formatter.displayName) comes from an extension you have not approved, so it did not run."),
+                    .failed("\(formatter.displayName) comes from an extension you refused in Settings, so it did not run."),
                     trigger: trigger, at: path, to: text, since: revision)
             }
         }

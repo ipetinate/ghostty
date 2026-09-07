@@ -14,11 +14,11 @@ import Testing
 ///
 /// **Nothing here writes `LanguageExtensionTrust`.** The extension ids below
 /// are unique to this file, so the trust lookups they perform find nothing
-/// whatever another suite happens to be doing to that key. `.refused` and
-/// `.needsReapproval` are the two states that would need a stored record;
-/// the verdicts behind them are covered a layer down in `LanguageTrustTests`,
-/// and testing them here would mean a second suite saving and restoring a
-/// key `LanguageTrustStoreTests` already owns.
+/// whatever another suite happens to be doing to that key. `.refused` is the
+/// one state that needs a stored record; the verdict behind it is covered a
+/// layer down in `LanguageTrustTests`, and testing it here would mean a
+/// second suite saving and restoring a key `LanguageTrustStoreTests` already
+/// owns.
 @MainActor
 struct ContributedStatusTests {
     private func manifest(
@@ -77,15 +77,15 @@ struct ContributedStatusTests {
     """#
 
     /// The state that matters most, because it is what every third-party
-    /// server is on the day it appears: parsed, listed, working for
-    /// everything except the process.
-    @Test func aNewExtensionsServerIsNotApproved() throws {
+    /// server is on the day it appears: parsed, listed, and allowed to run,
+    /// since installing the extension is the answer.
+    @Test func aNewExtensionsServerIsAllowed() throws {
         let status = ContributedStatus.of(
             try contributed(id: "phantom.test.status.new", language: Self.elixir)
         )
-        #expect(status == .untrusted)
-        #expect(status.title == "Not Approved")
-        #expect(status.color == .orange)
+        #expect(status == .ready)
+        #expect(status.title == "Allowed")
+        #expect(status.color == .green)
     }
 
     /// A bundled manifest is trusted by origin, with no record involved —
@@ -164,10 +164,10 @@ struct ContributedStatusTests {
         #expect(status.color == .red)
     }
 
-    /// A command that needs a shell is refused at parse time and must not
-    /// come back as a question. "Blocked" and "Not Approved" differ in
-    /// whether there is anything the reader can do, so they are two badges.
-    @Test func aCommandThatNeedsAShellIsBlockedRatherThanAskedAbout() throws {
+    /// A command that needs a shell is refused at parse time, and no answer
+    /// in Settings overrides it. "Blocked" and "Refused" differ in whether
+    /// there is anything the reader can do, so they are two badges.
+    @Test func aCommandThatNeedsAShellIsBlockedWhateverIsAllowed() throws {
         let status = ContributedStatus.of(
             try contributed(
                 id: "phantom.test.status.shell",
@@ -190,8 +190,8 @@ struct ContributedStatusTests {
 
     /// Shadowing is checked before anything else, because a contribution
     /// that is not in force is not doing anything a trust badge could
-    /// usefully describe. Saying "Not Approved" about an inert contribution
-    /// would be true and would send the reader to the wrong control.
+    /// usefully describe. Saying "Allowed" about an inert contribution would
+    /// be true and would send the reader to the wrong control.
     ///
     /// Two extensions, because that is the only way a language is shadowed
     /// now: this build claims no file type of its own, so the thing ahead of
@@ -239,8 +239,6 @@ struct ContributedStatusTests {
         let all: [ContributedStatus] = [
             .ready,
             .noServer,
-            .untrusted,
-            .needsReapproval("the manifest changed"),
             .refused,
             .needsNewerApp(declared: "9"),
             .unidentified,

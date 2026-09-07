@@ -47,6 +47,12 @@ final class ExtensionStore: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastRefreshError: String?
 
+    /// Counts finished calls to `reload()`, so a page already open can tell
+    /// that its staged copy was dropped and ask for it again. Without it the
+    /// reader who pressed Refresh with a page open kept a spinner until they
+    /// changed tabs, because the view only restages when its own key changes.
+    @Published private(set) var reloads = 0
+
     private let extensionsDirOverride: URL?
     private let cachesDirOverride: URL?
     private var stagings: [String: Task<URL, Error>] = [:]
@@ -152,6 +158,7 @@ final class ExtensionStore: ObservableObject {
         errors.removeAll()
         reloadInstalled()
         await refresh()
+        reloads += 1
     }
 
     /// Downloads and installs, rather than installing whatever the preview

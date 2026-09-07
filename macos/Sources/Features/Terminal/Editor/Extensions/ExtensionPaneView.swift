@@ -23,8 +23,13 @@ struct ExtensionPaneView: View {
     private var card: ExtensionCard? { entry?.card }
 
     private var previewKey: String {
-        [id, entry?.version ?? "", installed?.version ?? "", store.index == nil ? "no-index" : "index"]
-            .joined(separator: "|")
+        [
+            id,
+            entry?.version ?? "",
+            installed?.version ?? "",
+            store.index == nil ? "no-index" : "index",
+            String(store.reloads),
+        ].joined(separator: "|")
     }
 
     var body: some View {

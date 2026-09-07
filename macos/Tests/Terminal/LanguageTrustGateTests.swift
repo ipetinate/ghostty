@@ -408,10 +408,10 @@ struct LanguageTrustGatePlacementTests {
         guard center.contains("LanguageResolver") else { return }
 
         #expect(
-            center.contains("LanguageTrustGate.allowsLaunch"),
+            center.contains("LanguageTrustGate.verdict"),
             """
             LSPCenter resolves servers through LanguageResolver, which lets a \
-            manifest supply a command, but never calls LanguageTrustGate.allowsLaunch. \
+            manifest supply a command, but never calls LanguageTrustGate.verdict(forLaunchOf:). \
             That is a path from a file in ~/.config to Process.run with nothing checked. \
             Put the gate back in server(for:definition:), or take the resolver out.
             """
@@ -460,7 +460,7 @@ struct LanguageTrustGatePlacementTests {
         /// gate had not moved, the formatting had. An anchor that includes a
         /// parameter name is an anchor that fails for a reformat.
         let construction = try #require(body.range(of: "LSPProcess("))
-        let gate = try #require(body.range(of: "LanguageTrustGate.allowsLaunch"))
+        let gate = try #require(body.range(of: "LanguageTrustGate.verdict"))
 
         #expect(
             gate.lowerBound < construction.lowerBound,

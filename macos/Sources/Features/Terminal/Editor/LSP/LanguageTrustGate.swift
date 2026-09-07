@@ -16,19 +16,21 @@ import Foundation
 /// every launch. This used to raise a sheet on first run and on every
 /// change to the manifest, the command or its resolved path.
 enum LanguageTrustGate {
-    /// Whether this definition may be launched.
+    /// Whether this definition may be launched, and when not, which no it
+    /// was: the reader's refusal and a rule no answer overrides are two
+    /// different sentences to put in front of somebody.
     ///
     /// `resolvedPath` is the caller's: it has already located the command to
     /// decide whether the server is installed at all, and resolving twice
     /// could resolve differently.
-    static func allowsLaunch(
-        of definition: LSPServerDefinition,
+    static func verdict(
+        forLaunchOf definition: LSPServerDefinition,
         resolvedPath: String,
         workspaceRoot: String?
-    ) -> Bool {
-        guard case .manifest(let provenance) = definition.origin else { return true }
+    ) -> LanguageTrust.Verdict {
+        guard case .manifest(let provenance) = definition.origin else { return .allow }
 
-        return allows(
+        return verdict(
             LanguageTrust.Subject(
                 origin: definition.origin,
                 digest: provenance.digest,
@@ -47,7 +49,7 @@ enum LanguageTrustGate {
     ) -> Bool {
         guard case .manifest(let provenance) = formatter.origin else { return true }
 
-        return allows(
+        return verdict(
             LanguageTrust.Subject(
                 origin: formatter.origin,
                 digest: provenance.digest,
@@ -56,13 +58,16 @@ enum LanguageTrustGate {
                 workspaceRoot: workspaceRoot
             ),
             extensionID: provenance.extensionID
-        )
+        ) == .allow
     }
 
-    private static func allows(_ subject: LanguageTrust.Subject, extensionID: String) -> Bool {
+    private static func verdict(
+        _ subject: LanguageTrust.Subject,
+        extensionID: String
+    ) -> LanguageTrust.Verdict {
         LanguageTrust.verdict(
             for: subject,
             record: LanguageTrustStore.record(for: extensionID)
-        ) == .allow
+        )
     }
 }

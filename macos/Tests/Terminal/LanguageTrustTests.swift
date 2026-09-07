@@ -160,6 +160,27 @@ struct LanguageTrustTests {
         )
     }
 
+    /// The rule is asking "could cloning this repository have put the
+    /// program there", and a package manager's prefix answers no whatever
+    /// version control it happens to sit under. `/opt/homebrew` is itself a
+    /// git checkout, so without this a Zig file opened anywhere under it
+    /// took the prefix as its workspace and `zls` read as repository-supplied
+    /// — a server that would not start for that one file, and a Settings row
+    /// that could not see why, because it asks with no workspace at all.
+    @Test func aPackageManagersPrefixIsNotTheWorkspacesOwnBinary() {
+        let brewed = "/opt/homebrew/bin/elixir-ls"
+        #expect(
+            LanguageTrust.verdict(
+                for: subject(resolvedPath: brewed, workspaceRoot: "/opt/homebrew"),
+                record: nil
+            ) == .allow
+        )
+        #expect(LanguageTrust.isUnderToolPrefix("/usr/local/bin/zls"))
+        #expect(LanguageTrust.isUnderToolPrefix("/nix/store/abc-zls/bin/zls"))
+        #expect(!LanguageTrust.isUnderToolPrefix("/Users/x/project/node_modules/.bin/zls"))
+        #expect(!LanguageTrust.isUnderToolPrefix("/Users/x/opt/homebrew/bin/zls"))
+    }
+
     @Test func aCommandOutsideTheWorkspaceIsFine() {
         #expect(LanguageTrust.verdict(for: subject(), record: record()) == .allow)
     }

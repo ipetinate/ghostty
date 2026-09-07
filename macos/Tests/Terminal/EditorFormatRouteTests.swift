@@ -63,7 +63,7 @@ struct EditorFormatRouteTests {
         #expect(route(server: .crashed(status: 1)))
         #expect(route(server: .failedToStart(reason: "no binary")))
         #expect(route(server: .unresponsive))
-        #expect(route(server: .notApproved))
+        #expect(route(server: .notApproved(.byReader)))
     }
 
     // MARK: When it does not

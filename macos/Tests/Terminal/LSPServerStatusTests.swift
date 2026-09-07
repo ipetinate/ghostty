@@ -11,7 +11,7 @@ struct LSPServerStatusTests {
         #expect(!LSPServerStatus.running.isFailure)
 
         #expect(LSPServerStatus.notInstalled.isFailure)
-        #expect(LSPServerStatus.notApproved.isFailure)
+        #expect(LSPServerStatus.notApproved(.byReader).isFailure)
         #expect(LSPServerStatus.failedToStart(reason: "boom").isFailure)
         #expect(LSPServerStatus.crashed(status: 1).isFailure)
         #expect(LSPServerStatus.unresponsive.isFailure)
@@ -36,9 +36,18 @@ struct LSPServerStatusTests {
     /// place it can be lifted. A reader told "didn't start" would go looking
     /// for a fault in a server that is behaving correctly by not existing.
     @Test func aWithheldServerSaysItIsARefusalAndNotAFault() {
-        let summary = LSPServerStatus.notApproved.summary
+        let summary = LSPServerStatus.notApproved(.byReader).summary
         #expect(summary.contains("refused"))
         #expect(summary.contains("Settings"))
         #expect(!summary.contains("didn't start"))
+    }
+
+    /// The other no. A rule the reader never chose must not send them to a
+    /// switch that is already on, so the two states carry different prose.
+    @Test func aBlockedServerDoesNotBlameASetting() {
+        let summary = LSPServerStatus.notApproved(.byRule).summary
+        #expect(!summary.contains("Settings"))
+        #expect(summary.contains("workspace"))
+        #expect(LSPServerStatus.notApproved(.byRule).isFailure)
     }
 }

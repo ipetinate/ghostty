@@ -351,7 +351,25 @@ final class LSPCenter: ObservableObject {
     /// "not installed" banner re-check from a fresh locate.
     func noteAvailabilityChanged() {
         availabilityGeneration += 1
+        forgetRefusedStatuses()
         refreshInstalledCommands()
+    }
+
+    /// Drops the statuses a trust answer wrote, because the answer may be the
+    /// thing that just changed.
+    ///
+    /// A key is stamped `.notApproved` when the gate says no, and nothing
+    /// cleared it: lifting a refusal in Settings left the Settings row and
+    /// the banner reading "refused" for a server that would now start, until
+    /// the file was closed and opened again. A pane that is still open
+    /// re-announces on the generation below and overwrites its own key; a
+    /// pane that is not open never does, and that entry is the one Settings
+    /// reports once nothing is running.
+    private func forgetRefusedStatuses() {
+        for key in status.keys {
+            guard case .notApproved = status[key] else { continue }
+            status.removeValue(forKey: key)
+        }
     }
 
     func recheckMissingServers() {
@@ -833,8 +851,12 @@ final class LSPCenter: ObservableObject {
             servers[key]?.terminate()
         }
 
-        for key in status.keys.filter({ commands.contains($0.command) })
-        where servers[key] == nil {
+        /// Including the keys just told to die. `terminate()` is not the
+        /// exit: `handleExit` lands a turn or more later, and until it did,
+        /// those keys still read `.running` — a banner saying nothing is
+        /// wrong about a process that is on its way out, and, on the refusal
+        /// path, a window in which the document could be re-announced to it.
+        for key in status.keys.filter({ commands.contains($0.command) }) {
             status.removeValue(forKey: key)
             serverLogs.removeValue(forKey: key)
         }
@@ -1923,12 +1945,18 @@ final class LSPCenter: ObservableObject {
         ///
         /// A compiled-in definition returns `true` without a lookup — see
         /// `LSPServerOrigin`.
-        guard LanguageTrustGate.allowsLaunch(
-            of: definition,
+        switch LanguageTrustGate.verdict(
+            forLaunchOf: definition,
             resolvedPath: resolvedPath,
             workspaceRoot: key.root
-        ) else {
-            status[key] = .notApproved
+        ) {
+        case .allow:
+            break
+        case .deny(.refusedByUser):
+            status[key] = .notApproved(.byReader)
+            return nil
+        case .deny:
+            status[key] = .notApproved(.byRule)
             return nil
         }
 

@@ -183,13 +183,46 @@ enum LanguageTrust {
             return .deny(.unsafeCommand)
         }
         if let root = subject.workspaceRoot, let path = subject.resolvedPath,
-           isInside(path, root: root) {
+           isInside(path, root: root), !isUnderToolPrefix(path) {
             return .deny(.commandInsideWorkspace(path: path))
         }
 
         guard let record, record.decision == .refused else { return .allow }
         return .deny(.refusedByUser(at: record.decidedAt))
     }
+
+    /// Where a program installed by a package manager lives, and therefore
+    /// where a program is *not* something the opened repository shipped.
+    ///
+    /// The containment rule above exists for `./node_modules/.bin`: a clone
+    /// must not get to supply the binary a manifest names. It fired on a
+    /// Homebrew install instead, because `/opt/homebrew` is itself a git
+    /// checkout — so a file opened anywhere under it takes the prefix as its
+    /// workspace, and every command in `/opt/homebrew/bin` reads as
+    /// repository-supplied. The reader then gets a server that will not start
+    /// for that one file, with a Settings screen that cannot see why: the
+    /// row asks the verdict with no workspace at all.
+    ///
+    /// A prefix list is a heuristic, and it is the right shape here. What the
+    /// rule is really asking is "could cloning this repository have put this
+    /// program there", and the answer is no for anything a package manager
+    /// owns, whatever version control the prefix happens to be under.
+    static func isUnderToolPrefix(_ path: String) -> Bool {
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+        return toolPrefixes.contains { standardized.hasPrefix($0 + "/") }
+    }
+
+    private static let toolPrefixes = [
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/opt/homebrew",
+        "/opt/local",
+        "/nix/store",
+        "/Library",
+        "/System",
+        "/Applications",
+    ]
 
     /// Path containment, compared on standardized paths so `.` and `..`
     /// cannot make an inside path look outside.

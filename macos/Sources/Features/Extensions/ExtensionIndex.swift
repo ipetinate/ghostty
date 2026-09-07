@@ -14,6 +14,26 @@ struct ExtensionIndex: Equatable, Sendable {
         let current: Int
     }
 
+    /// One release asset: where it is, what it should hash to, and how big
+    /// it should be. The three travel together because none of them is
+    /// usable without the other two — a URL with no digest is a file off the
+    /// internet nobody checked.
+    struct Asset: Equatable, Sendable {
+        let url: URL
+        let sha256: String
+        let bytes: Int
+
+        static func parse(_ value: Any?, limit: Int) -> Asset? {
+            guard let json = value as? [String: Any],
+                  let url = Entry.secureURL(json["url"]),
+                  let sha256 = Entry.digest(json["sha256"]),
+                  let bytes = ExtensionIndex.integer(json["bytes"]),
+                  bytes > 0, bytes <= limit
+            else { return nil }
+            return Asset(url: url, sha256: sha256, bytes: bytes)
+        }
+    }
+
     struct Entry: Identifiable, Equatable, Sendable {
         let id: String
         let name: String
@@ -27,9 +47,32 @@ struct ExtensionIndex: Equatable, Sendable {
         let downloadURL: URL
         let sha256: String
         let bytes: Int
+
+        /// The document and its media, published beside the installable zip
+        /// so that reading an extension's page does not download the thing
+        /// itself.
+        ///
+        /// GitHub counts every asset download, and the store shows that
+        /// count. While the page and the install came from one asset the
+        /// number meant "looked at it or installed it", which is not a
+        /// number anybody asked for. Two assets are two honest counts.
+        ///
+        /// Optional because it is younger than the index: an entry published
+        /// before the registry started writing it carries none, and the
+        /// preview then falls back to the installable zip — the old
+        /// behaviour, inflation included, for as long as that entry is the
+        /// newest one.
+        var preview: Asset?
+
         var downloads: Downloads?
         var card: ExtensionCard?
         var categories: [String] = []
+
+        /// The installable asset, as the three fields that were on this type
+        /// before there was more than one asset to name.
+        var download: Asset {
+            Asset(url: downloadURL, sha256: sha256, bytes: bytes)
+        }
     }
 
     let generatedAt: Date?
@@ -60,6 +103,11 @@ extension ExtensionIndex {
     static let maxBytes = 4 * 1024 * 1024
 
     static let maxArchiveBytes = 64 * 1024 * 1024
+
+    /// The document and its media, which the registry caps at 256 KiB and
+    /// 24 MiB respectively. Smaller than an installable archive because it
+    /// holds no code.
+    static let maxPreviewBytes = 32 * 1024 * 1024
 
     static let maxEntries = 2048
 
@@ -130,6 +178,10 @@ extension ExtensionIndex.Entry {
             downloadURL: downloadURL,
             sha256: sha256,
             bytes: bytes,
+            preview: ExtensionIndex.Asset.parse(
+                json["preview"],
+                limit: ExtensionIndex.maxPreviewBytes
+            ),
             downloads: downloads(json["downloads"]),
             card: (json["card"] as? [String: Any]).flatMap(ExtensionCard.parse),
             categories: displayList(json["categories"])

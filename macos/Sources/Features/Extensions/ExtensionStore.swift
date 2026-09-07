@@ -90,6 +90,15 @@ final class ExtensionStore: ObservableObject {
         installed = Self.scanInstalled(in: extensionsDir)
     }
 
+    /// Downloads and installs, rather than installing whatever the preview
+    /// cache happens to hold.
+    ///
+    /// It used to reuse the staged tree, which saved a download for anyone
+    /// who read the page before pressing Install. That saving is what made
+    /// the download count meaningless — the page and the install were one
+    /// asset — and the cache now holds the document bundle, which is not an
+    /// extension. So an install fetches the installable asset, every time,
+    /// and its count means installs.
     func install(_ entry: ExtensionIndex.Entry) async {
         guard activity[entry.id] == nil else { return }
         errors[entry.id] = nil
@@ -98,16 +107,24 @@ final class ExtensionStore: ObservableObject {
 
         let directory = extensionsDir
         do {
-            let staged = try await stagedDirectory(for: entry)
-            activity[entry.id] = .installing
-            try await Task.detached(priority: .utility) {
-                try ExtensionInstaller.install(from: staged, as: entry, into: directory)
-            }.value
+            try await ExtensionInstaller.install(
+                entry,
+                into: directory,
+                progress: report(for: entry.id)
+            )
             noteInstalledChanged()
             Task { await self.refreshRequirements(id: entry.id) }
         } catch {
             errors[entry.id] = Self.message(for: error)
             reloadInstalled()
+        }
+    }
+
+    /// Forwards a step to the row, and only while the row is showing one.
+    private func report(for id: String) -> @MainActor @Sendable (ExtensionActivity) -> Void {
+        { [weak self] step in
+            guard let self, self.activity[id] != nil else { return }
+            self.activity[id] = step
         }
     }
 
@@ -258,10 +275,7 @@ final class ExtensionStore: ObservableObject {
         }.value
         if let verified { return verified }
 
-        let report: @MainActor @Sendable (ExtensionActivity) -> Void = { [weak self] step in
-            guard let self, self.activity[entry.id] != nil else { return }
-            self.activity[entry.id] = step
-        }
+        let report = report(for: entry.id)
         let staging = Task<URL, Error>.detached(priority: .utility) {
             try await ExtensionPreviewCache.stage(entry, root: root, progress: report)
         }

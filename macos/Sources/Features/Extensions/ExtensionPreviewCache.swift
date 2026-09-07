@@ -153,11 +153,16 @@ enum ExtensionPreviewCache {
 
         await progress(.downloading(fraction: nil))
         let archive = staging.appendingPathComponent("archive.zip")
-        try await ExtensionInstaller.fetch(entry, to: archive, progress: progress)
+        let asset = entry.preview ?? entry.download
+        try await ExtensionInstaller.fetch(asset, to: archive, progress: progress)
 
         await progress(.verifying)
         let tree = staging.appendingPathComponent("tree", isDirectory: true)
-        try await ExtensionInstaller.stage(archive: archive, expecting: entry, into: tree)
+        if let preview = entry.preview {
+            try await ExtensionInstaller.stagePreview(archive: archive, expecting: preview, into: tree)
+        } else {
+            try await ExtensionInstaller.stage(archive: archive, expecting: entry, into: tree)
+        }
 
         let destination = directory(for: entry, root: root)
         let marker = markerURL(for: entry, root: root)
@@ -170,24 +175,53 @@ enum ExtensionPreviewCache {
         } catch {
             throw Failure.staging(error.localizedDescription)
         }
-        try write(Marker(sha256: entry.sha256, bytes: entry.bytes, verifiedAt: Date()), to: marker)
+        try write(Marker(sha256: asset.sha256, bytes: asset.bytes, verifiedAt: Date()), to: marker)
 
         evict(root: root, keeping: [destination])
         return destination
     }
 
+    /// The staged directory for an entry, or nil when it has to be fetched
+    /// again.
+    ///
+    /// The marker records the digest and size of **what was staged**, and an
+    /// entry that gains a preview asset therefore misses its own cache once
+    /// and refills it from the new asset. That is the intended behaviour and
+    /// the reason the comparison is against the asset rather than against
+    /// the entry's installable fields: a marker left by the old path holds
+    /// the zip's digest, so it fails this check, is replaced, and never
+    /// re-fetches after that.
+    ///
+    /// What proves the tree is complete differs with what it came from. An
+    /// installable zip has to hold a manifest naming the same id and
+    /// version; a preview bundle has to hold a document, because that is all
+    /// it carries.
     static func verified(_ entry: ExtensionIndex.Entry, root: URL) -> URL? {
         let directory = directory(for: entry, root: root)
+        let asset = entry.preview ?? entry.download
         guard let marker = readMarker(markerURL(for: entry, root: root)),
-              marker.sha256 == entry.sha256,
-              marker.bytes == entry.bytes,
+              marker.sha256 == asset.sha256,
+              marker.bytes == asset.bytes,
               isDirectory(directory),
-              (try? ExtensionInstaller.inspect(directory)) != nil,
-              let manifest = LanguageManifest.load(directory: directory, scope: .user),
+              (try? ExtensionInstaller.inspect(directory)) != nil
+        else { return nil }
+
+        if entry.preview != nil {
+            guard hasDocument(in: directory) else { return nil }
+            return directory
+        }
+
+        guard let manifest = LanguageManifest.load(directory: directory, scope: .user),
               manifest.id == entry.id,
               manifest.version == entry.version
         else { return nil }
         return directory
+    }
+
+    static func hasDocument(in directory: URL) -> Bool {
+        ExtensionCard.documentFileNames.contains { name in
+            FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path)
+        }
     }
 
     static func mirror(installed: InstalledExtension, manifestDigest: String, root: URL) throws -> URL {

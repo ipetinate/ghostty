@@ -21,6 +21,19 @@ struct ExtensionPreviewCacheTests {
             bytes: bytes)
     }
 
+    private func withPreview(
+        _ entry: ExtensionIndex.Entry,
+        sha256: String = String(repeating: "b", count: 64),
+        bytes: Int = 620
+    ) -> ExtensionIndex.Entry {
+        var copy = entry
+        copy.preview = ExtensionIndex.Asset(
+            url: URL(string: "https://example.com/\(entry.id)-preview.zip")!,
+            sha256: sha256,
+            bytes: bytes)
+        return copy
+    }
+
     private func cached(
         _ area: ExtensionPreviewCache.Cached.Area,
         id: String,
@@ -250,6 +263,56 @@ struct ExtensionPreviewCacheTests {
         try FileManager.default.createSymbolicLink(
             atPath: directory.appendingPathComponent("link").path, withDestinationPath: LanguageManifest.fileName)
         #expect(ExtensionPreviewCache.verified(lua, root: root) == nil)
+    }
+
+    /// An entry that gained a preview asset misses its own cache once.
+    ///
+    /// The marker records the digest of **what was staged**, and the entry is
+    /// now staged from a different asset, so the old marker cannot match. It
+    /// is replaced on the next fetch and matches from then on — the
+    /// alternative, comparing against the installable digest, would either
+    /// re-fetch on every open or accept a tree staged from the wrong asset.
+    @Test func aMarkerLeftByTheInstallableZipDoesNotVerifyAPreviewEntry() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let lua = withPreview(entry())
+        let directory = ExtensionPreviewCache.directory(for: lua, root: root)
+        try writeExtension(id: lua.id, version: lua.version, into: directory)
+        let marker = ExtensionPreviewCache.markerURL(for: lua, root: root)
+
+        try ExtensionPreviewCache.write(
+            ExtensionPreviewCache.Marker(sha256: lua.sha256, bytes: lua.bytes, verifiedAt: Date()),
+            to: marker)
+        #expect(ExtensionPreviewCache.verified(lua, root: root) == nil)
+
+        let preview = try #require(lua.preview)
+        try ExtensionPreviewCache.write(
+            ExtensionPreviewCache.Marker(sha256: preview.sha256, bytes: preview.bytes, verifiedAt: Date()),
+            to: marker)
+        #expect(ExtensionPreviewCache.verified(lua, root: root) == directory)
+    }
+
+    /// A preview bundle carries no manifest, so what proves the tree is
+    /// complete is the document. The installable path still wants a manifest.
+    @Test func aPreviewEntryIsVerifiedByItsDocumentAndNotByAManifest() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let lua = withPreview(entry())
+        let preview = try #require(lua.preview)
+        let directory = ExtensionPreviewCache.directory(for: lua, root: root)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try ExtensionPreviewCache.write(
+            ExtensionPreviewCache.Marker(sha256: preview.sha256, bytes: preview.bytes, verifiedAt: Date()),
+            to: ExtensionPreviewCache.markerURL(for: lua, root: root))
+
+        #expect(ExtensionPreviewCache.verified(lua, root: root) == nil)
+
+        try "# Lua\n".write(
+            to: directory.appendingPathComponent(ExtensionCard.documentFileName),
+            atomically: true,
+            encoding: .utf8)
+        #expect(ExtensionPreviewCache.hasDocument(in: directory))
+        #expect(ExtensionPreviewCache.verified(lua, root: root) == directory)
     }
 
     @Test func aMirrorCopiesTheInstalledExtensionUnderLocal() throws {

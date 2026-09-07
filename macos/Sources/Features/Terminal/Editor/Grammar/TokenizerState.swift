@@ -135,8 +135,17 @@ struct TokenizerState {
     /// Open regions, outermost first.
     var frames: [Frame]
 
+    /// Whether the line about to be tokenized is the document's first, which
+    /// is the only place `\A` holds.
+    ///
+    /// True of the state a document starts in and false of every state a
+    /// line hands to the next. The scanner sees one line as its whole
+    /// buffer, so Oniguruma would match `\A` at the top of every one of
+    /// them; TextMate means the top of the document.
+    var atDocumentStart: Bool = false
+
     static func initial(scopeName: String) -> TokenizerState {
-        TokenizerState(root: ScopeStack(root: scopeName), frames: [])
+        TokenizerState(root: ScopeStack(root: scopeName), frames: [], atDocumentStart: true)
     }
 
     /// The scopes a span at the current position would carry.
@@ -163,10 +172,10 @@ extension TokenizerState.Frame: Equatable {
 }
 
 extension TokenizerState: Equatable {
-    /// `carried` and `emptyEntry` are deliberately not compared. They say
-    /// where on a line the frame was opened, not what the frame is, and a
-    /// state handed to the next line has both of them settled — so two
-    /// states that differ only in them cannot exist at a line boundary.
+    /// `carried`, `emptyEntry` and `atDocumentStart` are deliberately not
+    /// compared. They say where the state is, not what it is, and a state
+    /// handed to the next line has all three settled — so two states that
+    /// differ only in them cannot exist at a line boundary.
     static func == (lhs: TokenizerState, rhs: TokenizerState) -> Bool {
         lhs.root == rhs.root && lhs.frames == rhs.frames
     }

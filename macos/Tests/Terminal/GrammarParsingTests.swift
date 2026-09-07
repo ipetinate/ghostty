@@ -244,44 +244,46 @@ struct GrammarParsingTests {
         #expect(parsed.injections.isEmpty)
     }
 
-    // MARK: - selectors
+    /// One key may name several alternatives, and each carries its own
+    /// priority. PHP's is written that way and reading it as one selector
+    /// with one priority is what left a `.php` file unpainted.
+    @Test func readsEveryAlternativeOfOneInjectionKey() throws {
+        let parsed = try #require(grammar("""
+        {
+          "scopeName": "text.html.thing",
+          "injections": {
+            "text.html.thing - (meta.embedded | meta.tag), L:(source.js - meta.embedded)": {
+              "patterns": [{ "match": "a" }]
+            }
+          }
+        }
+        """))
 
-    @Test func matchesAScopeOnDottedBoundaries() {
-        #expect(ScopeSelector.scope("source.js", hasPrefix: "source"))
-        #expect(ScopeSelector.scope("source", hasPrefix: "source"))
-        #expect(!ScopeSelector.scope("sourcemap.js", hasPrefix: "source"))
-        #expect(!ScopeSelector.scope("sourc", hasPrefix: "source"))
+        #expect(parsed.injections.count == 2)
+        #expect(parsed.injections.map(\.selector.priority) == [.before, .normal])
+        #expect(parsed.injections[0].rule === parsed.injections[1].rule)
     }
 
-    @Test func matchesADescendantPathInOrder() throws {
-        let selector = try #require(ScopeSelector("text.html source.js string"))
-        #expect(selector.matches(["text.html.basic", "source.js.embedded", "string.quoted.double.js"]))
-        #expect(selector.matches(["text.html.basic", "meta.tag", "source.js", "meta.x", "string.quoted"]))
-        #expect(!selector.matches(["source.js.embedded", "text.html.basic", "string.quoted"]))
-        #expect(!selector.matches(["text.html.basic", "source.js.embedded"]))
+    /// A grammar that injects itself into somebody else's document says
+    /// *where* with a top-level `injectionSelector`, and the manifest says
+    /// *which* documents.
+    @Test func readsTheSelectorAGrammarInjectsItselfBy() throws {
+        let parsed = try #require(grammar("""
+        {
+          "scopeName": "thing.directives",
+          "injectionSelector": "L:meta.tag -meta.attribute, L:meta.element",
+          "patterns": [{ "match": "a" }]
+        }
+        """))
+
+        #expect(parsed.injectionSelectors.count == 2)
+        #expect(parsed.injectionSelectors.allSatisfy { $0.priority == .before })
+        #expect(parsed.injectedRule.patterns.count == 1)
     }
 
-    @Test func matchesAnyOfSeveralAlternatives() throws {
-        let selector = try #require(ScopeSelector("source.js, source.ts"))
-        #expect(selector.matches(["source.ts"]))
-        #expect(selector.matches(["source.js"]))
-        #expect(!selector.matches(["source.css"]))
-    }
+    @Test func readsNoInjectionSelectorWhenTheGrammarWroteNone() throws {
+        let parsed = try #require(grammar(#"{ "scopeName": "source.thing" }"#))
 
-    @Test func matchesEverythingWithAStar() throws {
-        let selector = try #require(ScopeSelector("L:*"))
-        #expect(selector.priority == .before)
-        #expect(selector.matches(["anything"]))
-        #expect(selector.matches([]))
-    }
-
-    /// Negation, grouping and the containment operator are not implemented,
-    /// and the alternative using one is dropped rather than approximated.
-    /// Approximating it the wrong way would inject rules exactly where the
-    /// author asked for them not to be.
-    @Test func dropsAnAlternativeItCannotRead() throws {
-        let selector = try #require(ScopeSelector("source.js -comment, source.ts"))
-        #expect(selector.matches(["source.ts"]))
-        #expect(!selector.matches(["source.js"]))
+        #expect(parsed.injectionSelectors.isEmpty)
     }
 }

@@ -66,11 +66,17 @@ struct GrammarProbe {
 
     /// A probe over grammars given as JSON text, which is how the engine
     /// receives them from an extension.
-    init?(scope: String, grammars: [String]) {
+    ///
+    /// `injectTo` is keyed by the injecting grammar's scope name and holds
+    /// the scopes its extension asked it to be injected into. That half of
+    /// a cross-grammar injection comes from the manifest rather than from
+    /// the grammar file, so a probe has to be told it separately, exactly
+    /// as ``LanguageResolver`` tells the store.
+    init?(scope: String, grammars: [String], injectTo: [String: [String]] = [:]) {
         let store = GrammarStore()
         for text in grammars {
             guard let grammar = Grammar.parse(Data(text.utf8)) else { return nil }
-            store.add(grammar)
+            store.add(grammar, injectTo: injectTo[grammar.scopeName] ?? [])
         }
         guard let tokenizer = GrammarTokenizer(store: store, scopeName: scope) else { return nil }
         self.tokenizer = tokenizer

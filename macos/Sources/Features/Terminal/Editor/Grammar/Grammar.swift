@@ -44,9 +44,26 @@ final class Grammar {
     /// Rules an `include` reaches by name, as `#key`.
     let repository: [String: GrammarRule]
 
-    /// Rules this grammar asks to have considered inside documents whose
-    /// scope stack a selector matches.
+    /// Rules this grammar asks to have considered inside its own documents,
+    /// wherever a selector matches the scope stack. Read from the document's
+    /// root grammar only — see ``GrammarStore/injections(forRootScope:)``.
     let injections: [GrammarInjection]
+
+    /// Where in somebody else's document this grammar's own patterns apply,
+    /// from its top-level `injectionSelector`.
+    ///
+    /// Half of a cross-grammar injection and inert without the other half:
+    /// the manifest's `contributes.grammars[].injectTo` names *which*
+    /// documents, and this says *where* in them.
+    let injectionSelectors: [ScopeSelector]
+
+    /// The whole grammar as one rule, for a cross-grammar injection to be
+    /// cached against.
+    ///
+    /// Made with the grammar rather than at the point of use, because the
+    /// tokenizer's expansion cache keys on rule identity: a container built
+    /// per candidate list would miss every time.
+    let injectedRule: GrammarRule
 
     init(
         scopeName: String,
@@ -55,7 +72,8 @@ final class Grammar {
         firstLineMatch: String? = nil,
         patterns: [GrammarRule] = [],
         repository: [String: GrammarRule] = [:],
-        injections: [GrammarInjection] = []
+        injections: [GrammarInjection] = [],
+        injectionSelectors: [ScopeSelector] = []
     ) {
         self.scopeName = scopeName
         self.name = name
@@ -64,6 +82,8 @@ final class Grammar {
         self.patterns = patterns
         self.repository = repository
         self.injections = injections
+        self.injectionSelectors = injectionSelectors
+        self.injectedRule = GrammarRule(kind: .group, patterns: patterns)
     }
 }
 
@@ -91,7 +111,8 @@ extension Grammar {
             firstLineMatch: root["firstLineMatch"] as? String,
             patterns: GrammarRule.parse(list: root["patterns"]),
             repository: repository(from: root["repository"]),
-            injections: injections(from: root["injections"]))
+            injections: injections(from: root["injections"]),
+            injectionSelectors: ScopeSelector.parse(root["injectionSelector"] as? String ?? ""))
     }
 
     private static func fileTypes(from raw: Any?) -> [String] {
@@ -113,17 +134,31 @@ extension Grammar {
         return result
     }
 
+    /// Reads the `injections` dictionary: each key a selector, each value a
+    /// `patterns` list.
+    ///
+    /// One key may name several alternatives, and each becomes an injection
+    /// of its own so it can carry its own priority — sharing the one
+    /// container rule, so the tokenizer expands the patterns once however
+    /// many alternatives reach them.
+    ///
+    /// Keys are taken in sorted order and the result sorted by priority.
+    /// The order of two injections of equal priority decides which of them
+    /// wins a position they both match, so it cannot be left to however a
+    /// JSON dictionary chose to hand its keys over.
     private static func injections(from raw: Any?) -> [GrammarInjection] {
         guard let object = raw as? [String: Any] else { return [] }
         var result: [GrammarInjection] = []
-        for (key, value) in object {
-            guard let selector = ScopeSelector(key) else { continue }
-            guard let entry = value as? [String: Any] else { continue }
+        for key in object.keys.sorted() {
+            guard let entry = object[key] as? [String: Any] else { continue }
             let rules = GrammarRule.parse(list: entry["patterns"])
             guard !rules.isEmpty else { continue }
-            result.append(GrammarInjection(selector: selector, rule: GrammarRule(kind: .group, patterns: rules)))
+            let container = GrammarRule(kind: .group, patterns: rules)
+            for selector in ScopeSelector.parse(key) {
+                result.append(GrammarInjection(selector: selector, rule: container))
+            }
         }
-        return result.sorted { $0.selector.priority.rawValue > $1.selector.priority.rawValue }
+        return ScopeSelector.ordered(result) { $0.selector.priority }
     }
 }
 
@@ -137,87 +172,4 @@ struct GrammarInjection {
     let rule: GrammarRule
 
     var rules: [GrammarRule] { rule.patterns }
-}
-
-/// The key of an `injections` entry: which scope stacks the rules apply to,
-/// and whether they are considered before or after the document's own rules.
-///
-/// **A deliberate subset of the TextMate selector language.** A selector is
-/// a comma-separated list of alternatives; an alternative is a whitespace
-/// separated path of scope-name prefixes that must appear on the stack in
-/// order, innermost last. `L:` puts the rules ahead of the document's own,
-/// `R:` and a bare selector put them behind.
-///
-/// Negation (`-source.js`), grouping (`(a | b)`) and the `<` containment
-/// operator are **not** implemented. An alternative that uses one is
-/// dropped rather than approximated, because approximating it the other way
-/// would inject rules where the author asked for them not to be. A selector
-/// whose every alternative is dropped matches nothing.
-struct ScopeSelector {
-    enum Priority: Int {
-        case before = 1
-        case normal = 0
-        case after = -1
-    }
-
-    let priority: Priority
-
-    private let alternatives: [[String]]
-
-    init?(_ text: String) {
-        var priority = Priority.normal
-        var alternatives: [[String]] = []
-
-        for piece in text.split(separator: ",", omittingEmptySubsequences: true) {
-            var body = piece.trimmingCharacters(in: .whitespaces)
-            if body.hasPrefix("L:") {
-                priority = .before
-                body = String(body.dropFirst(2))
-            } else if body.hasPrefix("R:") {
-                if priority == .normal { priority = .after }
-                body = String(body.dropFirst(2))
-            }
-
-            let identifiers = body.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
-            guard !identifiers.isEmpty else { continue }
-            if identifiers == ["*"] {
-                alternatives.append([])
-                continue
-            }
-            guard identifiers.allSatisfy(Self.isPlainIdentifier) else { continue }
-            alternatives.append(identifiers)
-        }
-
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        self.priority = priority
-        self.alternatives = alternatives
-    }
-
-    /// Whether this selector applies to a scope stack, outermost first.
-    func matches(_ scopes: [String]) -> Bool {
-        alternatives.contains { alternative in
-            guard alternative.count <= scopes.count else { return false }
-            var next = 0
-            for identifier in alternative {
-                guard let hit = scopes[next...].firstIndex(where: { Self.scope($0, hasPrefix: identifier) }) else {
-                    return false
-                }
-                next = hit + 1
-            }
-            return true
-        }
-    }
-
-    /// A scope name matches a selector identifier when it is that
-    /// identifier or a dotted descendant of it. `source.js` matches
-    /// `source`, and `sourcemap.x` does not.
-    static func scope(_ scope: String, hasPrefix identifier: String) -> Bool {
-        if scope == identifier { return true }
-        guard scope.count > identifier.count, scope.hasPrefix(identifier) else { return false }
-        return scope[scope.index(scope.startIndex, offsetBy: identifier.count)] == "."
-    }
-
-    private static func isPlainIdentifier(_ identifier: String) -> Bool {
-        !identifier.contains(where: { "-()<>|&*".contains($0) })
-    }
 }

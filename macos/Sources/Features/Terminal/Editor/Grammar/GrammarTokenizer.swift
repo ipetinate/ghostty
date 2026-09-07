@@ -113,9 +113,12 @@ final class GrammarTokenizer {
                 state: state,
                 rootRules: topLevelRules(of: base),
                 budget: limits.iterations,
-                depth: 0)
+                depth: 0,
+                allowsDocumentAnchor: state.atDocumentStart)
             scan(run)
-            result = Result(spans: run.spans, state: run.state)
+            var outgoing = run.state
+            outgoing.atDocumentStart = false
+            result = Result(spans: run.spans, state: outgoing)
         }
         return result
     }
@@ -170,7 +173,10 @@ private extension GrammarTokenizer {
                 index += 1
                 continue
             }
-            guard let regex = regex(of: slot(for: pattern), allowContinuation: true),
+            guard let regex = regex(
+                    of: slot(for: pattern),
+                    allowContinuation: true,
+                    allowDocumentStart: run.allowsDocumentAnchor),
                   regex.search(run.bytes, from: run.position),
                   let whole = regex.range(of: 0) else {
                 run.state.frames.removeSubrange(index...)
@@ -209,7 +215,10 @@ private extension GrammarTokenizer {
 
         guard let winner else { return nil }
         let candidate = run.candidates[winner]
-        guard let regex = regex(of: candidate.slot, allowContinuation: run.position == run.anchor),
+        guard let regex = regex(
+                of: candidate.slot,
+                allowContinuation: run.position == run.anchor,
+                allowDocumentStart: run.allowsDocumentAnchor),
               regex.search(run.bytes, from: run.position),
               let whole = regex.range(of: 0) else { return nil }
         return Hit(index: winner, candidate: candidate, range: whole, groups: groups(of: regex))
@@ -239,7 +248,10 @@ private extension GrammarTokenizer {
         }
 
         let allowContinuation = run.position == run.anchor
-        guard let regex = regex(of: slot, allowContinuation: allowContinuation),
+        guard let regex = regex(
+                of: slot,
+                allowContinuation: allowContinuation,
+                allowDocumentStart: run.allowsDocumentAnchor),
               regex.search(run.bytes, from: run.position),
               let whole = regex.range(of: 0) else {
             if memoizable {
@@ -484,7 +496,8 @@ private extension GrammarTokenizer {
                 state: TokenizerState(root: scopes, frames: []),
                 rootRules: expand(capture.patterns, in: grammar),
                 budget: max(64, run.budget / 8),
-                depth: run.depth + 1)
+                depth: run.depth + 1,
+                allowsDocumentAnchor: run.allowsDocumentAnchor && range.lowerBound == 0)
             scan(nested)
             spans = nested.spans
         }
@@ -634,39 +647,62 @@ private extension GrammarTokenizer {
     /// the hot path on the pattern text meant hashing those characters a
     /// hundred times per token. A ``Candidate`` carries the slot instead,
     /// and the text is hashed once, when the candidate list is built.
+    /// **Both anchors are resolved per search, and neither means to
+    /// Oniguruma what it means to TextMate.**
+    ///
+    /// Oniguruma reads `\G` as "where this search started" and `\A` as "the
+    /// start of the buffer", and this scanner hands it one line as the
+    /// buffer and starts a search at every token. TextMate means something
+    /// narrower by each: `\G` holds only where the enclosing `begin` or
+    /// `while` match ended, which is how a continuation rule refuses to
+    /// re-enter mid-line, and `\A` holds only on the document's first line.
+    /// A pattern with either is compiled a second time with that anchor made
+    /// unmatchable, and the variant is chosen per search.
+    ///
+    /// `\A` cost a `.md` file with TOML frontmatter its whole colouring:
+    /// `markdown.toml.frontmatter.codeblock` opens on `\A\+{3}\s*$`, so the
+    /// closing `+++` opened the block a second time and the rest of the
+    /// document came out as TOML.
     final class PatternSlot {
         let id: Int
         let source: String
         let hasContinuationAnchor: Bool
+        let hasDocumentAnchor: Bool
 
-        /// The pattern as written.
-        let anchored: OnigRegex?
-
-        /// The same pattern with `\G` made unmatchable, compiled on first
-        /// need.
-        ///
-        /// Oniguruma anchors `\G` to wherever the search started, and this
-        /// scanner starts a search at every token. TextMate means something
-        /// narrower: `\G` holds only at the position the enclosing `begin`
-        /// or `while` match ended, which is how a continuation rule refuses
-        /// to re-enter in the middle of a line.
-        var unanchored: OnigRegex?
-        var unanchoredBuilt = false
+        private var variants: [OnigRegex?]
+        private var built: [Bool]
 
         init(id: Int, source: String) {
             self.id = id
             self.source = source
             self.hasContinuationAnchor = GrammarTokenizer.hasContinuationAnchor(source)
-            self.anchored = OnigRegex(pattern: source)
+            self.hasDocumentAnchor = GrammarTokenizer.hasDocumentAnchor(source)
+            self.variants = [nil, nil, nil, nil]
+            self.built = [false, false, false, false]
+            _ = regex(allowContinuation: true, allowDocumentStart: true)
+        }
+
+        /// The pattern with the anchors the caller does not allow made
+        /// unmatchable, compiled on first need and then held.
+        func regex(allowContinuation: Bool, allowDocumentStart: Bool) -> OnigRegex? {
+            let continuation = allowContinuation || !hasContinuationAnchor
+            let documentStart = allowDocumentStart || !hasDocumentAnchor
+            let index = (continuation ? 1 : 0) | (documentStart ? 2 : 0)
+            if built[index] { return variants[index] }
+            let pattern = continuation && documentStart
+                ? source
+                : GrammarTokenizer.withoutAnchors(
+                    source,
+                    continuation: continuation,
+                    documentStart: documentStart)
+            variants[index] = OnigRegex(pattern: pattern)
+            built[index] = true
+            return variants[index]
         }
     }
 
-    func regex(of slot: PatternSlot, allowContinuation: Bool) -> OnigRegex? {
-        if allowContinuation || !slot.hasContinuationAnchor { return slot.anchored }
-        if slot.unanchoredBuilt { return slot.unanchored }
-        slot.unanchored = OnigRegex(pattern: Self.withoutContinuationAnchor(slot.source))
-        slot.unanchoredBuilt = true
-        return slot.unanchored
+    func regex(of slot: PatternSlot, allowContinuation: Bool, allowDocumentStart: Bool) -> OnigRegex? {
+        slot.regex(allowContinuation: allowContinuation, allowDocumentStart: allowDocumentStart)
     }
 
     func slot(for pattern: String) -> PatternSlot {
@@ -788,23 +824,16 @@ extension GrammarTokenizer {
     }
 
     static func hasContinuationAnchor(_ pattern: String) -> Bool {
-        var index = pattern.startIndex
-        while index < pattern.endIndex {
-            guard pattern[index] == "\\" else {
-                index = pattern.index(after: index)
-                continue
-            }
-            let after = pattern.index(after: index)
-            guard after < pattern.endIndex else { return false }
-            if pattern[after] == "G" { return true }
-            index = pattern.index(after: after)
-        }
-        return false
+        contains(pattern, anchor: "G")
     }
 
-    /// The same pattern with `\G` replaced by a codepoint no text contains,
-    /// so the pattern compiles and never matches.
-    static func withoutContinuationAnchor(_ pattern: String) -> String {
+    static func hasDocumentAnchor(_ pattern: String) -> Bool {
+        contains(pattern, anchor: "A")
+    }
+
+    /// The same pattern with the disallowed anchors replaced by a codepoint
+    /// no text contains, so the pattern compiles and never matches there.
+    static func withoutAnchors(_ pattern: String, continuation: Bool, documentStart: Bool) -> String {
         var result = ""
         var index = pattern.startIndex
         while index < pattern.endIndex {
@@ -818,7 +847,8 @@ extension GrammarTokenizer {
                 result.append("\\")
                 break
             }
-            if pattern[after] == "G" {
+            let refused = (!continuation && pattern[after] == "G") || (!documentStart && pattern[after] == "A")
+            if refused {
                 result += "\\x{FFFF}"
             } else {
                 result.append("\\")
@@ -827,6 +857,21 @@ extension GrammarTokenizer {
             index = pattern.index(after: after)
         }
         return result
+    }
+
+    private static func contains(_ pattern: String, anchor: Character) -> Bool {
+        var index = pattern.startIndex
+        while index < pattern.endIndex {
+            guard pattern[index] == "\\" else {
+                index = pattern.index(after: index)
+                continue
+            }
+            let after = pattern.index(after: index)
+            guard after < pattern.endIndex else { return false }
+            if pattern[after] == anchor { return true }
+            index = pattern.index(after: after)
+        }
+        return false
     }
 
     private static func text(of group: Int, groups: [Range<Int>?], line: [UInt8]) -> String {
@@ -903,6 +948,10 @@ private extension GrammarTokenizer {
         let budget: Int
         let depth: Int
 
+        /// Whether `\A` holds anywhere on this line, which it does only on
+        /// the document's first.
+        let allowsDocumentAnchor: Bool
+
         var state: TokenizerState
         var rootRules: [ResolvedRule]
         var candidates: [Candidate] = []
@@ -922,7 +971,8 @@ private extension GrammarTokenizer {
             state: TokenizerState,
             rootRules: [ResolvedRule],
             budget: Int,
-            depth: Int
+            depth: Int,
+            allowsDocumentAnchor: Bool
         ) {
             self.line = line
             self.bytes = bytes
@@ -930,6 +980,7 @@ private extension GrammarTokenizer {
             self.rootRules = rootRules
             self.budget = budget
             self.depth = depth
+            self.allowsDocumentAnchor = allowsDocumentAnchor
         }
     }
 }

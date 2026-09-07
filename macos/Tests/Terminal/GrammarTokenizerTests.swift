@@ -760,6 +760,60 @@ struct GrammarTokenizerTests {
         #expect(lines[3].state == probe.tokenizer.initialState)
     }
 
+    /// `\A` holds on the document's first line and nowhere else.
+    ///
+    /// The scanner sees one line as its whole buffer, so Oniguruma would
+    /// match `\A` at the top of every one of them. Frontmatter is what that
+    /// costs: `markdown.toml.frontmatter.codeblock` opens on `\A\+{3}\s*$`,
+    /// so the closing `+++` opened the block a second time and the rest of
+    /// the document came out as TOML. The grammar here is that one's shape.
+    @Test func holdsTheDocumentAnchorOnTheFirstLineOnly() throws {
+        let probe = try #require(GrammarProbe(scope: "text.thing", grammars: [
+            """
+            {
+              "scopeName": "text.thing",
+              "patterns": [
+                {
+                  "name": "meta.frontmatter",
+                  "begin": "\\\\A\\\\+{3}\\\\s*$",
+                  "end": "(^|\\\\G)(?=\\\\s*\\\\+{3}\\\\s*$)",
+                  "patterns": [{ "name": "constant.numeric", "match": "\\\\d+" }]
+                },
+                { "name": "keyword.control", "match": "title" }
+              ]
+            }
+            """,
+        ]))
+
+        let lines = probe.lines(of: "+++\ntitle = 1\n+++\ntitle = 2")
+
+        #expect(lines[1].scopes(at: 0) == ["text.thing", "meta.frontmatter"])
+        #expect(lines[1].scopes(at: 8) == ["text.thing", "meta.frontmatter", "constant.numeric"])
+        #expect(lines[2].scopes(at: 0) == ["text.thing"])
+        #expect(lines[2].state.isInitial)
+        #expect(lines[3].scopes(at: 0) == ["text.thing", "keyword.control"])
+        #expect(lines[3].scopes(at: 8) == ["text.thing"])
+    }
+
+    /// The same anchor, in a document that opens with the pattern on a later
+    /// line: it never matches, because `\A` is the document's start and not
+    /// the line's.
+    @Test func refusesTheDocumentAnchorOnAnyLaterLine() throws {
+        let probe = try #require(GrammarProbe(scope: "source.thing", grammars: [
+            """
+            {
+              "scopeName": "source.thing",
+              "patterns": [{ "name": "comment.line.shebang", "match": "\\\\A#!.*" }]
+            }
+            """,
+        ]))
+
+        let lines = probe.lines(of: "#!/bin/sh\n#!/bin/sh")
+
+        #expect(lines[0].scopes(at: 0) == ["source.thing", "comment.line.shebang"])
+        #expect(lines[1].scopes(at: 0) == ["source.thing"])
+    }
+
     @Test func tellsTwoRegionsOfTheSameRuleApart() throws {
         let probe = try #require(GrammarProbe(scope: "source.lua", grammars: [
             """

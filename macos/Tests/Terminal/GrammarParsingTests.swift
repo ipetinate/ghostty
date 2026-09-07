@@ -215,6 +215,39 @@ struct GrammarParsingTests {
         #expect(!parsed.patterns[1].applyEndPatternLast)
     }
 
+    /// A rule that matches nothing itself may declare a `repository`, and
+    /// the rules under it then see those keys ahead of the grammar's.
+    ///
+    /// The shadowing is what makes it worth reading: HTML's `svg` key
+    /// declares its own `attribute`, and the grammar has one under that
+    /// name too.
+    @Test func readsARepositoryARuleDeclaredForItself() throws {
+        let parsed = try #require(grammar("""
+        {
+          "scopeName": "source.thing",
+          "patterns": [{ "include": "#outer" }],
+          "repository": {
+            "attribute": { "name": "keyword.control", "match": "a" },
+            "outer": {
+              "patterns": [{ "include": "#attribute" }],
+              "repository": {
+                "attribute": { "name": "string.quoted", "match": "b" }
+              }
+            }
+          }
+        }
+        """))
+
+        let outer = try #require(parsed.repository["outer"])
+        #expect(outer.ownRepository["attribute"]?.name == "string.quoted")
+        #expect(outer.scopedRepository?["attribute"]?.name == "string.quoted")
+        #expect(outer.patterns[0].scopedRepository?["attribute"]?.name == "string.quoted")
+
+        let shared = try #require(parsed.repository["attribute"])
+        #expect(shared.ownRepository.isEmpty)
+        #expect(shared.scopedRepository == nil)
+    }
+
     // MARK: - injections
 
     @Test func readsAnInjectionAndItsPriority() throws {

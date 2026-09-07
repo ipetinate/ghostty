@@ -116,6 +116,20 @@ struct TokenizerState {
         /// line boundary.
         var carried: Bool
 
+        /// Where `\G` held **before** this region opened, put back when it
+        /// closes.
+        ///
+        /// `\G` is not the scanner's cursor: it is where the innermost
+        /// `begin` or `while` match stopped, so entering a region moves it
+        /// and leaving one has to move it back. Without the restore, a chain
+        /// of zero-width regions leaves `\G` pointing at the last `begin`
+        /// the chain took, and every `(?!\G)` written as an `end` above it
+        /// then fails at the offset it should have matched — Swift's
+        /// inheritance clause closed one character past the type body's `{`
+        /// and swallowed it, which cost `class T: XCTestCase {` its brace,
+        /// its first `func`, the name, the parentheses and the closing `}`.
+        let anchor: Int
+
         /// The byte offset a **zero-width** `begin` match opened this region
         /// at, and -1 for a `begin` that consumed something or for a region
         /// that has been carried to another line.
@@ -172,10 +186,10 @@ extension TokenizerState.Frame: Equatable {
 }
 
 extension TokenizerState: Equatable {
-    /// `carried`, `emptyEntry` and `atDocumentStart` are deliberately not
-    /// compared. They say where the state is, not what it is, and a state
-    /// handed to the next line has all three settled — so two states that
-    /// differ only in them cannot exist at a line boundary.
+    /// `carried`, `anchor`, `emptyEntry` and `atDocumentStart` are
+    /// deliberately not compared. They say where the state is, not what it
+    /// is, and a state handed to the next line has them all settled — so two
+    /// states that differ only in them cannot exist at a line boundary.
     static func == (lhs: TokenizerState, rhs: TokenizerState) -> Bool {
         lhs.root == rhs.root && lhs.frames == rhs.frames
     }

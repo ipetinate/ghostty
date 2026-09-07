@@ -233,6 +233,92 @@ struct GrammarTokenizerTests {
         #expect(lines[2].scopes(at: 0) == ["source.quote"])
     }
 
+    // MARK: - the continuation anchor
+
+    /// Closing a region puts `\G` back where it was before the region
+    /// opened.
+    ///
+    /// The grammar is Swift's inheritance clause, cut down to the four rules
+    /// that matter and cross-checked against vscode-textmate over the same
+    /// JSON. `#type-identifier` eats `A ` and moves `\G` to 11; closing it
+    /// on `(?!<)` has to move `\G` back to 9, because `#inherited-type`'s
+    /// `end` is `(?!\G)` and it must be allowed to match at 11. Leaving
+    /// `\G` at 11 made that `end` match at 12 instead — one past the `{` —
+    /// so the brace was swallowed, the type body never opened and
+    /// `class T: XCTestCase {` lost its brace, its first `func`, the
+    /// name, the parentheses and the closing `}`. 158 characters of the
+    /// 458-character corpus.
+    @Test func putsTheContinuationAnchorBackWhenARegionCloses() throws {
+        let probe = try #require(GrammarProbe(scope: "source.anchor", grammars: [
+            """
+            {
+              "scopeName": "source.anchor",
+              "patterns": [
+                {
+                  "name": "meta.definition.type",
+                  "begin": "\\\\b(class)\\\\s+(\\\\w+)",
+                  "beginCaptures": {
+                    "1": { "name": "keyword.control" },
+                    "2": { "name": "entity.name.type" }
+                  },
+                  "end": "(?<=\\\\})",
+                  "patterns": [{ "include": "#inheritance-clause" }, { "include": "#type-body" }]
+                }
+              ],
+              "repository": {
+                "inheritance-clause": {
+                  "name": "meta.inheritance-clause",
+                  "begin": "(:)(?=\\\\s*\\\\{)|(:)\\\\s*",
+                  "end": "(?!\\\\G)$|(?=[={}])",
+                  "beginCaptures": { "2": { "name": "punctuation.separator" } },
+                  "patterns": [
+                    {
+                      "begin": "\\\\G",
+                      "end": "(?!\\\\G)$|(?=[={}])",
+                      "patterns": [{ "include": "#inherited-type" }]
+                    }
+                  ]
+                },
+                "inherited-type": {
+                  "name": "entity.other.inherited-class",
+                  "begin": "(?=[\\\\p{L}_])",
+                  "end": "(?!\\\\G)",
+                  "patterns": [{ "include": "#type-identifier" }]
+                },
+                "type-identifier": {
+                  "begin": "([\\\\p{L}_][\\\\p{L}_\\\\p{N}]*)\\\\s*",
+                  "end": "(?!<)",
+                  "beginCaptures": { "1": { "name": "meta.type-name" } }
+                },
+                "type-body": {
+                  "name": "meta.type-body",
+                  "begin": "\\\\{",
+                  "end": "\\\\}",
+                  "beginCaptures": { "0": { "name": "punctuation.section.begin" } },
+                  "endCaptures": { "0": { "name": "punctuation.section.end" } },
+                  "patterns": [{ "name": "storage.type.function", "match": "\\\\bfunc\\\\b" }]
+                }
+              }
+            }
+            """,
+        ]))
+
+        let lines = probe.lines(of: "class T: A {\n    func f\n}")
+
+        #expect(lines[0].scope(at: 0) == "keyword.control")
+        #expect(lines[0].scope(at: 6) == "entity.name.type")
+        #expect(lines[0].scope(at: 7) == "punctuation.separator")
+        #expect(lines[0].scope(at: 9) == "meta.type-name")
+        #expect(lines[0].scope(at: 11) == "punctuation.section.begin")
+        #expect(lines[0].scopes(at: 11).contains("meta.type-body"))
+        #expect(lines[0].state.depth == 2)
+
+        #expect(lines[1].scope(at: 4) == "storage.type.function")
+        #expect(lines[1].range(at: 4) == 4..<8)
+
+        #expect(lines[2].scope(at: 0) == "punctuation.section.end")
+    }
+
     // MARK: - captures
 
     /// A group that took part in no match is skipped, not read as an empty
@@ -316,6 +402,65 @@ struct GrammarTokenizerTests {
         #expect(line.kind(at: 7) == .number)
     }
 
+    /// A capture's own `patterns` see the line before the group, so a rule
+    /// that may only begin after `^`, `;`, `|` or `&` cannot begin in the
+    /// middle of one.
+    ///
+    /// The grammar is shell's `case`, cut down to three rules and
+    /// cross-checked against vscode-textmate over the same JSON. Group 2 of
+    /// the `begin` is `"$1"`, and its patterns offer a command-name rule
+    /// before the string rule. Handing the group over as a slice gave the
+    /// command-name rule a `^` the line never had, so `case "$1" in` came
+    /// out with both quotes painted as a command instead of as string
+    /// punctuation. 142 characters of the 458-character corpus.
+    @Test func showsACaptureTheLineBeforeItButNotTheLineAfter() throws {
+        let probe = try #require(GrammarProbe(scope: "source.prefix", grammars: [
+            """
+            {
+              "scopeName": "source.prefix",
+              "patterns": [
+                {
+                  "name": "meta.case",
+                  "begin": "(?:(\\\\bcase\\\\b)(?:[ \\\\t]*+)(.+?)(?:[ \\\\t]*+)(\\\\bin\\\\b))",
+                  "end": "\\\\besac\\\\b",
+                  "beginCaptures": {
+                    "1": { "name": "keyword.control" },
+                    "2": { "patterns": [{ "include": "#context" }] },
+                    "3": { "name": "keyword.control" }
+                  },
+                  "endCaptures": { "0": { "name": "keyword.control" } }
+                }
+              ],
+              "repository": {
+                "context": {
+                  "patterns": [{ "include": "#command" }, { "include": "#string" }]
+                },
+                "command": {
+                  "name": "entity.name.function",
+                  "match": "(?<=^|;|\\\\||&)[ \\\\t]*[^ \\\\t\\\\n]+"
+                },
+                "string": {
+                  "name": "string.quoted.double",
+                  "begin": "\\"",
+                  "end": "\\"",
+                  "beginCaptures": { "0": { "name": "punctuation.definition.string.begin" } },
+                  "endCaptures": { "0": { "name": "punctuation.definition.string.end" } }
+                }
+              }
+            }
+            """,
+        ]))
+
+        let line = probe.line(#"case "$1" in"#)
+
+        #expect(line.scope(at: 0) == "keyword.control")
+        #expect(line.scope(at: 5) == "punctuation.definition.string.begin")
+        #expect(line.scope(at: 8) == "punctuation.definition.string.end")
+        #expect(line.scopes(at: 6).contains("string.quoted.double"))
+        #expect(!line.scopes(at: 5).contains("entity.name.function"))
+        #expect(line.scope(at: 10) == "keyword.control")
+    }
+
     /// Capture zero is the whole match, and a grammar names it when it wants
     /// the punctuation of a construct coloured separately from the
     /// construct.
@@ -366,6 +511,70 @@ struct GrammarTokenizerTests {
         ]))
 
         #expect(probe.line("go on").scope(at: 0) == "keyword.control")
+    }
+
+    /// A rule may declare a `repository` of its own, and `#key` inside it
+    /// then means that key.
+    ///
+    /// The grammar is Ruby's `method_parameters`, cut down to the rules that
+    /// matter and cross-checked against vscode-textmate over the same JSON.
+    /// `#params` is a key `method-parameters` declares and the grammar has
+    /// none, so reading only the grammar's repository dropped the include
+    /// and left `$self` to the parameter list: `name` in
+    /// `def greet(name, greeting: 1)` came out unpainted and `greeting`
+    /// came out a symbol. HTML's `svg` and `math` keys declare one the same
+    /// way, which is another 79 characters of the 458-character corpus.
+    @Test func resolvesAnIncludeAgainstARulesOwnRepository() throws {
+        let probe = try #require(GrammarProbe(scope: "source.nested", grammars: [
+            """
+            {
+              "scopeName": "source.nested",
+              "patterns": [
+                {
+                  "name": "meta.function",
+                  "begin": "\\\\b(def)\\\\s+(\\\\w+)\\\\s*(\\\\()",
+                  "beginCaptures": {
+                    "1": { "name": "keyword.control" },
+                    "2": { "name": "entity.name.function" },
+                    "3": { "name": "punctuation.definition.parameters" }
+                  },
+                  "end": "\\\\)",
+                  "endCaptures": { "0": { "name": "punctuation.definition.parameters" } },
+                  "patterns": [
+                    {
+                      "begin": "(?=\\\\w)",
+                      "end": "(?=[,)])",
+                      "patterns": [{ "include": "#method-parameters" }]
+                    },
+                    { "include": "#method-parameters" }
+                  ]
+                },
+                { "include": "#symbol" }
+              ],
+              "repository": {
+                "symbol": { "name": "constant.other.symbol", "match": "\\\\b\\\\w+:" },
+                "method-parameters": {
+                  "patterns": [{ "include": "#params" }, { "include": "$self" }],
+                  "repository": {
+                    "params": {
+                      "match": "\\\\G(\\\\w+)",
+                      "captures": { "1": { "name": "variable.parameter" } }
+                    }
+                  }
+                }
+              }
+            }
+            """,
+        ]))
+
+        let line = probe.line("def greet(name, greeting: 1)")
+
+        #expect(line.scope(at: 4) == "entity.name.function")
+        #expect(line.scope(at: 10) == "variable.parameter")
+        #expect(line.range(at: 10) == 10..<14)
+        #expect(line.scope(at: 16) == "variable.parameter")
+        #expect(!line.scopes(at: 16).contains("constant.other.symbol"))
+        #expect(line.scope(at: 27) == "punctuation.definition.parameters")
     }
 
     @Test func resolvesSelfInsideARegion() throws {

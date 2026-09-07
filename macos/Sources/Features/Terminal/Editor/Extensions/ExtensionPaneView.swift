@@ -104,7 +104,9 @@ struct ExtensionPaneView: View {
                         .font(.title2.weight(.semibold))
                         .lineLimit(2)
                     if !versionText.isEmpty {
-                        ExtensionTagView(text: versionText)
+                        ExtensionTagView(
+                            text: versionText,
+                            systemImage: ExtensionVersionTagView.symbol)
                     }
                     if let entry {
                         ExtensionStateBadge(state: store.state(for: entry))

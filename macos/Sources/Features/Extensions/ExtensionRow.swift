@@ -111,7 +111,7 @@ struct ExtensionRow: View {
 
     private var formBody: some View {
         LabeledContent {
-            VStack(alignment: .center, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 4) {
                 trailing(controlSize: .regular)
                 versionTag
             }
@@ -150,7 +150,7 @@ struct ExtensionRow: View {
 
             Spacer(minLength: 8)
 
-            VStack(alignment: .center, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 4) {
                 trailing(controlSize: .regular)
                 versionTag
             }
@@ -368,11 +368,17 @@ struct ExtensionActivityView: View {
 
 struct ExtensionTagView: View {
     let text: String
+    var systemImage: String?
 
     var body: some View {
-        Text(verbatim: text)
-            .foregroundStyle(.secondary)
-            .modifier(ExtensionChipChrome())
+        HStack(spacing: 3) {
+            if let systemImage {
+                Image(systemName: systemImage)
+            }
+            Text(verbatim: text)
+        }
+        .foregroundStyle(.secondary)
+        .modifier(ExtensionChipChrome())
     }
 }
 
@@ -402,6 +408,11 @@ struct ExtensionChipChrome: ViewModifier {
 /// everything else, and both fall back to the system colour when no theme
 /// is loaded.
 struct ExtensionVersionTagView: View {
+    /// `tag`, an SF Symbol since 2019. A version of a published extension is
+    /// a git tag in the registry, so the mark is the thing itself rather
+    /// than a metaphor for it.
+    static let symbol = "tag"
+
     let installed: String?
     let offered: String
 
@@ -410,6 +421,8 @@ struct ExtensionVersionTagView: View {
     var body: some View {
         if let installed {
             HStack(spacing: 3) {
+                Image(systemName: Self.symbol)
+                    .foregroundStyle(.secondary)
                 Text(verbatim: installed)
                     .foregroundStyle(palette.yellow ?? .orange)
                 Text(verbatim: "\u{2192}")
@@ -420,7 +433,7 @@ struct ExtensionVersionTagView: View {
             .modifier(ExtensionChipChrome())
             .help(Text(verbatim: "Installed \(installed), \(offered) available"))
         } else {
-            ExtensionTagView(text: offered)
+            ExtensionTagView(text: offered, systemImage: Self.symbol)
         }
     }
 }

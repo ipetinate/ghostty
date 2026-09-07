@@ -57,7 +57,7 @@ struct SidebarPaneTests {
     @Test func extensionsIsOptOutLikeTheOtherExtras() {
         #expect(SidebarPane.extensions.canBeHidden)
         #expect(SidebarPane.extensions.defaultsKey == "SidebarShowExtensionsPane")
-        #expect(SidebarPane.extensions.symbol == "puzzlepiece")
+        #expect(SidebarPane.extensions.symbol == "square.grid.2x2")
         #expect(SidebarPane.allCases.last == .extensions)
     }
 

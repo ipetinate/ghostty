@@ -223,8 +223,10 @@ struct ExtensionsPanelView: View {
     @ViewBuilder
     private func openInSettings(id: String) -> some View {
         if store.installed.contains(where: { $0.id == id }) {
-            Button("Open in Settings") {
+            Button {
                 ExtensionDocumentTabs.openInSettings(id: id)
+            } label: {
+                Label("Open in Settings", systemImage: "gearshape")
             }
         }
     }

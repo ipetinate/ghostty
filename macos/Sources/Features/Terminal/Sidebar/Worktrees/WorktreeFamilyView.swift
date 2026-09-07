@@ -658,23 +658,37 @@ private struct WorktreeRow: View {
     /// external drive" reads very differently once the drive is back.
     @ViewBuilder
     private var menu: some View {
-        Button("New Terminal Here") { onNewTerminal(worktree.path) }
+        Button {
+            onNewTerminal(worktree.path)
+        } label: {
+            Label("New Terminal Here", systemImage: "plus.square.on.square")
+        }
         if worktree.branch != nil, !worktree.isUnborn {
-            Button("New Worktree from This Branch…") { onBranchFrom(worktree) }
+            Button {
+                onBranchFrom(worktree)
+            } label: {
+                Label("New Worktree from This Branch…", systemImage: "arrow.triangle.branch")
+            }
         }
         ForEach(agents, id: \.self) { agent in
-            Button("New \(agent.displayName) Session Here") {
+            Button {
                 onNewAgentTab(worktree.path, agent)
+            } label: {
+                Label("New \(agent.displayName) Session Here", systemImage: "sparkles")
             }
         }
         Divider()
-        Button("Reveal in Finder") {
+        Button {
             NSWorkspace.shared.activateFileViewerSelecting(
                 [URL(fileURLWithPath: worktree.path)])
+        } label: {
+            Label("Reveal in Finder", systemImage: "folder")
         }
-        Button("Copy Path") {
+        Button {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(worktree.path, forType: .string)
+        } label: {
+            Label("Copy Path", systemImage: "doc.on.doc")
         }
         /// Unlocking and removing share a group because they are steps of
         /// the same errand: a locked worktree is one git refuses to remove,
@@ -684,9 +698,17 @@ private struct WorktreeRow: View {
         if !worktree.isMain {
             Divider()
             if worktree.isLocked {
-                Button("Unlock") { onUnlock(worktree) }
+                Button {
+                    onUnlock(worktree)
+                } label: {
+                    Label("Unlock", systemImage: "lock.open")
+                }
             }
-            Button("Remove Worktree…", role: .destructive) { onRemove(worktree) }
+            Button(role: .destructive) {
+                onRemove(worktree)
+            } label: {
+                Label("Remove Worktree…", systemImage: "trash")
+            }
         }
     }
 }

@@ -229,10 +229,7 @@ struct ExtensionSettingsForm: View {
     }
 
     private var iconSource: ExtensionIconSource? {
-        if let entry = store.index?.extensions.first(where: { $0.id == extensionID }) {
-            return store.icon(for: entry)
-        }
-        return installed?.iconURL.map(ExtensionIconSource.file)
+        store.iconSource(forExtension: extensionID)
     }
 
     private var scopeFooter: String {

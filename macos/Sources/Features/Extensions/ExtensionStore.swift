@@ -245,6 +245,24 @@ final class ExtensionStore: ObservableObject {
         previews[id] = nil
     }
 
+    /// The icon and the name of one extension by id, wherever they are to be
+    /// had: the registry index when it lists the extension, the installed
+    /// copy otherwise.
+    ///
+    /// Asked by id rather than by entry because the callers have only an id:
+    /// a document tab holds a `phantom-extension://` path, and the settings
+    /// form is keyed on the id as well.
+    func iconSource(forExtension id: String) -> ExtensionIconSource? {
+        if let entry = index?.extensions.first(where: { $0.id == id }) { return icon(for: entry) }
+        return installed.first { $0.id == id }?.iconURL.map(ExtensionIconSource.file)
+    }
+
+    func displayName(forExtension id: String) -> String? {
+        if let installed = installed.first(where: { $0.id == id }) { return installed.name }
+        guard let entry = index?.extensions.first(where: { $0.id == id }) else { return nil }
+        return entry.card?.title ?? entry.name
+    }
+
     func icon(for entry: ExtensionIndex.Entry) -> ExtensionIconSource? {
         ExtensionIconSource.of(entry: entry, file: iconURL(for: entry))
     }

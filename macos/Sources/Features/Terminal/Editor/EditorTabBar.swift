@@ -297,8 +297,31 @@ private struct EditorTabItem: View {
 
     private var accent: Color { palette.accent ?? .accentColor }
 
+    /// The name on the tab. A restored tab carries no title — the session
+    /// remembers paths — so an extension tab used to show the id its path is
+    /// built from, `phantom.tailwind`, rather than the extension's name.
+    private var label: String {
+        guard let extensionID else { return tab.name }
+        return tab.title ?? ExtensionStore.shared.displayName(forExtension: extensionID) ?? tab.name
+    }
+
+    /// The extension a `phantom-extension://` tab stands for, or nil for an
+    /// ordinary file.
+    private var extensionID: String? { ExtensionDocument.extensionID(fromPath: tab.path) }
+
+    /// An extension tab wears the extension's own icon, the same artwork the
+    /// store draws, and falls back to the puzzle mark until the image is
+    /// decoded. Read from the cache rather than awaited, because this is also
+    /// what the drag preview renders and an `ImageRenderer` runs no tasks.
     private var tabIcon: FileIcon {
-        tab.symbol.map { .symbol(name: $0, color: .secondary) } ?? icons.icon(forFile: tab.name)
+        if let extensionID {
+            if let source = ExtensionStore.shared.iconSource(forExtension: extensionID),
+               let image = ExtensionIconCache.shared.image(forKey: source.key) {
+                return .image(image)
+            }
+            return .symbol(name: ExtensionDocument.symbol, color: .secondary)
+        }
+        return tab.symbol.map { .symbol(name: $0, color: .secondary) } ?? icons.icon(forFile: tab.name)
     }
 
     var body: some View {
@@ -308,11 +331,15 @@ private struct EditorTabItem: View {
             /// AppKit view and takes every click under it, so laid over the
             /// whole tab it would swallow the one button in here.
             HStack(spacing: 5) {
-                FileIconView(icon: tabIcon, size: 13)
+                if let extensionID {
+                    ExtensionTabMark(extensionID: extensionID, size: 13)
+                } else {
+                    FileIconView(icon: tabIcon, size: 13)
+                }
 
                 pinMark
 
-                Text(tab.name)
+                Text(label)
                     .font(palette.font(size: 11, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
 
@@ -416,7 +443,7 @@ private struct EditorTabItem: View {
                 /// pin does not travel — which is exactly what it does.
                 pinMark
 
-                Text(tab.name)
+                Text(label)
                     .font(palette.font(size: 11, weight: .semibold))
                     .lineLimit(1)
 
@@ -515,5 +542,23 @@ private struct EditorTabItem: View {
             .buttonStyle(.plain)
             .opacity(isHovered || tab.isDirty ? 1 : 0.35)
         }
+    }
+}
+
+/// An extension's icon on its document tab, drawn from the store so the
+/// artwork appears as soon as the registry index or the installed copy can
+/// answer for it.
+///
+/// Its own view, and the only part of the tab that observes the store: a tab
+/// bar redrawing every row whenever an install finishes is a cost the other
+/// tabs have no reason to pay.
+private struct ExtensionTabMark: View {
+    let extensionID: String
+    var size: CGFloat = 13
+
+    @ObservedObject private var store: ExtensionStore = .shared
+
+    var body: some View {
+        ExtensionIconView(source: store.iconSource(forExtension: extensionID), size: size)
     }
 }

@@ -48,7 +48,16 @@ final class GrammarTokenizer {
         /// expanded.
         var candidates = 1024
 
-        /// Times the scanner may go round on one line.
+        /// Times the scanner may go round on one line, before the line's own
+        /// length is taken into account.
+        ///
+        /// The ceiling is there for a grammar that pushes and pops without
+        /// consuming, not for a long line, so the budget a line actually
+        /// gets is this or twice its bytes, whichever is larger — see
+        /// `budget(forLine:)`. A flat ceiling stopped colouring a minified
+        /// stylesheet partway: `macos/Resources/extension-viewer/viewer.css`
+        /// is one line of 21,708 bytes and the scan ran out at byte 16,090,
+        /// leaving the tail plain with no sign of why.
         var iterations = 4096
 
         /// Open regions. A grammar that pushes without popping stops here.
@@ -61,6 +70,17 @@ final class GrammarTokenizer {
         var compiledPatterns = 8192
 
         static let standard = Limits()
+    }
+
+    /// The turns one line may take: the flat ceiling, or two per byte for a
+    /// line long enough to need more.
+    ///
+    /// Linear in the line either way, so the bound the ceiling exists for
+    /// still holds — a rule that makes no progress is stopped by the
+    /// stagnation guard long before this, and a rule that does make progress
+    /// consumes bytes.
+    func budget(forLine line: [UInt8]) -> Int {
+        max(limits.iterations, line.count * 2)
     }
 
     /// The grammar the document is in. `$base` resolves to this one.
@@ -114,7 +134,7 @@ final class GrammarTokenizer {
                 to: line.count,
                 state: state,
                 rootRules: topLevelRules(of: base),
-                budget: limits.iterations,
+                budget: budget(forLine: line),
                 depth: 0,
                 allowsDocumentAnchor: state.atDocumentStart)
             scan(run)

@@ -83,12 +83,6 @@ struct ExtensionSettingsForm: View {
         }
         .formStyle(.grouped)
         .navigationTitle(title)
-        /// This form is pushed inside a `NavigationStack` that itself sits in
-        /// the detail of the settings `NavigationSplitView`, so its title and
-        /// back button float over the content rather than sitting above it.
-        /// Without a background behind them the rows scroll through the
-        /// title, which reads as a drawing fault rather than as a header.
-        .toolbarBackground(.visible, for: .windowToolbar)
         .task {
             lsp.refreshInstalledCommands()
             requirements.load(directory: store.manifestDirectory(for: extensionID))

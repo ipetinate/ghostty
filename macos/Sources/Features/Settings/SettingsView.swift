@@ -40,6 +40,14 @@ struct SettingsRootView: View {
         /// SF Symbol, or nil for a pane that ships its own artwork — the
         /// same shape `SidebarPane.symbol` uses, and for the same reason: the
         /// worktrees mark is this app's own drawing, not one of Apple's.
+        ///
+        /// Extensions is the grid, matching `SidebarPane.extensions.symbol`,
+        /// the store's All tab and its cards. It was `puzzlepiece` here alone
+        /// while every other place had moved to the grid, so the same thing
+        /// carried two marks in one app. `SettingsSectionIconTests` holds the
+        /// two names equal, rather than this reading the pane's — a pane may
+        /// answer nil for artwork of its own, and nil here means the worktree
+        /// drawing.
         var icon: String? {
             switch self {
             case .worktrees: return nil
@@ -49,7 +57,7 @@ struct SettingsRootView: View {
             case .sidebar: return "sidebar.left"
             case .files: return "doc.text"
             case .keyboardShortcuts: return "keyboard"
-            case .extensions: return "puzzlepiece"
+            case .extensions: return "square.grid.2x2"
             case .agents: return "sparkles"
             case .mcp: return "point.3.connected.trianglepath.dotted"
             }

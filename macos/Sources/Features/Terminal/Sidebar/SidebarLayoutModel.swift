@@ -134,6 +134,30 @@ final class SidebarSplitView: NSSplitView {
     /// the key.
     weak var editorCenter: EditorCenter?
 
+    /// Called once at the end of a divider drag, with the sidebar pane's
+    /// final width.
+    ///
+    /// The delegate cannot answer this. `NSSplitView` puts
+    /// `NSSplitViewDividerIndex` in its resize notifications, and since
+    /// macOS 12 it is there for ordinary resize and layout passes too, so
+    /// its presence no longer separates a drag from a layout. `mouseDown`
+    /// does: the drag runs a tracking loop inside it, so `super` returns
+    /// exactly once, at the end, at the width the reader chose.
+    var onDividerDrag: ((CGFloat) -> Void)?
+
+    /// True for the length of that tracking loop, so the controller can tell
+    /// its own re-assertion of the shared width apart from the reader moving
+    /// the divider — and leave the drag alone.
+    private(set) var isDraggingDivider = false
+
+    override func mouseDown(with event: NSEvent) {
+        isDraggingDivider = true
+        super.mouseDown(with: event)
+        isDraggingDivider = false
+        guard let width = arrangedSubviews.first?.frame.width, width > 0 else { return }
+        onDividerDrag?(width)
+    }
+
     /// The standard editing keys, when a field in the sidebar has focus.
     ///
     /// Ghostty binds ⌘V, ⌘C, ⌘X and friends to the *terminal* above the

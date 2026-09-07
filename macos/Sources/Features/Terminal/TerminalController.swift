@@ -66,7 +66,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     /// The split view hosting the sidebar, kept to sync divider position
     /// across all windows in the tab group.
-    private var sidebarSplitView: NSSplitView?
+    private var sidebarSplitView: SidebarSplitView?
 
     /// Layout state shared with the sidebar view (collapse, actions).
     private var sidebarLayout: SidebarLayoutModel?
@@ -178,6 +178,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// only the fallback: `config.sidebarWidth` still wins, and so does any
     /// width dragged to since.
     private var sidebarDefaultWidth: CGFloat = SidebarWidthRule.defaultContent
+    private var isReassertingSidebarWidth = false
 
     /// UserDefaults key holding the app-wide sidebar width. Shared by all
     /// windows so dragging the divider in one tab applies to every tab.
@@ -1786,6 +1787,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         splitView.setHoldingPriority(.defaultLow + 1, forSubviewAt: 0)
         splitView.setHoldingPriority(.defaultLow, forSubviewAt: 1)
         splitView.delegate = self
+        splitView.onDividerDrag = { [weak self] width in
+            self?.persistSidebarWidth(pane: width)
+        }
 
         self.sidebarSplitView = splitView
         self.sidebarDefaultWidth = config.sidebarWidth
@@ -2168,6 +2172,29 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         splitView.setPosition(target, ofDividerAt: 0)
     }
 
+    /// Puts the pane back at the shared width after a layout pass moved it.
+    ///
+    /// The width used to be pinned by a constraint for the first pass and
+    /// then released, which held until the session restore ordered the
+    /// windows front: measured, every split view re-laid out at 400 points
+    /// at that moment, and only the window that then became key was ever
+    /// corrected. A window configured at 480 was 354 by the time it was on
+    /// screen, and the number it wrote down became the app-wide width.
+    ///
+    /// A drag is left alone — that is the one resize that means something —
+    /// and the flag stops the `setPosition` below from arriving back here as
+    /// another resize.
+    private func reassertSidebarWidth() {
+        guard let splitView = sidebarSplitView,
+              !splitView.isDraggingDivider,
+              !isReassertingSidebarWidth,
+              !SidebarCollapseState.shared.isCollapsed
+        else { return }
+        isReassertingSidebarWidth = true
+        defer { isReassertingSidebarWidth = false }
+        applySharedSidebarWidth()
+    }
+
     /// Adds the chrome into the titlebar container, vertically centered
     /// on the traffic lights. Safe to call repeatedly: re-attaches after
     /// titlebar rebuilds (theme changes, appearance syncs).
@@ -2367,12 +2394,20 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
         syncSidebarChromeWidth()
+        reassertSidebarWidth()
+    }
 
-        guard let splitView = sidebarSplitView,
-              window?.isKeyWindow == true,
-              let width = splitView.arrangedSubviews.first?.frame.width,
-              width > 0
-        else { return }
+    /// The one place the app-wide width is written, reached only from a
+    /// divider drag.
+    ///
+    /// It used to be written here from `splitViewDidResizeSubviews`, which
+    /// fires for every layout pass as well. A window being built resizes its
+    /// panes several times before it settles, so a profile with no stored
+    /// width had one written during launch — and from then on the configured
+    /// `sidebar-width` was outranked by a number nobody chose. Measured: a
+    /// 480 default opened at 354, which is a 400 point pane less the activity
+    /// bar, the width of a pass that happened mid-setup.
+    private func persistSidebarWidth(pane width: CGFloat) {
         let content = SidebarWidthRule.content(pane: width, placement: SidebarWidthRule.placement())
         UserDefaults.standard.set(Double(content), forKey: Self.sidebarWidthDefaultsKey)
     }

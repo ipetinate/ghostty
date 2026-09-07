@@ -174,21 +174,16 @@ struct ExtensionRow: View {
 
     // MARK: Shared
 
-    /// Who published the extension, and how many people took it.
+    /// Who published the extension.
     ///
     /// The mark is a signature rather than a person: the line names the
     /// author of a published thing, not the holder of an account, and the
     /// generic person placeholder reads as the second one.
     private func byline(font: Font) -> some View {
-        HStack(spacing: 5) {
-            HStack(spacing: 3) {
-                Image(systemName: Self.authorSymbol)
-                Text(verbatim: subject.author)
-                    .lineLimit(1)
-            }
-            if let downloads = subject.downloads, downloads.total > 0 {
-                ExtensionDownloadsLabel(downloads: downloads, version: subject.offeredVersion)
-            }
+        HStack(spacing: 3) {
+            Image(systemName: Self.authorSymbol)
+            Text(verbatim: subject.author)
+                .lineLimit(1)
         }
         .font(font)
         .foregroundStyle(.secondary)
@@ -196,6 +191,13 @@ struct ExtensionRow: View {
 
     private var versionTag: some View {
         ExtensionVersionTagView(installed: subject.installedVersion, offered: subject.offeredVersion)
+    }
+
+    @ViewBuilder
+    private var downloadsTag: some View {
+        if let downloads = subject.downloads {
+            ExtensionDownloadsTagView(total: downloads.total)
+        }
     }
 
     @ViewBuilder
@@ -210,6 +212,7 @@ struct ExtensionRow: View {
                         .foregroundStyle(.red)
                 }
                 requirementsBadge
+                downloadsTag
                 ExtensionActionButton(
                     state: subject.state,
                     style: .labelled,
@@ -430,36 +433,54 @@ struct ExtensionVersionTagView: View {
     }
 }
 
-/// How often the registry's releases for this extension were downloaded, as
-/// GitHub counted them.
+/// How often this extension's release assets were downloaded, as GitHub
+/// counted them, summed over every published version.
 ///
-/// Shown only above zero. An index built before the registry wrote the key
-/// carries no count at all, and a row answering "0" for every extension
-/// would read as a broken counter rather than as an unwanted extension.
-struct ExtensionDownloadsLabel: View {
-    let downloads: ExtensionIndex.Downloads
-    let version: String
+/// The chip takes the shape of the version chip beside it and differs by
+/// its glyph and its colour, so the two read as one family. The glyph is
+/// the one the Install button in the same row already wears, so the chip
+/// and the button name the same act.
+///
+/// Files, not people. Anyone who let eight versions auto-update was counted
+/// eight times, so this is a true count of downloads and a wrong count of
+/// users: the word beside it is never "users" or "installs".
+///
+/// A row whose entry carries no count draws no chip at all — until the next
+/// registry publish that is every row, so the row has to look right without
+/// it. Unknown and zero are different facts, and the registry writes no key
+/// for the first.
+struct ExtensionDownloadsTagView: View {
+    let total: Int
 
-    /// `square.and.arrow.down`, an SF Symbol since macOS 10.15, and not the
-    /// `arrow.down.circle` the Install button in the same row already wears.
-    static let symbol = "square.and.arrow.down"
+    @ObservedObject private var palette: ThemePalette = .shared
+
+    /// `arrow.down.circle`, the same SF Symbol `ExtensionActionButton`
+    /// gives the install action, and one that has existed since macOS
+    /// 10.15. A name that does not resolve makes SwiftUI drop the whole row
+    /// with no log, so `ExtensionRowTests` asserts it.
+    static let symbol = "arrow.down.circle"
 
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: Self.symbol)
-            Text(verbatim: Self.short(downloads.total))
+            Text(verbatim: Self.short(total))
         }
-        .help(Text(verbatim: help))
+        .foregroundStyle(palette.accent ?? .accentColor)
+        .modifier(ExtensionChipChrome())
+        .help(Text(verbatim: Self.spoken(total)))
+        .accessibilityLabel(Text(verbatim: Self.spoken(total)))
     }
 
-    private var help: String {
-        let total = downloads.total.formatted(.number)
-        guard downloads.current > 0 else { return "\(total) downloads" }
-        return "\(total) downloads, \(downloads.current.formatted(.number)) of \(version)"
-    }
-
+    /// Grouped below a thousand, abbreviated above it. The app has no count
+    /// formatter of its own — `ByteCountFormatter` is the only formatter it
+    /// uses, and that one is for bytes — so this follows the same habit of
+    /// letting Foundation shorten a magnitude that would not fit.
     static func short(_ count: Int) -> String {
         count < 1000 ? count.formatted(.number) : count.formatted(.number.notation(.compactName))
+    }
+
+    static func spoken(_ count: Int) -> String {
+        "\(count.formatted(.number)) downloads"
     }
 }
 

@@ -62,17 +62,35 @@ struct ExtensionRowTests {
     /// row, with no log and no error, so both names are checked here rather
     /// than found missing on somebody's screen.
     @Test func theRowsSymbolsResolve() {
-        for symbol in [ExtensionRow.authorSymbol, ExtensionDownloadsLabel.symbol] {
+        for symbol in [ExtensionRow.authorSymbol, ExtensionDownloadsTagView.symbol] {
             #expect(
                 NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil,
                 "\(symbol) is not an SF Symbol")
         }
     }
 
+    /// The chip and the button beside it name the same act, so they wear
+    /// the same glyph. Changing one without the other splits the word.
+    @Test func theCountWearsTheGlyphTheInstallButtonWears() {
+        #expect(ExtensionDownloadsTagView.symbol == ExtensionActionButton.Action.install.systemImage)
+    }
+
     @Test func theCountIsShortenedOnlyOnceItIsLong() {
-        #expect(ExtensionDownloadsLabel.short(0) == "0")
-        #expect(ExtensionDownloadsLabel.short(999) == "999")
-        #expect(!ExtensionDownloadsLabel.short(3241).isEmpty)
-        #expect(ExtensionDownloadsLabel.short(3241).count < "3241".count + 2)
+        #expect(ExtensionDownloadsTagView.short(0) == "0")
+        #expect(ExtensionDownloadsTagView.short(65) == "65")
+        #expect(ExtensionDownloadsTagView.short(999) == "999")
+        #expect(ExtensionDownloadsTagView.short(3242).count < "3242".count + 2)
+    }
+
+    /// GitHub counts files, not people: eight versions auto-updated is
+    /// eight downloads by one person. The count is true, and calling it
+    /// users or installs would not be.
+    @Test func theCountIsSpokenOfAsDownloadsAndNothingElse() {
+        let spoken = ExtensionDownloadsTagView.spoken(3242)
+
+        #expect(spoken.hasSuffix(" downloads"))
+        #expect(!spoken.contains("user"))
+        #expect(!spoken.contains("install"))
+        #expect(!spoken.contains("people"))
     }
 }

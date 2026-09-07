@@ -233,6 +233,12 @@ struct FileExplorerExcludeTests {
             .map(\.node.path)
     }
 
+    /// Compared by suffix, never against `root.path`. `NSTemporaryDirectory()`
+    /// answers under `/var`, `contentsOfDirectory` hands its results back
+    /// under `/private/var`, and neither `resolvingSymlinksInPath` nor
+    /// `standardizedFileURL` closes that gap — Foundation keeps `/var` and
+    /// `/tmp` unresolved on purpose. An equality against the root is a string
+    /// comparison that fails whatever the search did.
     @Test func itReportsNothingFromInsideAnExcludedDirectory() {
         let root = makeTree()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -240,7 +246,7 @@ struct FileExplorerExcludeTests {
         let found = search("index", in: root, excluding: "vendor")
         #expect(!found.contains { $0.contains("/vendor/") })
         #expect(found.contains { $0.hasSuffix("/src/index.ts") })
-        #expect(found.contains(root.appendingPathComponent("index.ts").path))
+        #expect(found.contains { $0.hasSuffix("/\(root.lastPathComponent)/index.ts") })
     }
 
     /// The excluded directory is not reported either. It is not a result

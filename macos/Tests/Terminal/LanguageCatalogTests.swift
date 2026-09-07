@@ -183,6 +183,11 @@ struct LanguageCatalogTests {
         #expect(catalog.contribution(forFileName: ".env.production")?.language.languageID
             == "bypattern")
         #expect(catalog.contribution(forFileName: "settings.local")?.language.languageID == "byext")
+
+        /// The name that made the field necessary: two suffixes, which the
+        /// extension `local` would otherwise take.
+        #expect(catalog.contribution(forFileName: ".env.dev1.local")?.language.languageID
+            == "bypattern")
     }
 
     /// The case the whole field exists for: a suffix nobody enumerated.

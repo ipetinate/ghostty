@@ -303,10 +303,10 @@ struct LanguageManifestTests {
 
     // MARK: File name patterns
 
-    /// The dialect itself is `FileNamePatternTests`' subject, against the
-    /// table the registry shares. What is checked here is the field: a bad
-    /// element costs that element, the survivors are canonical, and a pattern
-    /// that would reach outside the file it is deciding about never lands.
+    /// The dialect itself is `GlobPatternTests`' subject, against the table
+    /// the registry shares. What is checked here is the field: a bad element
+    /// costs that element, the survivors are canonical, and a pattern that
+    /// would reach outside the file it is deciding about never lands.
     @Test func patternsAreCanonicalAndOneBadElementCostsThatElement() throws {
         let manifest = try #require(parse(#"""
         {
@@ -314,16 +314,19 @@ struct LanguageManifestTests {
           "contributes": {
             "languages": [{
               "languageId": "dotenv",
-              "fileNamePatterns": [".ENV.*", 7, null, "  *.env  ", "../*.env", "*.{a,b}", ".env.*"]
+              "fileNamePatterns": [
+                ".ENV.*", 7, null, "  *.env  ", "../*.env", "*.[ab]", "{a,b", ".env.*", "*.{tf,hcl}"
+              ]
             }]
           }
         }
         """#))
-        #expect(manifest.languages.first?.filePatterns == [".env.*", "*.env"])
+        #expect(manifest.languages.first?.filePatterns.map(\.source)
+            == [".env.*", "*.env", "*.{tf,hcl}"])
     }
 
     @Test func patternsAreCappedAndTheLanguageSurvivesTheCap() throws {
-        let patterns = (0..<(FileNamePattern.maxPatterns + 10))
+        let patterns = (0..<(GlobPattern.maxPatternsPerLanguage + 10))
             .map { #""p\#($0).*""# }
             .joined(separator: ", ")
         let manifest = try #require(parse(#"""
@@ -339,7 +342,7 @@ struct LanguageManifestTests {
         }
         """#))
         let language = try #require(manifest.languages.first)
-        #expect(language.filePatterns.count == FileNamePattern.maxPatterns)
+        #expect(language.filePatterns.count == GlobPattern.maxPatternsPerLanguage)
         #expect(language.fileExtensions == ["env"])
     }
 

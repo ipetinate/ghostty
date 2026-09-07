@@ -432,10 +432,10 @@ struct LanguageContribution: Equatable, Sendable {
     /// not decide anything — `mix.lock`, `go.mod`.
     let fileNames: [String]
 
-    /// Lower-cased globs matched against a file's name, for the languages
-    /// whose set of names is open — `.env.*`. See `FileNamePattern` for the
-    /// dialect and for why it is only two characters wide.
-    let filePatterns: [String]
+    /// Globs matched against a file's name, compiled at parse, for the
+    /// languages whose set of names is open — `.env.*`, `.env.*.local`. See
+    /// `GlobPattern` for the dialect.
+    let filePatterns: [GlobPattern]
 
     let lineComment: String?
     let blockComment: BlockComment?
@@ -463,7 +463,7 @@ struct LanguageContribution: Equatable, Sendable {
         ["lang:" + languageID]
             + fileExtensions.map { "ext:" + $0 }
             + fileNames.map { "name:" + $0 }
-            + filePatterns.map { "pattern:" + $0 }
+            + filePatterns.map { "pattern:" + $0.source }
     }
 
     // MARK: Parsing
@@ -559,18 +559,23 @@ struct LanguageContribution: Equatable, Sendable {
         .map { $0 }
     }
 
-    /// Globs, in the canonical form `FileNamePattern.valid` defines, capped
-    /// at `FileNamePattern.maxPatterns` rather than at `maxFileTypes`: each
-    /// one is work done per file the reader opens, where a file name is a
-    /// dictionary lookup.
-    static func filePatterns(from value: Any?) -> [String] {
+    /// Globs, compiled by `GlobPattern.fileNamePattern`, capped at
+    /// `GlobPattern.maxPatternsPerLanguage` rather than at `maxFileTypes`:
+    /// each one is work done per file the reader opens, where a file name is
+    /// a dictionary lookup.
+    ///
+    /// Compiled here rather than at each lookup so a pattern is parsed once
+    /// per install and not once per file opened, and so a pattern the dialect
+    /// refuses costs the manifest that entry at the same moment every other
+    /// bad field does.
+    static func filePatterns(from value: Any?) -> [GlobPattern] {
         let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
         var seen: Set<String> = []
-        return raw.compactMap { candidate -> String? in
-            guard let text = FileNamePattern.valid(candidate) else { return nil }
-            return seen.insert(text).inserted ? text : nil
+        return raw.compactMap { candidate -> GlobPattern? in
+            guard let pattern = GlobPattern.fileNamePattern(candidate) else { return nil }
+            return seen.insert(pattern.source).inserted ? pattern : nil
         }
-        .prefix(FileNamePattern.maxPatterns)
+        .prefix(GlobPattern.maxPatternsPerLanguage)
         .map { $0 }
     }
 

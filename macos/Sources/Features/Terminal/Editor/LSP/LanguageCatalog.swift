@@ -273,9 +273,7 @@ struct LanguageCatalog: Equatable {
         }
 
         if let byPattern = contributed.first(where: { candidate in
-            candidate.isActive && candidate.language.filePatterns.contains {
-                FileNamePattern.matches($0, name: lowered)
-            }
+            candidate.isActive && candidate.language.filePatterns.contains { $0.matches(lowered) }
         }) {
             return byPattern
         }

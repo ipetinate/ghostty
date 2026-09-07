@@ -39,6 +39,30 @@ struct ExtensionRow: View {
             }
         }
 
+        /// The version the reader has, when it is not the version on offer.
+        /// Nil on every row that is not waiting for an update, which is what
+        /// keeps such a row looking exactly as it did.
+        var installedVersion: String? {
+            guard case .entry(_, .updateAvailable(let installed, _)) = self else { return nil }
+            return installed
+        }
+
+        var offeredVersion: String {
+            switch self {
+            case .entry(let entry, let state):
+                if case .updateAvailable(_, let available) = state { return available }
+                return entry.version
+            case .orphan(let installed): return installed.version
+            }
+        }
+
+        var downloads: ExtensionIndex.Downloads? {
+            switch self {
+            case .entry(let entry, _): return entry.downloads
+            case .orphan: return nil
+            }
+        }
+
         var state: ExtensionState {
             switch self {
             case .entry(_, let state): return state
@@ -70,6 +94,12 @@ struct ExtensionRow: View {
         }
     }
 
+    /// `signature`, an SF Symbol since macOS 10.15 — three releases before
+    /// this app's deployment target, and old enough that no build it ships
+    /// to can fail to resolve it. A name that does not resolve makes SwiftUI
+    /// drop the whole row silently, so the age matters more than the shape.
+    static let authorSymbol = "signature"
+
     static func versionText(_ entry: ExtensionIndex.Entry, state: ExtensionState) -> String {
         if case .updateAvailable(let installed, let available) = state {
             return "\(installed) \u{2192} \(available)"
@@ -81,20 +111,17 @@ struct ExtensionRow: View {
 
     private var formBody: some View {
         LabeledContent {
-            trailing(controlSize: .regular)
+            VStack(alignment: .trailing, spacing: 4) {
+                trailing(controlSize: .regular)
+                versionTag
+            }
         } label: {
             HStack(alignment: .center, spacing: 10) {
                 ExtensionIconView(source: icon, size: 28)
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(verbatim: subject.title)
-                            .lineLimit(1)
-                        ExtensionTagView(text: subject.versionText)
-                    }
-                    Text(verbatim: subject.author)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(verbatim: subject.title)
                         .lineLimit(1)
+                    byline(font: .caption)
                     if let error {
                         Text(verbatim: error)
                             .font(.caption)
@@ -115,21 +142,18 @@ struct ExtensionRow: View {
         HStack(spacing: 12) {
             ExtensionIconView(source: icon, size: 40)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(verbatim: subject.title)
-                        .font(palette.font(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    ExtensionTagView(text: subject.versionText)
-                }
-                Text(verbatim: subject.author)
-                    .font(palette.font(size: 11))
-                    .foregroundStyle(.secondary)
+                Text(verbatim: subject.title)
+                    .font(palette.font(size: 13, weight: .semibold))
                     .lineLimit(1)
+                byline(font: palette.font(size: 11))
             }
 
             Spacer(minLength: 8)
 
-            trailing(controlSize: .regular)
+            VStack(alignment: .trailing, spacing: 4) {
+                trailing(controlSize: .regular)
+                versionTag
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
@@ -149,6 +173,30 @@ struct ExtensionRow: View {
     }
 
     // MARK: Shared
+
+    /// Who published the extension, and how many people took it.
+    ///
+    /// The mark is a signature rather than a person: the line names the
+    /// author of a published thing, not the holder of an account, and the
+    /// generic person placeholder reads as the second one.
+    private func byline(font: Font) -> some View {
+        HStack(spacing: 5) {
+            HStack(spacing: 3) {
+                Image(systemName: Self.authorSymbol)
+                Text(verbatim: subject.author)
+                    .lineLimit(1)
+            }
+            if let downloads = subject.downloads, downloads.total > 0 {
+                ExtensionDownloadsLabel(downloads: downloads, version: subject.offeredVersion)
+            }
+        }
+        .font(font)
+        .foregroundStyle(.secondary)
+    }
+
+    private var versionTag: some View {
+        ExtensionVersionTagView(installed: subject.installedVersion, offered: subject.offeredVersion)
+    }
 
     @ViewBuilder
     private func trailing(controlSize: ControlSize) -> some View {
@@ -328,14 +376,90 @@ struct ExtensionTagView: View {
 
     var body: some View {
         Text(verbatim: text)
+            .foregroundStyle(.secondary)
+            .modifier(ExtensionChipChrome())
+    }
+}
+
+/// The capsule every chip in the store is drawn in, so the version tag and
+/// the plain tag cannot drift apart in size, weight or radius.
+struct ExtensionChipChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
             .font(.caption2.weight(.semibold).monospacedDigit())
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
             .background(
                 Capsule().fill(Color.secondary.opacity(0.15))
             )
-            .foregroundStyle(.secondary)
             .lineLimit(1)
+    }
+}
+
+/// The version chip that sits under a row's button.
+///
+/// With nothing to update to it is one plain version, drawn exactly as any
+/// other tag. With an update waiting it reads `installed -> offered`, and
+/// the two halves take the theme's own colours: the version on this machine
+/// in the theme's yellow, the one it could become in the theme's green.
+/// Both come from the palette rather than from `Color.orange` and
+/// `Color.green`, so a light theme colours them the way it colours
+/// everything else, and both fall back to the system colour when no theme
+/// is loaded.
+struct ExtensionVersionTagView: View {
+    let installed: String?
+    let offered: String
+
+    @ObservedObject private var palette: ThemePalette = .shared
+
+    var body: some View {
+        if let installed {
+            HStack(spacing: 3) {
+                Text(verbatim: installed)
+                    .foregroundStyle(palette.yellow ?? .orange)
+                Text(verbatim: "\u{2192}")
+                    .foregroundStyle(.secondary)
+                Text(verbatim: offered)
+                    .foregroundStyle(palette.success ?? .green)
+            }
+            .modifier(ExtensionChipChrome())
+            .help(Text(verbatim: "Installed \(installed), \(offered) available"))
+        } else {
+            ExtensionTagView(text: offered)
+        }
+    }
+}
+
+/// How often the registry's releases for this extension were downloaded, as
+/// GitHub counted them.
+///
+/// Shown only above zero. An index built before the registry wrote the key
+/// carries no count at all, and a row answering "0" for every extension
+/// would read as a broken counter rather than as an unwanted extension.
+struct ExtensionDownloadsLabel: View {
+    let downloads: ExtensionIndex.Downloads
+    let version: String
+
+    /// `square.and.arrow.down`, an SF Symbol since macOS 10.15, and not the
+    /// `arrow.down.circle` the Install button in the same row already wears.
+    static let symbol = "square.and.arrow.down"
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: Self.symbol)
+            Text(verbatim: Self.short(downloads.total))
+        }
+        .help(Text(verbatim: help))
+    }
+
+    private var help: String {
+        let total = downloads.total.formatted(.number)
+        guard downloads.current > 0 else { return "\(total) downloads" }
+        return "\(total) downloads, \(downloads.current.formatted(.number)) of \(version)"
+    }
+
+    static func short(_ count: Int) -> String {
+        count < 1000 ? count.formatted(.number) : count.formatted(.number.notation(.compactName))
     }
 }
 

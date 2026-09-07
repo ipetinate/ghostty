@@ -1,6 +1,19 @@
 import Foundation
 
 struct ExtensionIndex: Equatable, Sendable {
+    /// How often an extension's release assets were downloaded from GitHub,
+    /// as the registry's build step folded them into the index.
+    ///
+    /// GitHub has counted every one of those downloads since the first
+    /// release, so the number is retroactive and needs nothing from this
+    /// app: no request, no token, no report of its own installs. An index
+    /// built before the registry started writing the key carries none, which
+    /// is why the whole value is optional rather than a zero.
+    struct Downloads: Equatable, Sendable {
+        let total: Int
+        let current: Int
+    }
+
     struct Entry: Identifiable, Equatable, Sendable {
         let id: String
         let name: String
@@ -14,6 +27,7 @@ struct ExtensionIndex: Equatable, Sendable {
         let downloadURL: URL
         let sha256: String
         let bytes: Int
+        var downloads: Downloads?
         var card: ExtensionCard?
         var categories: [String] = []
     }
@@ -116,9 +130,23 @@ extension ExtensionIndex.Entry {
             downloadURL: downloadURL,
             sha256: sha256,
             bytes: bytes,
+            downloads: downloads(json["downloads"]),
             card: (json["card"] as? [String: Any]).flatMap(ExtensionCard.parse),
             categories: displayList(json["categories"])
         )
+    }
+
+    /// Reads the entry's download counts, and refuses anything but two
+    /// counts that could be counts: a negative total, or one this build
+    /// cannot read, leaves the entry with none, and the store then shows
+    /// nothing rather than a number it made up.
+    static func downloads(_ value: Any?) -> ExtensionIndex.Downloads? {
+        guard let json = value as? [String: Any],
+              let total = ExtensionIndex.integer(json["total"]),
+              total >= 0
+        else { return nil }
+        let current = ExtensionIndex.integer(json["current"]) ?? 0
+        return ExtensionIndex.Downloads(total: total, current: max(0, min(current, total)))
     }
 
     static func secureURL(_ value: Any?) -> URL? {

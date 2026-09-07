@@ -178,6 +178,48 @@ struct ExtensionIndexTests {
         #expect(!entry.summary.contains("\n"))
     }
 
+    @Test func readsTheDownloadCountsTheRegistryFolderedIn() throws {
+        let counted = Self.entry(["downloads": ["total": 530, "current": 12]])
+        let index = try ExtensionIndex.parse(Self.index(entries: [counted]))
+
+        let entry = try #require(index.extensions.first)
+        #expect(entry.downloads == ExtensionIndex.Downloads(total: 530, current: 12))
+    }
+
+    @Test func anIndexWithoutDownloadCountsCarriesNone() throws {
+        let index = try ExtensionIndex.parse(Self.index(entries: [Self.lua]))
+
+        #expect(try #require(index.extensions.first).downloads == nil)
+    }
+
+    @Test func refusesADownloadCountItCannotRead() throws {
+        let refused: [Any] = [
+            ["total": "530"],
+            ["total": -1],
+            ["total": true],
+            ["current": 12],
+            530,
+            "530",
+        ]
+        for value in refused {
+            let index = try ExtensionIndex.parse(Self.index(entries: [Self.entry(["downloads": value])]))
+            #expect(try #require(index.extensions.first).downloads == nil, "\(value)")
+        }
+    }
+
+    @Test func aDownloadCountWithoutItsCurrentVersionCountsZero() throws {
+        let index = try ExtensionIndex.parse(Self.index(entries: [Self.entry(["downloads": ["total": 530]])]))
+
+        #expect(try #require(index.extensions.first).downloads == ExtensionIndex.Downloads(total: 530, current: 0))
+    }
+
+    @Test func aCurrentCountNeverPassesTheTotal() throws {
+        let index = try ExtensionIndex.parse(
+            Self.index(entries: [Self.entry(["downloads": ["total": 10, "current": 99]])]))
+
+        #expect(try #require(index.extensions.first).downloads == ExtensionIndex.Downloads(total: 10, current: 10))
+    }
+
     @Test func aMissingOrMalformedGeneratedAtIsNil() throws {
         let json: [String: Any] = ["schemaVersion": 1, "generatedAt": "yesterday", "extensions": []]
         let index = try ExtensionIndex.parse(JSONSerialization.data(withJSONObject: json))

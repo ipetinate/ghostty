@@ -251,6 +251,14 @@ final class ThemePalette: ObservableObject {
         colors.count > 1 ? Color(nsColor: colors[1]) : nil
     }
 
+    /// ANSI index 2 (Green) — the theme's own "this one is good" colour, the
+    /// counterpart to `danger`. A version the reader could move up to, a
+    /// check that passed: the same green the terminal below the panel is
+    /// already drawing them in.
+    var success: Color? {
+        colors.count > 2 ? Color(nsColor: colors[2]) : nil
+    }
+
     /// Whether the theme reads as light, which decides whether app windows
     /// take light or dark chrome regardless of the system setting.
     var isLightBackground: Bool {

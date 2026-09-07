@@ -308,7 +308,7 @@ enum LanguageTrustGate {
             languageName: language?.displayName ?? definition.languageID,
             command: definition.command,
             arguments: definition.arguments,
-            resolvedPath: subject.resolvedPath,
+            resolvedPath: subject.resolvedPath ?? definition.command,
             manifestPath: provenance.manifestPath,
             change: change,
             initializationOptionsJSON: definition.initializationOptionsJSON
@@ -333,7 +333,7 @@ enum LanguageTrustGate {
             languageName: formatter.extensions.sorted().map { "." + $0 }.joined(separator: ", "),
             command: formatter.command,
             arguments: formatter.arguments,
-            resolvedPath: subject.resolvedPath,
+            resolvedPath: subject.resolvedPath ?? formatter.command,
             manifestPath: provenance.manifestPath,
             change: change,
             role: .formatter(tool: formatter.displayName)

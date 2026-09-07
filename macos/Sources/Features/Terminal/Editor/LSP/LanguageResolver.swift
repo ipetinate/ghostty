@@ -308,7 +308,7 @@ final class LanguageResolver: ObservableObject {
     /// and no root.
     func trustVerdict(
         for contributed: LanguageCatalog.Contributed,
-        resolvedPath: String,
+        resolvedPath: String?,
         workspaceRoot: String? = nil
     ) -> LanguageTrust.Verdict? {
         guard let server = contributed.language.server else { return nil }

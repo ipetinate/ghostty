@@ -79,9 +79,13 @@ enum ContributedStatus: Equatable {
         /// anything, and looking the binary up on `PATH` from a settings
         /// screen would block the main actor to answer a question the row
         /// does not need answered.
+        /// The path the probe found, or nil while it has not answered and
+        /// for a program that is not installed. A trust record holds where
+        /// the program was when it was approved, so handing this the bare
+        /// command name reported "the path changed" every single time.
         guard let verdict = LanguageResolver.shared.trustVerdict(
             for: contributed,
-            resolvedPath: server.command
+            resolvedPath: LSPCenter.shared.installedPath(forCommand: server.command)
         ) else {
             return .noServer
         }

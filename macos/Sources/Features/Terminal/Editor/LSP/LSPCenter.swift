@@ -179,6 +179,17 @@ final class LSPCenter: ObservableObject {
     /// they already have.
     @Published private(set) var installedCommands: Set<String> = []
 
+    /// Where each installed command was found, from the same probe that
+    /// filled `installedCommands`.
+    ///
+    /// The probe already resolved these paths and threw them away, which
+    /// left every caller that needed one to either resolve again on the main
+    /// thread or make do with the bare command name. Settings did the
+    /// second, and compared a bare name against the absolute path a trust
+    /// record holds — so every approved extension read "Approval Out of
+    /// Date" for as long as the feature has existed.
+    @Published private(set) var installedPaths: [String: String] = [:]
+
     /// Whether the probe has answered at least once. See `installedCommands`.
     @Published private(set) var hasProbedInstalls = false
 
@@ -272,15 +283,18 @@ final class LSPCenter: ObservableObject {
             Self.contributedServers().map { Self.effectiveDefinition($0).command }
         )
         Task { [weak self] in
-            let found = await Task.detached(priority: .utility) { () -> Set<String> in
+            let found = await Task.detached(priority: .utility) { () -> [String: String] in
                 let searchPath = LoginEnvironment.executableSearchPath()
-                return commands.filter { LSPProcess.locate($0, searchPath: searchPath) != nil }
+                return commands.reduce(into: [:]) { paths, command in
+                    paths[command] = LSPProcess.locate(command, searchPath: searchPath)
+                }
             }.value
 
             guard let self else { return }
             self.isProbingInstalls = false
             self.hasProbedInstalls = true
-            self.installedCommands = found
+            self.installedPaths = found
+            self.installedCommands = Set(found.keys)
 
             guard self.probeRequestedAgain else { return }
             self.probeRequestedAgain = false
@@ -293,6 +307,12 @@ final class LSPCenter: ObservableObject {
     /// ask `hasProbedInstalls` to tell that apart from a real absence.
     func isInstalled(_ server: LSPServerDefinition) -> Bool {
         installedCommands.contains(Self.effectiveDefinition(server).command)
+    }
+
+    /// Where a command was found, or nil when the probe has not answered or
+    /// did not find it. The absolute path a trust record was written against.
+    func installedPath(forCommand command: String) -> String? {
+        installedPaths[command]
     }
 
     /// Watches the `PATH` directories so an install is noticed as it happens.

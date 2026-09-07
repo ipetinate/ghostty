@@ -125,7 +125,14 @@ enum LanguageTrust {
         /// The absolute path `LSPProcess.locate` returned. The caller
         /// resolves first: a command that cannot be found has nothing to
         /// approve, and "not installed" is not a trust answer.
-        let resolvedPath: String
+        /// Where the program is on this machine right now.
+        ///
+        /// **Nil means "not known", never "not there".** A caller that has
+        /// not resolved the command cannot claim its path changed, so a nil
+        /// skips the path comparison and leaves the rest of the checks to
+        /// speak. Passing the bare command name instead of nil is what made
+        /// every approved extension read as out of date.
+        let resolvedPath: String?
 
         /// The workspace the file being edited belongs to, when known.
         let workspaceRoot: String?
@@ -195,8 +202,9 @@ enum LanguageTrust {
         if !LanguageServerContribution.isLaunchable(subject.command) {
             return .deny(.unsafeCommand)
         }
-        if let root = subject.workspaceRoot, isInside(subject.resolvedPath, root: root) {
-            return .deny(.commandInsideWorkspace(path: subject.resolvedPath))
+        if let root = subject.workspaceRoot, let path = subject.resolvedPath,
+           isInside(path, root: root) {
+            return .deny(.commandInsideWorkspace(path: path))
         }
 
         if provenance.scope == .bundled { return .allow }
@@ -217,7 +225,7 @@ enum LanguageTrust {
             if record.manifestPath != provenance.manifestPath {
                 return .ask(.manifestMoved(previous: record.manifestPath))
             }
-            if program.resolvedPath != subject.resolvedPath {
+            if let path = subject.resolvedPath, program.resolvedPath != path {
                 return .ask(.commandPathChanged(previous: program.resolvedPath))
             }
             return .allow
@@ -247,7 +255,11 @@ enum LanguageTrust {
             recordVersion: LanguageTrustStore.currentRecordVersion,
             digest: subject.digest,
             command: subject.command,
-            resolvedPath: subject.resolvedPath,
+            /// A decision is only ever taken from a launch, where the
+            /// command has just been resolved, so this is never nil in
+            /// practice. Falling back to the command name would write a
+            /// record that can never match again.
+            resolvedPath: subject.resolvedPath ?? subject.command,
             manifestPath: manifestPath,
             decision: decision,
             decidedAt: date,

@@ -69,6 +69,12 @@ final class GrammarTokenizer {
     private let store: GrammarStore
     private let limits: Limits
 
+    /// Every injection this document could take, resolved once. The scope
+    /// stack decides which of them are in play at a position; which of them
+    /// exist at all is a fact about the store and cannot change under a
+    /// tokenizer.
+    private let injections: [ResolvedInjection]
+
     private var compiled: [String: PatternSlot] = [:]
     private var expansions: [ObjectIdentifier: [ResolvedRule]] = [:]
     private var nextSlotID = 0
@@ -78,12 +84,14 @@ final class GrammarTokenizer {
         self.store = store
         self.base = base
         self.limits = limits
+        self.injections = store.injections(forRootScope: base.scopeName)
     }
 
     init(store: GrammarStore, grammar: Grammar, limits: Limits = .standard) {
         self.store = store
         self.base = grammar
         self.limits = limits
+        self.injections = store.injections(forRootScope: grammar.scopeName)
     }
 
     /// The state a document starts in: nothing open, the grammar's own
@@ -513,7 +521,7 @@ private extension GrammarTokenizer {
         let inner = top.map { expansion(of: $0.rule, in: $0.grammar) } ?? run.rootRules
 
         var result: [Candidate] = []
-        let injected = activeInjections(matching: scopes, grammar: top?.grammar)
+        let injected = activeInjections(matching: scopes)
 
         append(injected, priority: .before, to: &result)
         let end = endCandidate(of: top)
@@ -534,8 +542,8 @@ private extension GrammarTokenizer {
         return candidate(pattern: pattern, source: .end)
     }
 
-    func append(_ injected: [ActiveInjection], priority: ScopeSelector.Priority, to result: inout [Candidate]) {
-        for injection in injected where injection.priority == priority {
+    func append(_ injected: [ResolvedInjection], priority: ScopeSelector.Priority, to result: inout [Candidate]) {
+        for injection in injected where injection.selector.priority == priority {
             for resolved in expansion(of: injection.rule, in: injection.grammar) {
                 guard result.count < limits.candidates else { return }
                 guard let pattern = resolved.rule.entryPattern else { continue }
@@ -544,27 +552,17 @@ private extension GrammarTokenizer {
         }
     }
 
-    /// Injections come from the document's own grammar and from the grammar
-    /// the open region belongs to, and each is expanded against the grammar
-    /// that declared it — an injected `#key` means the declaring grammar's
-    /// repository, not the document's.
+    /// The injections whose selector matches the stack in force here.
     ///
-    /// Not from every grammar installed. A grammar that wants its rules in
-    /// somebody else's document declares `injectTo` in its manifest, and
-    /// wiring that up is the catalog's job, not the tokenizer's — this
-    /// reads the `injections` key of a grammar already in play.
-    func activeInjections(matching scopes: [String], grammar: Grammar?) -> [ActiveInjection] {
-        var result = active(base.injections, of: base, matching: scopes)
-        if let grammar, grammar !== base {
-            result += active(grammar.injections, of: grammar, matching: scopes)
-        }
-        return result
-    }
-
-    func active(_ injections: [GrammarInjection], of grammar: Grammar, matching scopes: [String]) -> [ActiveInjection] {
-        injections
-            .filter { $0.selector.matches(scopes) }
-            .map { ActiveInjection(rule: $0.rule, grammar: grammar, priority: $0.selector.priority) }
+    /// Re-asked every time the stack changes, which is what makes an
+    /// injection follow the region it was written for: PHP's `<?php` rule
+    /// applies in the HTML shell and inside a tag's attributes, and its
+    /// selector says so by excluding `meta.embedded` — so the rule leaves
+    /// as soon as it has taken the document into PHP, and cannot open a
+    /// second embedded block inside the first.
+    func activeInjections(matching scopes: [String]) -> [ResolvedInjection] {
+        guard !injections.isEmpty else { return [] }
+        return injections.filter { $0.selector.matches(scopes) }
     }
 
     func candidate(pattern: String, source: Candidate.Source) -> Candidate {
@@ -880,14 +878,6 @@ private extension GrammarTokenizer {
         let candidate: Candidate
         let range: Range<Int>
         let groups: [Range<Int>?]
-    }
-
-    /// An injection the current scope stack matched, with the grammar that
-    /// declared it so its own includes resolve where the author meant.
-    struct ActiveInjection {
-        let rule: GrammarRule
-        let grammar: Grammar
-        let priority: ScopeSelector.Priority
     }
 
     struct CachedMatch {

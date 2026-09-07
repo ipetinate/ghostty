@@ -507,40 +507,150 @@ struct GrammarTokenizerTests {
 
     /// An injected `#key` is the repository of the grammar that declared
     /// the injection, not of the document. Both grammars here have a `mark`
-    /// entry, the guest's injection asks for `#mark`, and the guest's is the
-    /// one that has to answer.
+    /// entry, the guest injects `#mark`, and the guest's is the one that has
+    /// to answer.
     ///
     /// The injection is also only in play where its selector says: inside
-    /// the guest's own region, and not on the `TODO` after it.
+    /// the host's own region, and not on the `TODO` after it.
     @Test func resolvesAnInjectionsIncludeInTheGrammarThatDeclaredIt() throws {
+        let probe = try #require(GrammarProbe(
+            scope: "source.host",
+            grammars: [
+                """
+                {
+                  "scopeName": "source.host",
+                  "patterns": [{ "name": "meta.block", "begin": "<<", "end": ">>" }],
+                  "repository": { "mark": { "name": "invalid.illegal", "match": "TODO" } }
+                }
+                """,
+                """
+                {
+                  "scopeName": "source.guest",
+                  "injectionSelector": "L:meta.block",
+                  "patterns": [{ "include": "#mark" }],
+                  "repository": { "mark": { "name": "constant.character.escape", "match": "TODO" } }
+                }
+                """,
+            ],
+            injectTo: ["source.guest": ["source.host"]]))
+
+        let line = probe.line("<< TODO >> TODO")
+        #expect(line.range(at: 3) == 3..<7)
+        #expect(line.scopes(at: 3) == ["source.host", "meta.block", "constant.character.escape"])
+        #expect(line.scopes(at: 11) == ["source.host"])
+    }
+
+    /// A grammar reaches somebody else's document only because a manifest
+    /// asked. Without the `injectTo` half, the same two grammars leave the
+    /// document alone.
+    @Test func leavesAGrammarOutWhenNoManifestAskedForIt() throws {
+        let probe = try #require(GrammarProbe(scope: "source.host", grammars: [
+            """
+            {
+              "scopeName": "source.host",
+              "patterns": [{ "name": "meta.block", "begin": "<<", "end": ">>" }]
+            }
+            """,
+            """
+            {
+              "scopeName": "source.guest",
+              "injectionSelector": "L:meta.block",
+              "patterns": [{ "name": "constant.character.escape", "match": "TODO" }]
+            }
+            """,
+        ]))
+
+        #expect(probe.line("<< TODO >>").scopes(at: 3) == ["source.host", "meta.block"])
+    }
+
+    /// Injections are the **root** grammar's, and a grammar reached through
+    /// an `include` contributes none of its own.
+    ///
+    /// The reference implementation reads them once, from the grammar the
+    /// document started in, and PHP depends on it: `text.html.php` declares
+    /// the rule that enters `<?php`, and `source.php` — which is only ever
+    /// the guest — declares nothing. A guest allowed to inject into every
+    /// host that includes it would enter a second embedded block inside the
+    /// first.
+    @Test func takesNoInjectionFromAGrammarItMerelyIncludes() throws {
         let probe = try #require(GrammarProbe(scope: "source.host", grammars: [
             """
             {
               "scopeName": "source.host",
               "patterns": [
                 { "name": "meta.block", "begin": "<<", "end": ">>", "patterns": [{ "include": "source.guest" }] }
-              ],
-              "repository": { "mark": { "name": "invalid.illegal", "match": "TODO" } }
+              ]
             }
             """,
             """
             {
               "scopeName": "source.guest",
               "patterns": [{ "name": "meta.guest", "begin": "\\\\[", "end": "\\\\]" }],
-              "repository": { "mark": { "name": "constant.character.escape", "match": "TODO" } },
               "injections": {
-                "L:meta.guest": { "patterns": [{ "include": "#mark" }] }
+                "L:meta.block": { "patterns": [{ "name": "constant.character.escape", "match": "TODO" }] }
               }
             }
             """,
         ]))
 
-        let line = probe.line("<< [ TODO ] >> TODO")
-        #expect(line.range(at: 5) == 5..<9)
-        #expect(line.scopes(at: 5) == [
-            "source.host", "meta.block", "meta.guest", "constant.character.escape",
-        ])
-        #expect(line.scopes(at: 15) == ["source.host"])
+        #expect(probe.line("<< TODO >>").scopes(at: 3) == ["source.host", "meta.block"])
+    }
+
+    /// The shape PHP is coloured by: a selector that lets the injection
+    /// into the document's shell and keeps it out of the region it opened
+    /// there, so `<?php` cannot be entered twice.
+    @Test func withdrawsAnInjectionFromTheRegionItOpened() throws {
+        let probe = try #require(GrammarProbe(scope: "text.html.thing", grammars: [
+            """
+            {
+              "scopeName": "text.html.thing",
+              "patterns": [{ "name": "entity.name.tag", "match": "html" }],
+              "injections": {
+                "text.html.thing - meta.embedded": {
+                  "patterns": [
+                    {
+                      "name": "meta.embedded.block.thing",
+                      "begin": "<%",
+                      "end": "%>",
+                      "patterns": [{ "name": "keyword.control", "match": "if" }]
+                    }
+                  ]
+                }
+              }
+            }
+            """,
+        ]))
+
+        let line = probe.line("html <% if <% if %>")
+        #expect(line.scopes(at: 0) == ["text.html.thing", "entity.name.tag"])
+        #expect(line.scopes(at: 8) == ["text.html.thing", "meta.embedded.block.thing", "keyword.control"])
+        #expect(line.scopes(at: 11) == ["text.html.thing", "meta.embedded.block.thing"])
+        #expect(line.scopes(at: 14) == ["text.html.thing", "meta.embedded.block.thing", "keyword.control"])
+    }
+
+    /// `L:` takes a position the host also matches; a bare selector does
+    /// not. Both rules match `TODO` at the same offset here, and the prefix
+    /// is the whole of the difference.
+    @Test func letsOnlyAnLInjectionWinAPositionTheHostAlsoMatched() throws {
+        func probe(prefix: String) throws -> GrammarProbe {
+            try #require(GrammarProbe(scope: "source.host", grammars: [
+                """
+                {
+                  "scopeName": "source.host",
+                  "patterns": [{ "name": "invalid.illegal", "match": "TODO" }],
+                  "injections": {
+                    "\(prefix)source.host": {
+                      "patterns": [{ "name": "constant.character.escape", "match": "TODO" }]
+                    }
+                  }
+                }
+                """,
+            ]))
+        }
+
+        #expect(try probe(prefix: "L:").line("x TODO").scope(at: 2) == "constant.character.escape")
+        #expect(try probe(prefix: "").line("x TODO").scope(at: 2) == "invalid.illegal")
+        #expect(try probe(prefix: "R:").line("x TODO").scope(at: 2) == "invalid.illegal")
     }
 
     /// An injection whose selector does not match the stack stays out of it.

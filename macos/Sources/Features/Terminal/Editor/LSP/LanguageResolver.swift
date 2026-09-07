@@ -78,7 +78,10 @@ final class LanguageResolver: ObservableObject {
                   size <= GrammarContribution.maxBytes,
                   let grammar = Grammar.parse(contentsOf: contributed.grammar.fileURL)
             else { continue }
-            store.add(grammar, languageId: contributed.grammar.languageID)
+            store.add(
+                grammar,
+                languageId: contributed.grammar.languageID,
+                injectTo: contributed.grammar.injectTo)
         }
         return store
     }

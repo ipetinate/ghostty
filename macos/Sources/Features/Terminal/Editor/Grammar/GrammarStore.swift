@@ -12,6 +12,19 @@ struct ResolvedRule {
     let grammar: Grammar
 }
 
+/// One set of injected rules in play for a document, with the grammar that
+/// declared it.
+///
+/// The grammar travels along for the same reason it does in ``ResolvedRule``,
+/// and it matters more here: an injected `#key` is a key in the *declaring*
+/// grammar's repository. PHP's `<?php` rule is injected as `#php-tag`, and
+/// resolving that against the document instead would find nothing.
+struct ResolvedInjection {
+    let selector: ScopeSelector
+    let rule: GrammarRule
+    let grammar: Grammar
+}
+
 /// Every grammar the editor knows, and the resolution of `include` between
 /// them.
 ///
@@ -28,6 +41,7 @@ final class GrammarStore {
     private var byScope: [String: Grammar] = [:]
     private var scopeByLanguage: [String: String] = [:]
     private var scopeByFileType: [String: String] = [:]
+    private var injectingScopes: [String: [String]] = [:]
 
     init() {}
 
@@ -35,7 +49,13 @@ final class GrammarStore {
     /// replaces the first: the store holds what is installed now, and
     /// deciding *which* extension owns a scope is the catalog's job, not
     /// this one's.
-    func add(_ grammar: Grammar, languageId: String? = nil) {
+    ///
+    /// `injectTo` is the manifest's, not the grammar file's. A grammar
+    /// cannot volunteer itself into somebody else's document — the
+    /// extension has to ask, in `contributes.grammars[].injectTo` — which
+    /// is why the two halves of a cross-grammar injection arrive here from
+    /// different files and are joined by this method.
+    func add(_ grammar: Grammar, languageId: String? = nil, injectTo: [String] = []) {
         byScope[grammar.scopeName] = grammar
         if let languageId, !languageId.isEmpty {
             scopeByLanguage[languageId] = grammar.scopeName
@@ -43,6 +63,52 @@ final class GrammarStore {
         for fileType in grammar.fileTypes where scopeByFileType[fileType] == nil {
             scopeByFileType[fileType] = grammar.scopeName
         }
+        for target in injectTo {
+            var scopes = injectingScopes[target] ?? []
+            guard !scopes.contains(grammar.scopeName) else { continue }
+            scopes.append(grammar.scopeName)
+            injectingScopes[target] = scopes
+        }
+    }
+
+    /// Every injection in play for a document whose root grammar claims
+    /// `scope`, `L:` first.
+    ///
+    /// **Two sources, and they are not symmetrical.**
+    ///
+    /// A grammar's own `injections` dictionary asks for rules inside its
+    /// own documents, and is read from the **root** grammar only. A grammar
+    /// reached through an `include` contributes none, which is why PHP's
+    /// rule for entering `<?php … ?>` is declared by `text.html.php` and
+    /// not by `source.php`: the HTML shell is what a `.php` file starts in,
+    /// and `source.php` is only ever the guest.
+    ///
+    /// A grammar another extension named in its `injectTo` contributes its
+    /// whole pattern list, bounded by the `injectionSelector` it wrote for
+    /// itself. That is how `vue.directives` colours `:prop="expr"` inside a
+    /// `.vue` template without `text.html.vue` having heard of it.
+    ///
+    /// Answered per document rather than cached, because a store is read
+    /// from several threads and holds no cache — see the type's own note.
+    /// One call per tokenizer, at its construction.
+    func injections(forRootScope scope: String) -> [ResolvedInjection] {
+        var result: [ResolvedInjection] = []
+        if let root = byScope[scope] {
+            for injection in root.injections {
+                result.append(
+                    ResolvedInjection(selector: injection.selector, rule: injection.rule, grammar: root))
+            }
+        }
+
+        for injecting in injectingScopes[scope] ?? [] {
+            guard let grammar = byScope[injecting] else { continue }
+            for selector in grammar.injectionSelectors {
+                result.append(
+                    ResolvedInjection(selector: selector, rule: grammar.injectedRule, grammar: grammar))
+            }
+        }
+
+        return ScopeSelector.ordered(result) { $0.selector.priority }
     }
 
     func grammar(scope: String) -> Grammar? {

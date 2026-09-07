@@ -4,6 +4,10 @@ import SwiftUI
 struct ExtensionsSettingsView: View {
     static let registryURL = URL(string: "https://github.com/ipetinate/phantom-extensions")!
 
+    /// The search field's label and its placeholder, which are the same
+    /// sentence — see `searchField`.
+    static let searchLabel = "Search extensions"
+
     @ObservedObject private var store = ExtensionStore.shared
     @ObservedObject private var navigation = SettingsNavigation.shared
 
@@ -126,19 +130,7 @@ struct ExtensionsSettingsView: View {
 
     private var headerRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search", text: $searchText, prompt: Text("Search extensions"))
-                .textFieldStyle(.plain)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
+            searchField
             sortMenu
             if store.isRefreshing {
                 ProgressView()
@@ -149,6 +141,52 @@ struct ExtensionsSettingsView: View {
             }
             .disabled(store.isRefreshing)
         }
+    }
+
+    /// The field the sidebar's Extensions panel already wears: one rounded
+    /// box, one placeholder, the magnifier inside it.
+    ///
+    /// It used to be a bare `TextField("Search", …, prompt:)`, and a grouped
+    /// `Form` draws a labelled control as its label on the left and its
+    /// control on the right — so the row read as two labels, a bold `Search`
+    /// facing a grey `Search extensions` across the width, with no field
+    /// around either. `labelsHidden` drops the half that was never meant to
+    /// be read, and the background gives the other half an edge.
+    ///
+    /// The label and the prompt then have to say the same thing, which is
+    /// why one constant feeds both. Outside a `Form` a plain field draws its
+    /// label as the placeholder, so the sidebar's needs no prompt; hiding
+    /// the label here takes that placeholder with it, and the field came out
+    /// boxed and empty.
+    ///
+    /// Not shared with `ExtensionsPanelView.search` yet: that one is sized
+    /// for the sidebar — the palette font at 11pt, a 10pt magnifier, the
+    /// refresh spinner inside the box — and one component carrying both type
+    /// scales would be a parameter list, not a shape.
+    private var searchField: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(Self.searchLabel, text: $searchText, prompt: Text(Self.searchLabel))
+                .textFieldStyle(.plain)
+                .labelsHidden()
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.secondary.opacity(0.12))
+        )
     }
 
     private var sortMenu: some View {

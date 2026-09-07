@@ -171,6 +171,11 @@ struct ExtensionsPanelView: View {
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
+            /// The list is chrome, so it gets the thin overlay knob the file
+            /// tree and the tab strips wear, rather than the full-width
+            /// legacy scroller macOS hands out when scroll bars are set to
+            /// always show.
+            .background(alignment: .topTrailing) { OverlayScrollers() }
         }
     }
 

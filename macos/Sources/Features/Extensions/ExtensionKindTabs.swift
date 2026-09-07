@@ -64,6 +64,17 @@ struct ExtensionKindTabs: View {
                 }
             }
             .padding(.vertical, 1)
+            /// `.scrollIndicators(.hidden)` alone left a permanent grey band
+            /// under the row, wider than the tabs are tall: with scroll bars
+            /// set to always show, AppKit gives the scroll view a *legacy*
+            /// scroller, which takes a strip of layout for itself and pays no
+            /// attention to what SwiftUI asked for. The same pair the editor's
+            /// tab strip uses settles it — no knob at all, and a plain wheel
+            /// still reaches a tab past the right edge.
+            .background(alignment: .leading) {
+                InvisibleScrollers()
+                WheelScrollsHorizontally()
+            }
         }
         .scrollIndicators(.hidden)
     }

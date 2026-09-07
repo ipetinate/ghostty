@@ -56,13 +56,6 @@ struct ExtensionRow: View {
             }
         }
 
-        var downloads: ExtensionIndex.Downloads? {
-            switch self {
-            case .entry(let entry, _): return entry.downloads
-            case .orphan: return nil
-            }
-        }
-
         var state: ExtensionState {
             switch self {
             case .entry(_, let state): return state
@@ -194,13 +187,6 @@ struct ExtensionRow: View {
     }
 
     @ViewBuilder
-    private var downloadsTag: some View {
-        if let downloads = subject.downloads {
-            ExtensionDownloadsTagView(total: downloads.total)
-        }
-    }
-
-    @ViewBuilder
     private func trailing(controlSize: ControlSize) -> some View {
         if let activity {
             ExtensionActivityView(activity: activity, compact: controlSize == .small)
@@ -212,7 +198,6 @@ struct ExtensionRow: View {
                         .foregroundStyle(.red)
                 }
                 requirementsBadge
-                downloadsTag
                 ExtensionActionButton(
                     state: subject.state,
                     style: .labelled,
@@ -430,57 +415,6 @@ struct ExtensionVersionTagView: View {
         } else {
             ExtensionTagView(text: offered)
         }
-    }
-}
-
-/// How often this extension's release assets were downloaded, as GitHub
-/// counted them, summed over every published version.
-///
-/// The chip takes the shape of the version chip beside it and differs by
-/// its glyph and its colour, so the two read as one family. The glyph is
-/// the one the Install button in the same row already wears, so the chip
-/// and the button name the same act.
-///
-/// Files, not people. Anyone who let eight versions auto-update was counted
-/// eight times, so this is a true count of downloads and a wrong count of
-/// users: the word beside it is never "users" or "installs".
-///
-/// A row whose entry carries no count draws no chip at all — until the next
-/// registry publish that is every row, so the row has to look right without
-/// it. Unknown and zero are different facts, and the registry writes no key
-/// for the first.
-struct ExtensionDownloadsTagView: View {
-    let total: Int
-
-    @ObservedObject private var palette: ThemePalette = .shared
-
-    /// `arrow.down.circle`, the same SF Symbol `ExtensionActionButton`
-    /// gives the install action, and one that has existed since macOS
-    /// 10.15. A name that does not resolve makes SwiftUI drop the whole row
-    /// with no log, so `ExtensionRowTests` asserts it.
-    static let symbol = "arrow.down.circle"
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: Self.symbol)
-            Text(verbatim: Self.short(total))
-        }
-        .foregroundStyle(palette.accent ?? .accentColor)
-        .modifier(ExtensionChipChrome())
-        .help(Text(verbatim: Self.spoken(total)))
-        .accessibilityLabel(Text(verbatim: Self.spoken(total)))
-    }
-
-    /// Grouped below a thousand, abbreviated above it. The app has no count
-    /// formatter of its own — `ByteCountFormatter` is the only formatter it
-    /// uses, and that one is for bytes — so this follows the same habit of
-    /// letting Foundation shorten a magnitude that would not fit.
-    static func short(_ count: Int) -> String {
-        count < 1000 ? count.formatted(.number) : count.formatted(.number.notation(.compactName))
-    }
-
-    static func spoken(_ count: Int) -> String {
-        "\(count.formatted(.number)) downloads"
     }
 }
 

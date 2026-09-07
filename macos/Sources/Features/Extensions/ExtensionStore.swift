@@ -94,11 +94,10 @@ final class ExtensionStore: ObservableObject {
     /// cache happens to hold.
     ///
     /// It used to reuse the staged tree, which saved a download for anyone
-    /// who read the page before pressing Install. That saving is what made
-    /// the download count meaningless — the page and the install were one
-    /// asset — and the cache now holds the document bundle, which is not an
-    /// extension. So an install fetches the installable asset, every time,
-    /// and its count means installs.
+    /// who read the page before pressing Install. That worked only while
+    /// the page and the install came from one asset. The cache now holds
+    /// the document bundle, which is not an extension, so an install
+    /// fetches the installable asset every time.
     func install(_ entry: ExtensionIndex.Entry) async {
         guard activity[entry.id] == nil else { return }
         errors[entry.id] = nil

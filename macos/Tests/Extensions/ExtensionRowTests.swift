@@ -3,7 +3,7 @@ import AppKit
 import Testing
 
 struct ExtensionRowTests {
-    static func entry(version: String = "1.0.6", downloads: ExtensionIndex.Downloads? = nil) -> ExtensionIndex.Entry {
+    static func entry(version: String = "1.0.6") -> ExtensionIndex.Entry {
         ExtensionIndex.Entry(
             id: "phantom.rust",
             name: "Rust",
@@ -17,7 +17,6 @@ struct ExtensionRowTests {
             downloadURL: URL(string: "https://example.com/phantom.rust-\(version).zip")!,
             sha256: String(repeating: "a", count: 64),
             bytes: 1,
-            downloads: downloads,
             card: nil)
     }
 
@@ -43,54 +42,19 @@ struct ExtensionRowTests {
         #expect(subject.offeredVersion == "1.0.6")
     }
 
-    @Test func anExtensionNotInTheRegistryOffersItsOwnVersionAndNoCount() {
+    @Test func anExtensionNotInTheRegistryOffersItsOwnVersion() {
         let subject = ExtensionRow.Subject.orphan(Self.installed)
 
         #expect(subject.installedVersion == nil)
         #expect(subject.offeredVersion == "0.4.0")
-        #expect(subject.downloads == nil)
-    }
-
-    @Test func theRowCarriesTheCountTheIndexBrought() {
-        let counted = Self.entry(downloads: ExtensionIndex.Downloads(total: 530, current: 12))
-
-        #expect(ExtensionRow.Subject.entry(counted, state: .notInstalled).downloads?.total == 530)
-        #expect(ExtensionRow.Subject.entry(Self.entry(), state: .notInstalled).downloads == nil)
     }
 
     /// An SF Symbol name that does not resolve makes SwiftUI drop the whole
-    /// row, with no log and no error, so both names are checked here rather
+    /// row, with no log and no error, so the name is checked here rather
     /// than found missing on somebody's screen.
-    @Test func theRowsSymbolsResolve() {
-        for symbol in [ExtensionRow.authorSymbol, ExtensionDownloadsTagView.symbol] {
-            #expect(
-                NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil,
-                "\(symbol) is not an SF Symbol")
-        }
-    }
-
-    /// The chip and the button beside it name the same act, so they wear
-    /// the same glyph. Changing one without the other splits the word.
-    @Test func theCountWearsTheGlyphTheInstallButtonWears() {
-        #expect(ExtensionDownloadsTagView.symbol == ExtensionActionButton.Action.install.systemImage)
-    }
-
-    @Test func theCountIsShortenedOnlyOnceItIsLong() {
-        #expect(ExtensionDownloadsTagView.short(0) == "0")
-        #expect(ExtensionDownloadsTagView.short(65) == "65")
-        #expect(ExtensionDownloadsTagView.short(999) == "999")
-        #expect(ExtensionDownloadsTagView.short(3242).count < "3242".count + 2)
-    }
-
-    /// GitHub counts files, not people: eight versions auto-updated is
-    /// eight downloads by one person. The count is true, and calling it
-    /// users or installs would not be.
-    @Test func theCountIsSpokenOfAsDownloadsAndNothingElse() {
-        let spoken = ExtensionDownloadsTagView.spoken(3242)
-
-        #expect(spoken.hasSuffix(" downloads"))
-        #expect(!spoken.contains("user"))
-        #expect(!spoken.contains("install"))
-        #expect(!spoken.contains("people"))
+    @Test func theAuthorSymbolResolves() {
+        #expect(
+            NSImage(systemSymbolName: ExtensionRow.authorSymbol, accessibilityDescription: nil) != nil,
+            "\(ExtensionRow.authorSymbol) is not an SF Symbol")
     }
 }

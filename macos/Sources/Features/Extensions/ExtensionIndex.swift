@@ -1,19 +1,6 @@
 import Foundation
 
 struct ExtensionIndex: Equatable, Sendable {
-    /// How often an extension's release assets were downloaded from GitHub,
-    /// as the registry's build step folded them into the index.
-    ///
-    /// GitHub has counted every one of those downloads since the first
-    /// release, so the number is retroactive and needs nothing from this
-    /// app: no request, no token, no report of its own installs. An index
-    /// built before the registry started writing the key carries none, which
-    /// is why the whole value is optional rather than a zero.
-    struct Downloads: Equatable, Sendable {
-        let total: Int
-        let current: Int
-    }
-
     /// One release asset: where it is, what it should hash to, and how big
     /// it should be. The three travel together because none of them is
     /// usable without the other two — a URL with no digest is a file off the
@@ -52,19 +39,17 @@ struct ExtensionIndex: Equatable, Sendable {
         /// so that reading an extension's page does not download the thing
         /// itself.
         ///
-        /// GitHub counts every asset download, and the store shows that
-        /// count. While the page and the install came from one asset the
-        /// number meant "looked at it or installed it", which is not a
-        /// number anybody asked for. Two assets are two honest counts.
+        /// Browsing a store means opening many pages and installing few, so
+        /// fetching grammars and code to read one document was the wrong
+        /// cost on the common path: 930 KiB of document bundles against
+        /// 2,368 KiB of installable zips across the registry.
         ///
         /// Optional because it is younger than the index: an entry published
         /// before the registry started writing it carries none, and the
         /// preview then falls back to the installable zip — the old
-        /// behaviour, inflation included, for as long as that entry is the
-        /// newest one.
+        /// behaviour, for as long as that entry is the newest one.
         var preview: Asset?
 
-        var downloads: Downloads?
         var card: ExtensionCard?
         var categories: [String] = []
 
@@ -182,23 +167,9 @@ extension ExtensionIndex.Entry {
                 json["preview"],
                 limit: ExtensionIndex.maxPreviewBytes
             ),
-            downloads: downloads(json["downloads"]),
             card: (json["card"] as? [String: Any]).flatMap(ExtensionCard.parse),
             categories: displayList(json["categories"])
         )
-    }
-
-    /// Reads the entry's download counts, and refuses anything but two
-    /// counts that could be counts: a negative total, or one this build
-    /// cannot read, leaves the entry with none, and the store then shows
-    /// nothing rather than a number it made up.
-    static func downloads(_ value: Any?) -> ExtensionIndex.Downloads? {
-        guard let json = value as? [String: Any],
-              let total = ExtensionIndex.integer(json["total"]),
-              total >= 0
-        else { return nil }
-        let current = ExtensionIndex.integer(json["current"]) ?? 0
-        return ExtensionIndex.Downloads(total: total, current: max(0, min(current, total)))
     }
 
     static func secureURL(_ value: Any?) -> URL? {

@@ -44,9 +44,21 @@ struct ExtensionsPanelView: View {
         HStack(spacing: 2) {
             search
             sortMenu
+            refreshButton
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 12)
+    }
+
+    private var refreshButton: some View {
+        SidebarIconButton(help: "Reload the registry") {
+            Task { await store.reload() }
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .disabled(store.isRefreshing)
     }
 
     private var sortMenu: some View {
@@ -146,27 +158,39 @@ struct ExtensionsPanelView: View {
                 } else if sections.isEmpty {
                     message(emptyMessage)
                 } else if kind == .all {
-                    ForEach(ExtensionCatalogGrouping.groups(sections.entries)) { group in
-                        heading(group.title, systemImage: group.systemImage)
-                        ForEach(group.entries) { entry in
-                            row(for: entry)
-                        }
-                    }
+                    let split = ExtensionCatalogGrouping.partitioned(sections.entries)
+                    groups(split.leading)
+                    orphans(sections)
+                    groups(split.trailing)
                 } else {
                     ForEach(sections.entries) { entry in
                         row(for: entry)
                     }
-                }
-
-                if !sections.orphans.isEmpty {
-                    heading("Installed, not in the registry", systemImage: "questionmark.folder")
-                    ForEach(sections.orphans) { installed in
-                        row(for: installed)
-                    }
+                    orphans(sections)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
+        }
+    }
+
+    @ViewBuilder
+    private func groups(_ list: [ExtensionCatalogGrouping.Group]) -> some View {
+        ForEach(list) { group in
+            heading(group.title, systemImage: group.systemImage)
+            ForEach(group.entries) { entry in
+                row(for: entry)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func orphans(_ sections: ExtensionCatalogFilter.Sections) -> some View {
+        if !sections.orphans.isEmpty {
+            heading("Installed, not in the registry", systemImage: "questionmark.folder")
+            ForEach(sections.orphans) { installed in
+                row(for: installed)
+            }
         }
     }
 

@@ -90,6 +90,21 @@ final class ExtensionStore: ObservableObject {
         installed = Self.scanInstalled(in: extensionsDir)
     }
 
+    /// The whole store, read again: the catalogue, what is installed, and
+    /// the staged pages an icon may have been drawn from.
+    ///
+    /// `refresh()` fetches the index and stops there, which is not what a
+    /// reader means by refreshing the store. A page staged earlier keeps
+    /// answering for the version it was staged at, and `iconURL(for:)`
+    /// prefers that copy over the index, so an extension whose page had been
+    /// opened kept showing its old icon until the app was restarted.
+    func reload() async {
+        previews.removeAll()
+        errors.removeAll()
+        reloadInstalled()
+        await refresh()
+    }
+
     /// Downloads and installs, rather than installing whatever the preview
     /// cache happens to hold.
     ///

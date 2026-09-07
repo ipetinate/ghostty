@@ -267,14 +267,25 @@ final class ExtensionStore: ObservableObject {
         ExtensionIconSource.of(entry: entry, file: iconURL(for: entry))
     }
 
+    /// **The installed copy answers first.** It used to be the staged page,
+    /// and that is how the store kept putting an old icon back: reading an
+    /// extension's page downloads the version the index names and unpacks it
+    /// into the preview cache, so from then on the row drew the icon of
+    /// whatever version was published rather than the one on the machine.
+    /// Elixir 1.1.1 was installed with the owner's logo and the store went
+    /// back to the drawn one every time its page was opened.
+    ///
+    /// The staged tree still answers for an extension that is *not*
+    /// installed, which is the case it exists for: showing an icon before
+    /// anybody presses Install.
     func iconURL(for entry: ExtensionIndex.Entry) -> URL? {
         let onDisk = installed.first { $0.id == entry.id }
         guard let icon = entry.card?.icon else { return onDisk?.iconURL }
-        if case .ready(let document, _)? = previews[entry.id],
-           let url = LanguageContribution.containedURL(icon, root: document.deletingLastPathComponent()) {
+        if let root = onDisk?.root, let url = LanguageContribution.containedURL(icon, root: root) {
             return url
         }
-        if let root = onDisk?.root, let url = LanguageContribution.containedURL(icon, root: root) {
+        if case .ready(let document, _)? = previews[entry.id],
+           let url = LanguageContribution.containedURL(icon, root: document.deletingLastPathComponent()) {
             return url
         }
         return onDisk?.iconURL

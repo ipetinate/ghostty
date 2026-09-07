@@ -49,6 +49,17 @@ final class GrammarRule {
     /// Rules that apply inside this rule's region.
     let patterns: [GrammarRule]
 
+    /// A `repository` of the rule's own, which its children reach by name
+    /// ahead of the grammar's.
+    let ownRepository: [String: GrammarRule]
+
+    /// The repository an `include` written in this rule resolves against,
+    /// or nil for the grammar's own.
+    ///
+    /// Settled by ``Grammar`` once the whole document is parsed, by
+    /// ``GrammarRule/link(_:to:)``, and never touched afterwards.
+    var scopedRepository: [String: GrammarRule]?
+
     /// Whether the child patterns get first refusal at a position the `end`
     /// pattern also matches. The TextMate default is that `end` wins.
     let applyEndPatternLast: Bool
@@ -62,6 +73,7 @@ final class GrammarRule {
         endCaptures: [Int: GrammarCapture]? = nil,
         whileCaptures: [Int: GrammarCapture]? = nil,
         patterns: [GrammarRule] = [],
+        ownRepository: [String: GrammarRule] = [:],
         applyEndPatternLast: Bool = false
     ) {
         self.kind = kind
@@ -72,6 +84,7 @@ final class GrammarRule {
         self.endCaptures = endCaptures ?? captures
         self.whileCaptures = whileCaptures ?? captures
         self.patterns = patterns
+        self.ownRepository = ownRepository
         self.applyEndPatternLast = applyEndPatternLast
     }
 
@@ -131,7 +144,80 @@ extension GrammarRule {
             endCaptures: GrammarCapture.parse(object["endCaptures"]),
             whileCaptures: GrammarCapture.parse(object["whileCaptures"]),
             patterns: parse(list: object["patterns"]),
+            ownRepository: parse(repository: object["repository"]),
             applyEndPatternLast: truthy(object["applyEndPatternLast"]))
+    }
+
+    /// Parses a `repository` object, wherever it appears: a grammar's own
+    /// or one a single rule declared.
+    static func parse(repository raw: Any?) -> [String: GrammarRule] {
+        guard let object = raw as? [String: Any] else { return [:] }
+        var result: [String: GrammarRule] = [:]
+        for (key, value) in object {
+            guard let rule = parse(value) else { continue }
+            result[key] = rule
+        }
+        return result
+    }
+
+    /// Points every `include` under `roots` at the repository in force
+    /// where it was written.
+    ///
+    /// A rule may declare a `repository` of its own, and `#key` inside it
+    /// then means that rule's key first and the grammar's second. Ruby's
+    /// `method_parameters` is the case that made this necessary: `#params`
+    /// is a key it declares, so an engine reading only the grammar's
+    /// repository dropped the rule — `name` in
+    /// `def greet(name, greeting: "hi")` came out unpainted and `greeting`
+    /// came out a keyword. HTML declares one for `svg` and one for `math`
+    /// the same way, which is what colours an `<svg>` element's attributes.
+    ///
+    /// Worked out once, here, rather than threaded through the scanner. A
+    /// rule is reached from several places and the first path to it settles
+    /// which repository it sees — the same first-wins the reference
+    /// implementation gets from compiling each rule once.
+    static func link(_ roots: [[GrammarRule]], to top: [String: GrammarRule]) {
+        var visited: Set<ObjectIdentifier> = []
+        for rules in roots {
+            link(rules, inherited: nil, top: top, visited: &visited)
+        }
+    }
+
+    private static func link(
+        _ rules: [GrammarRule],
+        inherited: [String: GrammarRule]?,
+        top: [String: GrammarRule],
+        visited: inout Set<ObjectIdentifier>
+    ) {
+        for rule in rules {
+            guard visited.insert(ObjectIdentifier(rule)).inserted else { continue }
+            var current = inherited
+            if rule.declaresRepository {
+                current = (inherited ?? top).merging(rule.ownRepository) { _, nested in nested }
+            }
+            rule.scopedRepository = current
+            link(rule.patterns, inherited: current, top: top, visited: &visited)
+            link(Array(rule.ownRepository.values), inherited: current, top: top, visited: &visited)
+            for captures in [rule.captures, rule.beginCaptures, rule.endCaptures, rule.whileCaptures] {
+                for capture in captures.values {
+                    link(capture.patterns, inherited: current, top: top, visited: &visited)
+                }
+            }
+        }
+    }
+
+    /// Whether the rule's own `repository` counts.
+    ///
+    /// Only on a rule that matches nothing itself, which is the one shape
+    /// the reference implementation merges a nested repository for. A
+    /// `repository` beside a `match` or a `begin` is ignored there, so it
+    /// is ignored here.
+    private var declaresRepository: Bool {
+        guard !ownRepository.isEmpty else { return false }
+        switch kind {
+        case .group, .include: return true
+        case .match, .beginEnd, .beginWhile: return false
+        }
     }
 
     private static func truthy(_ raw: Any?) -> Bool {

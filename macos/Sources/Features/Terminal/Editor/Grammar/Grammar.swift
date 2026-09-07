@@ -84,6 +84,9 @@ final class Grammar {
         self.injections = injections
         self.injectionSelectors = injectionSelectors
         self.injectedRule = GrammarRule(kind: .group, patterns: patterns)
+        GrammarRule.link(
+            [patterns] + repository.values.map { [$0] } + injections.map(\.rules),
+            to: repository)
     }
 }
 
@@ -110,7 +113,7 @@ extension Grammar {
             fileTypes: fileTypes(from: root["fileTypes"]),
             firstLineMatch: root["firstLineMatch"] as? String,
             patterns: GrammarRule.parse(list: root["patterns"]),
-            repository: repository(from: root["repository"]),
+            repository: GrammarRule.parse(repository: root["repository"]),
             injections: injections(from: root["injections"]),
             injectionSelectors: ScopeSelector.parse(root["injectionSelector"] as? String ?? ""))
     }
@@ -122,16 +125,6 @@ extension Grammar {
             let trimmed = text.hasPrefix(".") ? String(text.dropFirst()) : text
             return trimmed.isEmpty ? nil : trimmed.lowercased()
         }
-    }
-
-    private static func repository(from raw: Any?) -> [String: GrammarRule] {
-        guard let object = raw as? [String: Any] else { return [:] }
-        var result: [String: GrammarRule] = [:]
-        for (key, value) in object {
-            guard let rule = GrammarRule.parse(value) else { continue }
-            result[key] = rule
-        }
-        return result
     }
 
     /// Reads the `injections` dictionary: each key a selector, each value a

@@ -110,6 +110,8 @@ final class GrammarTokenizer {
             let run = Run(
                 line: line,
                 bytes: bytes,
+                from: 0,
+                to: line.count,
                 state: state,
                 rootRules: topLevelRules(of: base),
                 budget: limits.iterations,
@@ -135,7 +137,7 @@ private extension GrammarTokenizer {
 
         while run.iterations < run.budget, !run.stopped {
             run.iterations += 1
-            guard run.position <= run.line.count else { break }
+            guard run.position <= run.end else { break }
             guard let hit = bestMatch(run) else { break }
 
             let before = run.position
@@ -154,8 +156,8 @@ private extension GrammarTokenizer {
         }
 
         let scopes = run.state.frames.last?.contentScopes ?? run.state.root
-        emit(run, from: run.position, to: run.line.count, scopes: scopes)
-        run.position = run.line.count
+        emit(run, from: run.position, to: run.end, scopes: scopes)
+        run.position = run.end
         for index in run.state.frames.indices {
             run.state.frames[index].carried = true
             run.state.frames[index].emptyEntry = -1
@@ -345,6 +347,7 @@ private extension GrammarTokenizer {
                 nameScopes: nameScopes,
                 contentScopes: bodyScopes,
                 carried: false,
+                anchor: run.anchor,
                 emptyEntry: hit.range.isEmpty ? hit.range.upperBound : -1))
 
         run.position = max(run.position, hit.range.upperBound)
@@ -384,6 +387,7 @@ private extension GrammarTokenizer {
             run)
         run.state.frames.removeLast()
         run.position = max(run.position, hit.range.upperBound)
+        run.anchor = frame.anchor
         refreshCandidates(run)
     }
 
@@ -391,10 +395,10 @@ private extension GrammarTokenizer {
     /// without ever consuming anything. One character goes out under the
     /// scopes in force and the scan carries on past it.
     func advanceOneCharacter(_ run: Run) -> Bool {
-        guard run.position < run.line.count else { return false }
+        guard run.position < run.end else { return false }
         let scopes = run.state.frames.last?.contentScopes ?? run.state.root
         var next = run.position + 1
-        while next < run.line.count, run.line[next] & 0xC0 == 0x80 { next += 1 }
+        while next < run.end, run.line[next] & 0xC0 == 0x80 { next += 1 }
         emit(run, from: run.position, to: next, scopes: scopes)
         run.position = next
         run.stagnation = 0
@@ -471,10 +475,15 @@ private extension GrammarTokenizer {
 
     /// Runs a capture's own `patterns` over the group's bytes.
     ///
-    /// The group is tokenized on its own, as a slice, which is what the
-    /// reference implementation does and what the format's own wording
-    /// implies. The consequence is worth knowing: `^`, `\G` and lookbehind
-    /// inside those patterns see the group and not the line around it.
+    /// **The text before the group stays in the buffer, and the text after
+    /// it does not.** The scan starts at the group and stops at its end, so
+    /// `$` and a lookahead see the group's end — but `^` and lookbehind
+    /// still see the line the group was cut from, because the bytes before
+    /// it are still there. Handing the group over as a slice instead was how
+    /// the two quotes of `case "$1" in` came out as a command name: shell's
+    /// `#normal_statement` may only begin after `^`, `;`, `|`, `&` or a
+    /// brace, and a slice starting at the quote offered it a `^` the line
+    /// never had.
     func emitCaptureRegion(
         _ capture: GrammarCapture,
         range: Range<Int>,
@@ -487,26 +496,20 @@ private extension GrammarTokenizer {
             return
         }
 
-        let slice = Array(run.line[range])
-        var spans: [Span] = []
-        slice.withUnsafeBytes { bytes in
-            let nested = Run(
-                line: slice,
-                bytes: bytes,
-                state: TokenizerState(root: scopes, frames: []),
-                rootRules: expand(capture.patterns, in: grammar),
-                budget: max(64, run.budget / 8),
-                depth: run.depth + 1,
-                allowsDocumentAnchor: run.allowsDocumentAnchor && range.lowerBound == 0)
-            scan(nested)
-            spans = nested.spans
-        }
+        let nested = Run(
+            line: run.line,
+            bytes: UnsafeRawBufferPointer(rebasing: run.bytes[0..<range.upperBound]),
+            from: range.lowerBound,
+            to: range.upperBound,
+            state: TokenizerState(root: scopes, frames: []),
+            rootRules: expand(capture.patterns, in: grammar),
+            budget: max(64, run.budget / 8),
+            depth: run.depth + 1,
+            allowsDocumentAnchor: run.allowsDocumentAnchor && range.lowerBound == 0)
+        scan(nested)
 
-        for span in spans {
-            let lower = range.lowerBound + span.range.lowerBound
-            let upper = range.lowerBound + span.range.upperBound
-            guard lower < upper else { continue }
-            run.spans.append(Span(range: lower..<upper, scopes: span.scopes))
+        for span in nested.spans where span.range.lowerBound < span.range.upperBound {
+            run.spans.append(span)
             run.lastStack = nil
         }
     }
@@ -622,7 +625,11 @@ private extension GrammarTokenizer {
             switch rule.kind {
             case .include(let reference):
                 guard visited.insert(ObjectIdentifier(rule)).inserted else { continue }
-                guard let target = store.resolve(include: reference, from: grammar, base: base) else { continue }
+                guard let target = store.resolve(
+                        include: reference,
+                        from: grammar,
+                        base: base,
+                        repository: rule.scopedRepository) else { continue }
                 append(target.rules, in: target.grammar, to: &output, visited: &visited)
             case .group:
                 guard visited.insert(ObjectIdentifier(rule)).inserted else { continue }
@@ -945,6 +952,14 @@ private extension GrammarTokenizer {
     final class Run {
         let line: [UInt8]
         let bytes: UnsafeRawBufferPointer
+
+        /// One past the last byte this run may reach.
+        ///
+        /// The whole line for a run over a line, and the end of the group
+        /// for a run over a capture. `bytes` stops there too, so `$` and a
+        /// lookahead cannot see past it.
+        let end: Int
+
         let budget: Int
         let depth: Int
 
@@ -959,7 +974,7 @@ private extension GrammarTokenizer {
         var lastStack: ScopeStack?
         var matchCache: [Int: CachedMatch] = [:]
         var suppressed: Set<Int> = []
-        var position = 0
+        var position: Int
         var anchor = -1
         var iterations = 0
         var stagnation = 0
@@ -968,6 +983,8 @@ private extension GrammarTokenizer {
         init(
             line: [UInt8],
             bytes: UnsafeRawBufferPointer,
+            from start: Int,
+            to end: Int,
             state: TokenizerState,
             rootRules: [ResolvedRule],
             budget: Int,
@@ -976,6 +993,8 @@ private extension GrammarTokenizer {
         ) {
             self.line = line
             self.bytes = bytes
+            self.end = end
+            self.position = start
             self.state = state
             self.rootRules = rootRules
             self.budget = budget

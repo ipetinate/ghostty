@@ -135,7 +135,9 @@ final class GrammarStore {
     ///
     /// Four forms, all of them in real grammars:
     ///
-    /// - `#key` — a rule in `grammar`'s own repository
+    /// - `#key` — a rule in the repository in force where the `include`
+    ///   was written, which is `grammar`'s own unless a rule above it
+    ///   declared one and `repository` carries the result
     /// - `$self` — the whole of `grammar`, which is how a nested region
     ///   re-enters the language it is written in
     /// - `$base` — the whole of the grammar the document started in, which
@@ -146,7 +148,12 @@ final class GrammarStore {
     /// include is dropped rather than treated as an error: a grammar
     /// commonly includes a scope its author shipped in a second package,
     /// and the language still colours without it.
-    func resolve(include reference: String, from grammar: Grammar, base: Grammar) -> ResolvedInclude? {
+    func resolve(
+        include reference: String,
+        from grammar: Grammar,
+        base: Grammar,
+        repository: [String: GrammarRule]? = nil
+    ) -> ResolvedInclude? {
         if reference == "$self" {
             return ResolvedInclude(rules: grammar.patterns, grammar: grammar)
         }
@@ -155,7 +162,7 @@ final class GrammarStore {
         }
         if reference.hasPrefix("#") {
             let key = String(reference.dropFirst())
-            guard let rule = grammar.repository[key] else { return nil }
+            guard let rule = (repository ?? grammar.repository)[key] else { return nil }
             return ResolvedInclude(rules: [rule], grammar: grammar)
         }
 

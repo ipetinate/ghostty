@@ -110,12 +110,7 @@ struct ExtensionRow: View {
     // MARK: Form
 
     private var formBody: some View {
-        LabeledContent {
-            VStack(alignment: .trailing, spacing: 4) {
-                trailing(controlSize: .regular)
-                versionTag
-            }
-        } label: {
+        HStack(alignment: .center, spacing: 8) {
             HStack(alignment: .center, spacing: 10) {
                 ExtensionIconView(source: icon, size: 28)
                 VStack(alignment: .leading, spacing: 3) {
@@ -131,6 +126,13 @@ struct ExtensionRow: View {
                 }
             }
             .help(subject.id)
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                trailing(controlSize: .regular)
+                versionTag
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)

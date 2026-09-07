@@ -89,6 +89,7 @@ struct SettingsRootView: View {
             // Shortc…" — a settings list that hides what it is offering
             // before you have touched anything.
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+            .settingsSidebarAlwaysVisible()
         } detail: {
             switch selection {
             case .general:
@@ -210,6 +211,24 @@ struct GeneralSettingsView: View {
 
 /// Where the sidebar's parts are, and which of them show.
 ///
+private extension View {
+    /// Drops the sidebar toggle the split view installs by itself.
+    ///
+    /// A settings sidebar is the navigation, not a panel: there is nothing to
+    /// read in the detail column that wants the width, and the section name
+    /// the title shows comes from the row the toggle would hide. Under macOS
+    /// 26 that button also moved to the *trailing* edge of the titlebar the
+    /// moment the sidebar was collapsed, which is how it was noticed.
+    @ViewBuilder
+    func settingsSidebarAlwaysVisible() -> some View {
+        if #available(macOS 14.0, *) {
+            toolbar(removing: .sidebarToggle)
+        } else {
+            self
+        }
+    }
+}
+
 /// Grouped by **surface** — toolbar, terminal rows, group headers — because
 /// that is how a reader arrives: they are looking at a row and want something
 /// off it. Before this the agent buttons lived in another pane entirely, so

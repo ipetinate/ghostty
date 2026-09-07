@@ -407,6 +407,13 @@ struct ExtensionChipChrome: ViewModifier {
 /// `Color.green`, so a light theme colours them the way it colours
 /// everything else, and both fall back to the system colour when no theme
 /// is loaded.
+///
+/// The ask was orange, and the theme's yellow stands anyway. ANSI has no
+/// orange slot, so orange can only come from `Color.orange` — a system
+/// colour beside a theme green, which is the one pairing this chip cannot
+/// afford: the two halves are read against each other, and only one of them
+/// would follow the theme. `Color.orange` is still what a theme without a
+/// yellow gets, so the request holds wherever the palette is silent.
 struct ExtensionVersionTagView: View {
     /// `tag`, an SF Symbol since 2019. A version of a published extension is
     /// a git tag in the registry, so the mark is the thing itself rather

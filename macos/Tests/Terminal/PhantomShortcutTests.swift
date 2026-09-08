@@ -601,9 +601,47 @@ struct FileExplorerFilesystemTests {
 
     // MARK: Unique and proposed names
 
+    /// No extension on a proposed file name. A ".txt" the reader never asked
+    /// for decides what kind of file it is, and it survived every rename that
+    /// only replaced the part before the dot.
     @Test func proposedNamesFollowTheUntitledConvention() {
-        #expect(FileExplorerFilesystem.proposedName(isFolder: false) == "untitled.txt")
+        #expect(FileExplorerFilesystem.proposedName(isFolder: false) == "untitled")
         #expect(FileExplorerFilesystem.proposedName(isFolder: true) == "untitled folder")
+    }
+
+    // MARK: What a name field opens with selected
+
+    /// The whole proposal, so the first keystroke replaces all of it.
+    @Test func aProposedNameIsSelectedWhole() {
+        let name = FileExplorerFilesystem.proposedName(isFolder: false)
+        let range = FileExplorerFilesystem.selectedRange(
+            in: name, isFolder: false, isCreating: true)
+
+        #expect(range.map { String(name[$0]) } == "untitled")
+    }
+
+    @Test func aProposedFolderNameIsSelectedWhole() {
+        let name = FileExplorerFilesystem.proposedName(isFolder: true)
+        let range = FileExplorerFilesystem.selectedRange(
+            in: name, isFolder: true, isCreating: true)
+
+        #expect(range.map { String(name[$0]) } == "untitled folder")
+    }
+
+    /// A rename keeps Finder's rule: the extension is a fact about the file,
+    /// so typing replaces the part that names it and nothing else.
+    @Test func renamingSelectsEverythingBeforeTheExtension() {
+        let range = FileExplorerFilesystem.selectedRange(
+            in: "server.ts", isFolder: false, isCreating: false)
+
+        #expect(range.map { String("server.ts"[$0]) } == "server")
+    }
+
+    @Test func renamingAFolderSelectsAllOfItsName() {
+        let range = FileExplorerFilesystem.selectedRange(
+            in: "node.modules", isFolder: true, isCreating: false)
+
+        #expect(range.map { String("node.modules"[$0]) } == "node.modules")
     }
 
     @Test func uniqueNameKeepsTheNameWhenFree() throws {

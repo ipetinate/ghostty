@@ -24,8 +24,8 @@ struct FileExplorerFilterButtonTests {
     }
 
     @Test func itWearsTheChevronWhileThePanelIsOpen() {
-        #expect(resolve(isExpanded: true).symbol == "chevron.down")
-        #expect(resolve(isExpanded: true, activeFilterCount: 3).symbol == "chevron.down")
+        #expect(resolve(isExpanded: true).symbol == "chevron.up")
+        #expect(resolve(isExpanded: true, activeFilterCount: 3).symbol == "chevron.up")
     }
 
     // MARK: Accent

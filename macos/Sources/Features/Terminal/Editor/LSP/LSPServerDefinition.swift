@@ -48,6 +48,11 @@ struct LSPServerDefinition: Hashable, Sendable, Identifiable {
     /// should have to answer while reading a launch.
     var initializationOptionsJSON: String?
 
+    /// What this server pulls with `workspace/configuration`, as JSON text:
+    /// section name to value. See `LanguageServerContribution.settingsJSON`
+    /// for why this is not the field above.
+    var settingsJSON: String?
+
     /// Where this definition came from, and therefore whether starting it
     /// needs to be asked about. See `LSPServerOrigin`.
     ///

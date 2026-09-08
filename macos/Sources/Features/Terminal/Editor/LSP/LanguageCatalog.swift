@@ -77,6 +77,7 @@ struct LanguageCatalog: Equatable {
                 installHint: server.installHint,
                 initializationOptionsKind: server.resolver,
                 initializationOptionsJSON: server.initializationOptionsJSON,
+                settingsJSON: server.settingsJSON,
                 origin: .manifest(provenance),
                 category: language.category,
                 documentationURL: server.documentationURL,

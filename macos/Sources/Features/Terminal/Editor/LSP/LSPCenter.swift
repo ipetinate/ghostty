@@ -1025,6 +1025,7 @@ final class LSPCenter: ObservableObject {
             installHint: definition.installHint,
             initializationOptionsKind: definition.initializationOptionsKind,
             initializationOptionsJSON: definition.initializationOptionsJSON,
+            settingsJSON: definition.settingsJSON,
             origin: definition.origin,
             category: definition.category,
             documentationURL: definition.documentationURL,
@@ -1561,8 +1562,15 @@ final class LSPCenter: ObservableObject {
     /// answers. A server request that goes unanswered is a hang, not a
     /// dropped message — see `LSPProcess.answer(_:)`.
     private func answerServerRequest(
-        _ request: LSPRequest
+        _ request: LSPRequest,
+        from definition: LSPServerDefinition
     ) async -> Result<LSPValue, LSPResponseError> {
+        if request.method == "workspace/configuration" {
+            return .success(Self.configuration(
+                for: request.params?["items"]?.arrayValue ?? [],
+                settings: definition.settingsJSON
+            ))
+        }
         guard request.method == "workspace/applyEdit" else {
             return LSPProcess.defaultAnswer(to: request)
         }
@@ -1574,6 +1582,41 @@ final class LSPCenter: ObservableObject {
 
         let applied = await applyEdit(edits, request.params?["label"]?.stringValue)
         return .success(Self.applyEditResult(applied: applied))
+    }
+
+    /// The reply to a `workspace/configuration` pull: one value per item,
+    /// in the order asked.
+    ///
+    /// **A server that pulls its settings gets nothing from
+    /// `initialize`.** `LSPProcess.defaultAnswer` answers this request with
+    /// a null per item, which is a truthful "no configuration" and, for a
+    /// server whose every setting arrives this way, silence:
+    /// `vscode-eslint-language-server` reads `validate`, `run`,
+    /// `codeAction` and `format` here and nowhere else, so with nulls it
+    /// linted nothing and said nothing about why.
+    ///
+    /// A section is a dotted path — `eslint`, or `eslint.codeAction` — and
+    /// an item with no section at all asks for the whole object, which is
+    /// what the protocol says and what several servers rely on. A section
+    /// the manifest never declared stays null rather than becoming an empty
+    /// object: those are different answers to a server, and inventing the
+    /// second is how a client makes a server disable a feature it would
+    /// otherwise have defaulted on.
+    nonisolated static func configuration(
+        for items: [LSPValue],
+        settings: String?
+    ) -> LSPValue {
+        guard let settings,
+              let data = settings.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(LSPValue.self, from: data)
+        else { return .array(Array(repeating: .null, count: items.count)) }
+
+        return .array(items.map { item in
+            guard let section = item["section"]?.stringValue else { return decoded }
+            return section.split(separator: ".").reduce(decoded) { value, step in
+                value[String(step)] ?? .null
+            }
+        })
     }
 
     /// The reply `workspace/applyEdit` requires.
@@ -1995,7 +2038,7 @@ final class LSPCenter: ObservableObject {
             extraArguments: launch.arguments,
             requestHandler: { [weak self] request in
                 guard let self else { return LSPProcess.defaultAnswer(to: request) }
-                return await self.answerServerRequest(request)
+                return await self.answerServerRequest(request, from: definition)
             }
         )
         do {

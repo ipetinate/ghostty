@@ -102,6 +102,7 @@ struct CompanionServerContribution: Equatable, Sendable {
             installHint: installHint,
             initializationOptionsKind: resolver,
             initializationOptionsJSON: initializationOptionsJSON,
+            settingsJSON: server.settingsJSON,
             origin: .manifest(provenance),
             category: category,
             documentationURL: documentationURL,

@@ -706,6 +706,19 @@ struct LanguageServerContribution: Equatable, Sendable {
     /// second decoder that could disagree with it.
     let initializationOptionsJSON: String?
 
+    /// What this server asks the client for with `workspace/configuration`,
+    /// as JSON text: section name to value.
+    ///
+    /// A second field rather than a second use of the one above, because
+    /// they are two different exchanges. `initializationOptions` is sent
+    /// once, unasked, inside `initialize`; this is *pulled*, per document,
+    /// whenever the server wants it. Several servers read only one of the
+    /// two — `vscode-eslint-language-server` reads none of its settings
+    /// from `initialize` and every one of them from the pull, which is why
+    /// it produced no diagnostics at all while this app answered that
+    /// request with null.
+    let settingsJSON: String?
+
     /// The glue this server needs that no JSON literal can express, because
     /// it has to read the project first. See `LSPInitializationOptionsKind`.
     let resolver: LSPInitializationOptionsKind
@@ -742,6 +755,7 @@ struct LanguageServerContribution: Equatable, Sendable {
             installPlan: ExtensionInstallPlan.parse(json["install"]),
             documentationURL: documentationURL(json["documentationURL"]),
             initializationOptionsJSON: initializationOptionsJSON(json["initializationOptions"]),
+            settingsJSON: initializationOptionsJSON(json["settings"]),
             resolver: resolver(json["resolver"]),
             maximumJavaFeatureVersion: maximumJavaFeatureVersion(json["maximumJavaFeatureVersion"])
         )
@@ -855,6 +869,10 @@ struct LanguageServerContribution: Equatable, Sendable {
         return url
     }
 
+    /// Shared by `initializationOptions` and `settings`: both are a JSON
+    /// object the manifest wrote out, and both are held as text so a
+    /// reader's own override can travel the same parse and fail the same
+    /// way.
     static func initializationOptionsJSON(_ value: Any?) -> String? {
         guard let object = value as? [String: Any], !object.isEmpty else { return nil }
         guard JSONSerialization.isValidJSONObject(object),

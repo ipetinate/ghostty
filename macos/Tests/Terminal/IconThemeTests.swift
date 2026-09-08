@@ -19,10 +19,13 @@ struct IconThemeTests {
         folderNames: [String: String] = [:],
         folderNamesExpanded: [String: String] = [:],
         rootFolderNames: [String: String] = [:],
+        rootFolderNamesExpanded: [String: String] = [:],
         defaultFile: String? = "fallback",
         defaultFolder: String? = "folder",
         defaultFolderExpanded: String? = nil,
-        defaultRootFolder: String? = nil
+        defaultRootFolder: String? = nil,
+        defaultRootFolderExpanded: String? = nil,
+        light: IconTheme.Overrides? = nil
     ) -> IconTheme {
         IconTheme(
             name: "test",
@@ -34,10 +37,13 @@ struct IconThemeTests {
             folderNames: folderNames,
             folderNamesExpanded: folderNamesExpanded,
             rootFolderNames: rootFolderNames,
+            rootFolderNamesExpanded: rootFolderNamesExpanded,
             defaultFile: defaultFile,
             defaultFolder: defaultFolder,
             defaultFolderExpanded: defaultFolderExpanded,
-            defaultRootFolder: defaultRootFolder
+            defaultRootFolder: defaultRootFolder,
+            defaultRootFolderExpanded: defaultRootFolderExpanded,
+            light: light
         )
     }
 
@@ -159,6 +165,121 @@ struct IconThemeTests {
         #expect(subject.iconID(forFolder: "app", expanded: false, isRoot: true) == "root-app")
         #expect(subject.iconID(forFolder: "other", expanded: false, isRoot: true) == "root")
         #expect(subject.iconID(forFolder: "app", expanded: false, isRoot: false) == "folder-app")
+    }
+
+    // MARK: The light section
+
+    /// Material Icon Theme names 263 of these. The dark artwork on a light
+    /// sidebar is the symptom; 54 icon ids reachable no other way is the
+    /// cost.
+    @Test func aLightOverrideAnswersBeforeTheDarkTable() {
+        let subject = theme(
+            fileNames: ["readme.md": "readme"],
+            light: IconTheme.Overrides(fileNames: ["readme.md": "readme_light"])
+        )
+        #expect(subject.iconID(forFile: "README.md") == "readme")
+        #expect(subject.iconID(forFile: "README.md", on: .light) == "readme_light")
+    }
+
+    /// The section is an override, not a replacement: a key it omits still
+    /// answers from the table above it.
+    @Test func aKeyTheLightSectionOmitsFallsThrough() {
+        let subject = theme(
+            fileExtensions: ["ts": "typescript"],
+            light: IconTheme.Overrides(fileNames: ["readme.md": "readme_light"])
+        )
+        #expect(subject.iconID(forFile: "main.ts", on: .light) == "typescript")
+    }
+
+    /// Per lookup rather than per theme, which is what keeps the order
+    /// intact: an exact name beats an extension whichever table answered.
+    @Test func precedenceHoldsAcrossTheTwoTables() {
+        let subject = theme(
+            fileExtensions: ["md": "markdown_light"],
+            fileNames: ["readme.md": "readme"],
+            light: IconTheme.Overrides(fileExtensions: ["md": "markdown_light"])
+        )
+        #expect(subject.iconID(forFile: "README.md", on: .light) == "readme")
+    }
+
+    @Test func lightFoldersFollowTheSameRule() {
+        let subject = theme(
+            folderNames: ["src": "folder-src"],
+            folderNamesExpanded: ["src": "folder-src-open"],
+            light: IconTheme.Overrides(
+                folderNames: ["src": "folder-src_light"],
+                folderNamesExpanded: ["src": "folder-src-open_light"]
+            )
+        )
+        #expect(subject.iconID(forFolder: "src", expanded: false, on: .light) == "folder-src_light")
+        #expect(subject.iconID(forFolder: "src", expanded: true, on: .light) == "folder-src-open_light")
+        #expect(subject.iconID(forFolder: "src", expanded: true) == "folder-src-open")
+    }
+
+    // MARK: Artwork a project may not wear
+
+    /// `user.service.ts` matches `service.ts` before it matches `ts`, so
+    /// refusing the first answer is only useful if the walk carries on to
+    /// the second. That is the whole rule, and it is why the check lives
+    /// inside the loop.
+    @Test func aRejectedBrandFallsThroughToThePlainSuffix() {
+        let subject = theme(
+            definitions: ["angular-service": "./a.svg", "typescript": "./t.svg"],
+            fileExtensions: ["service.ts": "angular-service", "ts": "typescript"],
+            defaultFile: nil
+        )
+        #expect(subject.iconID(forFile: "user.service.ts") == "angular-service")
+        #expect(subject.iconID(forFile: "user.service.ts", rejecting: [WorkspaceFramework.angular]) == "typescript")
+    }
+
+    /// The project that *is* Angular keeps it.
+    @Test func aBrandTheProjectOwnsIsKept() {
+        let subject = theme(
+            fileExtensions: ["service.ts": "angular-service", "ts": "typescript"]
+        )
+        #expect(subject.iconID(forFile: "user.service.ts", rejecting: [WorkspaceFramework.solid]) == "angular-service")
+    }
+
+    /// With nothing else to fall through to, the theme's default file icon
+    /// answers — never a blank.
+    @Test func aRejectedBrandWithNoFallbackTakesTheDefault() {
+        let subject = theme(fileExtensions: ["service.ts": "angular-service"])
+        #expect(subject.iconID(forFile: "user.service.ts", rejecting: [WorkspaceFramework.angular]) == "fallback")
+    }
+
+    @Test func anExactNameCarryingABrandIsRefusedToo() {
+        let subject = theme(
+            fileExtensions: ["json": "json"],
+            fileNames: ["angular.json": "angular"]
+        )
+        #expect(subject.iconID(forFile: "angular.json") == "angular")
+        let rejected: Set<WorkspaceFramework> = [.angular]
+        #expect(subject.iconID(forFile: "angular.json", rejecting: rejected) == "json")
+    }
+
+    // MARK: An open root
+
+    /// The root branch used to answer with `defaultRootFolder` before
+    /// `expanded` was read at all, so a theme naming an open root could not
+    /// use it. Material names `folder-root-open`.
+    @Test func anExpandedRootPrefersTheThemesOpenRoot() {
+        let subject = theme(
+            defaultRootFolder: "folder-root",
+            defaultRootFolderExpanded: "folder-root-open"
+        )
+        #expect(subject.iconID(forFolder: "project", expanded: false, isRoot: true) == "folder-root")
+        #expect(subject.iconID(forFolder: "project", expanded: true, isRoot: true) == "folder-root-open")
+    }
+
+    @Test func anExpandedRootNamedByTheThemeBeatsBothDefaults() {
+        let subject = theme(
+            rootFolderNames: ["project": "root-project"],
+            rootFolderNamesExpanded: ["project": "root-project-open"],
+            defaultRootFolder: "folder-root",
+            defaultRootFolderExpanded: "folder-root-open"
+        )
+        #expect(subject.iconID(forFolder: "project", expanded: true, isRoot: true) == "root-project-open")
+        #expect(subject.iconID(forFolder: "project", expanded: false, isRoot: true) == "root-project")
     }
 
     // MARK: Parsing

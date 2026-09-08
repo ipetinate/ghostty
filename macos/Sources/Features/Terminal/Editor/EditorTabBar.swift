@@ -326,7 +326,7 @@ private struct EditorTabItem: View {
             }
             return .symbol(name: ExtensionDocument.symbol, color: .secondary)
         }
-        return tab.symbol.map { .symbol(name: $0, color: .secondary) } ?? icons.icon(forFile: tab.name)
+        return tab.symbol.map { .symbol(name: $0, color: .secondary) } ?? icons.icon(forFile: tab.name, at: tab.path)
     }
 
     var body: some View {

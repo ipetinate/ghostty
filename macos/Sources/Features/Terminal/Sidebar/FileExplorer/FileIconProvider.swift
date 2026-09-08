@@ -43,6 +43,11 @@ final class FileIconProvider: ObservableObject {
     /// directory listing.
     private var imageCache: [String: NSImage] = [:]
 
+    /// Keyed by folded theme name, cleared on every reload. Holds the
+    /// misses too, so a theme that draws nothing is not read off disk
+    /// again every time the menu opens.
+    private var artworkCache: [String: NSImage?] = [:]
+
     private var catalogObservation: AnyCancellable?
 
     private init() {
@@ -62,45 +67,101 @@ final class FileIconProvider: ObservableObject {
     }
 
     func reload() {
-        var found: [IconTheme] = []
+        themes = Self.themes(
+            inDirectories: [Self.bundledThemesDir, GuiConfigStore.shared.iconThemesDirURL].compactMap { $0 },
+            contributed: LanguageResolver.shared.catalog.iconThemes
+        )
+        artworkCache.removeAll()
+        applySelection()
+    }
 
-        for dir in [Self.bundledThemesDir, GuiConfigStore.shared.iconThemesDirURL].compactMap({ $0 }) {
+    /// Every installed theme, at most one per name, in display order.
+    ///
+    /// One name, one entry, folded — and the deduplication has to span all
+    /// three sources rather than only the contributed one. The theme in the
+    /// app bundle is a directory called `symbols`; the extension that
+    /// packages that same theme declares it as `Symbols`. Compared raw,
+    /// those are two names, so the picker listed the pack twice under one
+    /// label and which of the two the persisted selection resolved to was
+    /// decided by nothing the reader could see.
+    ///
+    /// The nearest source wins: the app bundle, then the reader's own
+    /// directory, then the extensions. Directory listings arrive in no
+    /// particular order, so they are sorted before the walk — otherwise
+    /// which of two directories differing only in case survives changes
+    /// between launches.
+    nonisolated static func themes(
+        inDirectories directories: [URL],
+        contributed: [LanguageCatalog.ContributedIconTheme]
+    ) -> [IconTheme] {
+        var found: [IconTheme] = []
+        var claimed: Set<String> = []
+
+        for dir in directories {
             let entries = (try? FileManager.default.contentsOfDirectory(
                 at: dir,
                 includingPropertiesForKeys: [.isDirectoryKey],
                 options: [.skipsHiddenFiles]
             )) ?? []
 
-            for entry in entries {
+            for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                 guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
-                      let theme = IconTheme.load(directory: entry)
+                      let theme = IconTheme.load(directory: entry),
+                      claimed.insert(theme.foldedName).inserted
                 else { continue }
                 found.append(theme)
             }
         }
 
-        found += Self.contributedThemes(
-            LanguageResolver.shared.catalog.iconThemes,
-            excluding: Set(found.map(\.name))
-        )
+        found += contributedThemes(contributed, excluding: claimed)
 
-        themes = found.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        applySelection()
+        return found.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
     }
 
+    /// `taken` holds folded names — `IconTheme.folded` — not raw ones.
     nonisolated static func contributedThemes(
         _ contributed: [LanguageCatalog.ContributedIconTheme],
         excluding taken: Set<String>
     ) -> [IconTheme] {
-        var seen = taken
+        var seen = Set(taken.map(IconTheme.folded))
         return contributed.compactMap { entry in
-            guard seen.insert(entry.iconTheme.name).inserted else { return nil }
-            return IconTheme.load(
-                directory: entry.iconTheme.directoryURL,
-                name: entry.iconTheme.name,
-                contributedBy: entry.extensionName
-            )
+            guard seen.insert(IconTheme.folded(entry.iconTheme.name)).inserted,
+                  var theme = IconTheme.load(
+                      directory: entry.iconTheme.directoryURL,
+                      name: entry.iconTheme.name,
+                      contributedBy: entry.extensionName
+                  )
+            else { return nil }
+            theme.contributedArtwork = ExtensionStore.artworkURL(in: entry.extensionRoot)
+            return theme
         }
+    }
+
+    /// The side a picker draws a pack's artwork at, in points.
+    static let artworkSize: CGFloat = 16
+
+    /// The pack's own artwork at picker size, or nil when it has none.
+    func artwork(for theme: IconTheme) -> NSImage? {
+        if let cached = artworkCache[theme.foldedName] { return cached }
+        let image = theme.artworkURL
+            .flatMap { NSImage(contentsOf: $0) }
+            .map(Self.sizedForPicker)
+        artworkCache[theme.foldedName] = image
+        return image
+    }
+
+    /// A menu draws an image at whatever size the image declares, and a
+    /// pack's own artwork declares its own — the SVGs are 24 points, the
+    /// packaged PNGs 128 — so the size is set here rather than left to the
+    /// row. `isTemplate` is cleared for the reason `FileIcon.image` gives:
+    /// this is artwork carrying its own brand colors, not a glyph to tint.
+    private static func sizedForPicker(_ image: NSImage) -> NSImage {
+        let sized = image.copy() as? NSImage ?? image
+        sized.size = NSSize(width: artworkSize, height: artworkSize)
+        sized.isTemplate = false
+        return sized
     }
 
     /// Selects a theme by name, or `symbolsOnly` to fall back to SF Symbols.
@@ -113,15 +174,29 @@ final class FileIconProvider: ObservableObject {
         UserDefaults.standard.string(forKey: Self.selectionKey) ?? Self.defaultThemeName
     }
 
+    /// The selection under the name the installed theme goes by, which is
+    /// what a picker has to tag its rows with.
+    ///
+    /// The two differ whenever a reader picked a theme before the picker
+    /// stopped listing one pack twice: the entry they clicked was the
+    /// extension's `Symbols` and the theme that survives is the bundle's
+    /// `symbols`. Answering with the stored spelling would leave the
+    /// picker showing no selection at all, for a theme that is installed
+    /// and active.
+    var selectedThemeName: String {
+        let folded = IconTheme.folded(selectedName)
+        return themes.first { $0.foldedName == folded }?.name ?? selectedName
+    }
+
     /// Symbols ships with the app and is what the explorer is designed
     /// against, so a fresh install gets it without having to pick anything.
     static let defaultThemeName = "symbols"
 
     private func applySelection() {
-        let name = selectedName
+        let name = IconTheme.folded(selectedName)
         let next = name == Self.symbolsOnly
             ? nil
-            : themes.first { $0.name == name && $0.isSupported }
+            : themes.first { $0.foldedName == name && $0.isSupported }
 
         guard next != active else { return }
         active = next
@@ -130,10 +205,31 @@ final class FileIconProvider: ObservableObject {
 
     // MARK: Icon resolution
 
-    func icon(forFile fileName: String) -> FileIcon {
-        if let theme = active,
-           let id = theme.iconID(forFile: fileName),
-           let image = image(for: id, in: theme) {
+    /// `path` is optional because five of the seven callers hold only a
+    /// name — a git status line, a search hit. It buys the two answers a
+    /// theme cannot reach on its own, both of them from the project's own
+    /// dependencies: a `.tsx` in a Solid project wearing Solid's icon, and
+    /// a `user.service.ts` in a NestJS project *not* wearing Angular's. See
+    /// `WorkspaceFramework`.
+    func icon(forFile fileName: String, at path: String? = nil) -> FileIcon {
+        guard let theme = active else { return Self.symbolFallback(forFile: fileName) }
+        let framework = path.flatMap { WorkspaceFramework.of(path: $0) }
+
+        /// The framework's own icon, when the file's suffix is one a
+        /// framework may speak for and the theme has artwork by that name.
+        /// The theme's tables are not consulted here, so nothing in this
+        /// type knows what any particular theme calls React's icon.
+        if WorkspaceFramework.claims(fileName: fileName), let framework,
+           theme.definitions[framework.iconID] != nil,
+           let image = image(for: framework.iconID, in: theme) {
+            return .image(image)
+        }
+
+        if let id = theme.iconID(
+            forFile: fileName,
+            on: background,
+            rejecting: path == nil ? [] : WorkspaceFramework.rejected(by: framework)
+        ), let image = image(for: id, in: theme) {
             return .image(image)
         }
         return Self.symbolFallback(forFile: fileName)
@@ -141,11 +237,26 @@ final class FileIconProvider: ObservableObject {
 
     func icon(forFolder folderName: String, expanded: Bool, isRoot: Bool = false) -> FileIcon {
         if let theme = active,
-           let id = theme.iconID(forFolder: folderName, expanded: expanded, isRoot: isRoot),
+           let id = theme.iconID(forFolder: folderName, expanded: expanded, isRoot: isRoot, on: background),
            let image = image(for: id, in: theme) {
             return .image(image)
         }
         return .symbol(name: expanded ? "folder.fill" : "folder", color: .secondary)
+    }
+
+    /// Which set of the theme's tables to read, asked per lookup.
+    ///
+    /// The terminal's own background, not the system appearance: the
+    /// explorer is painted by the theme, so a light theme inside a dark
+    /// system is a light sidebar and wants the light artwork. This is the
+    /// same question `ExtensionViewerTheme` asks to tell its page which
+    /// scheme it is in.
+    ///
+    /// Nothing is cached against it. A light override names a *different*
+    /// icon id — Material's are suffixed `_light` — and `imageCache` is
+    /// keyed by id, so a theme change needs no eviction here.
+    private var background: IconTheme.Background {
+        ThemePalette.shared.background?.isLightColor == true ? .light : .dark
     }
 
     private func image(for id: String, in theme: IconTheme) -> NSImage? {

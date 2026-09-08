@@ -233,9 +233,32 @@ extension LSPCodeAction {
     ///   re-encoded from a parsed type has no `code` — so the request
     ///   succeeds, the refactors come back, and every quick fix is missing
     ///   with nothing reported anywhere.
-    static func context(diagnostics: [LSPValue]) -> LSPValue {
-        ["diagnostics": .array(diagnostics)]
+    /// - Parameter only: The kinds the caller will use, and **omitted from
+    ///   the request when empty** rather than sent as `[]`. The two are
+    ///   different questions: absent asks for whatever the server has,
+    ///   while an empty list asks for actions of no kind, and a server that
+    ///   filters on it faithfully answers nothing.
+    ///
+    /// Asking for a kind is not a courtesy the server may ignore. Measured:
+    /// `vscode-eslint-language-server` 4.10.0 computes its whole-file fix
+    /// **only** when `context.only[0]` is `source.fixAll.eslint` or
+    /// `source.fixAll`, and offers per-problem quick fixes otherwise — so
+    /// "Fix all fixable ESLint issues" cannot be reached by a client that
+    /// never sends the field.
+    static func context(diagnostics: [LSPValue], only: [String] = []) -> LSPValue {
+        var context: [String: LSPValue] = ["diagnostics": .array(diagnostics)]
+        if !only.isEmpty { context["only"] = .array(only.map(LSPValue.string)) }
+        return .object(context)
     }
+
+    /// The kind to ask for when the caller wants one action that fixes the
+    /// whole file.
+    ///
+    /// The protocol's own hierarchical parent, not a server's leaf. A
+    /// server matching by prefix answers with its own
+    /// `source.fixAll.<something>`, and the ESLint server special-cases
+    /// this exact string alongside its own — so one ask reaches both.
+    static let fixAllKind = "source.fixAll"
 }
 
 /// What a server said about code actions at `initialize`.

@@ -35,15 +35,14 @@ struct FileExplorerView: View {
     /// The path waiting for the "Move to Trash" confirmation.
     @State private var pendingDelete: String?
 
-    /// Whether the excludes section under the search field is open.
+    /// Whether the filter panel under the search field is open.
     ///
     /// Closed until asked for, and remembered afterwards. Most searches
-    /// never need it, and a field that is always on screen would push the
-    /// tree down for every reader to buy something few of them use. The
-    /// count beside the header is what keeps a closed section honest: a
-    /// reader whose search is quietly missing a folder can see, without
-    /// opening anything, that patterns are in force.
-    @AppStorage(FileExplorerModel.excludesExpandedKey) private var excludesExpanded = false
+    /// never need it, and a panel that is always on screen would push the
+    /// tree down for every reader to buy something few of them use. Closed
+    /// means gone — there is no header row left behind, which is what the
+    /// button beside the search field is for.
+    @AppStorage(FileExplorerModel.filtersExpandedKey) private var filtersExpanded = false
 
     /// The file a reveal still owes a scroll to, or nil when nothing is
     /// pending.
@@ -73,7 +72,9 @@ struct FileExplorerView: View {
                 empty
             } else {
                 search
-                excludes
+                if filtersExpanded {
+                    filters
+                }
                 tree
             }
         }
@@ -149,13 +150,17 @@ struct FileExplorerView: View {
 
                 if !icons.themes.isEmpty {
                     Menu("Icon Theme") {
-                        Button("SF Symbols") {
+                        Button {
                             icons.select(FileIconProvider.symbolsOnly)
+                        } label: {
+                            Label("SF Symbols", systemImage: "textformat")
                         }
                         Divider()
                         ForEach(icons.themes, id: \.name) { theme in
-                            Button(theme.name.capitalized) { icons.select(theme.name) }
-                                .disabled(!theme.isSupported)
+                            Button { icons.select(theme.name) } label: {
+                                IconThemeMenuLabel(title: theme.displayName, artwork: icons.artwork(for: theme))
+                            }
+                            .disabled(!theme.isSupported)
                         }
                     }
                 }
@@ -197,13 +202,25 @@ struct FileExplorerView: View {
 
     // MARK: Tree
 
+    /// The search row: the field, and the button that opens the filters
+    /// under it.
+    private var search: some View {
+        HStack(spacing: 4) {
+            searchField
+            filterButton
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 6)
+        .padding(.bottom, 4)
+    }
+
     /// The search field, always there.
     ///
     /// No submit button and no disclosure: a field you have to reveal before
     /// you can use it is a field you forget exists, and one you have to press
     /// Return in makes you wait to find out you typed the wrong thing. It
     /// filters as you type, debounced in the model.
-    private var search: some View {
+    private var searchField: some View {
         HStack(spacing: 5) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 10))
@@ -236,11 +253,96 @@ struct FileExplorerView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color.secondary.opacity(0.12))
         )
-        .padding(.horizontal, 8)
-        .padding(.bottom, 4)
     }
 
-    /// The excludes section: one line of comma-separated glob patterns, and
+    /// The button that shows and hides the filter panel, wearing the accent
+    /// while a closed panel is still filtering. See
+    /// `FileExplorerFilterButton` for what it draws and why.
+    private var filterButton: some View {
+        let button = FileExplorerFilterButton.resolve(
+            isExpanded: filtersExpanded,
+            activeFilterCount: model.excludes.patterns.count
+        )
+
+        return SidebarIconButton(
+            help: button.help,
+            action: { filtersExpanded.toggle() },
+            label: {
+                Image(systemName: button.symbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(
+                        button.isAccented
+                            ? AnyShapeStyle(palette.accent ?? .accentColor)
+                            : AnyShapeStyle(.secondary)
+                    )
+            }
+        )
+    }
+
+    /// The filter panel: one labelled row per filter, stacked on a card
+    /// that points back at the button, and nothing at all while it is
+    /// closed.
+    ///
+    /// A stack rather than a field with a title bolted on, so the next
+    /// filter is a row here and not a redesign. Excludes is the only one
+    /// today, and it earns no special place for that.
+    private var filters: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            filterRow("Excludes", inForce: model.excludes.patterns.count) {
+                excludes
+            }
+        }
+        .padding(.top, FileExplorerFilterPanelShape.pointerHeight + 8)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 10)
+        .background(filterCard)
+        .padding(.leading, 8)
+        .padding(.trailing, 6)
+        .padding(.bottom, 8)
+    }
+
+    /// The card behind the filters, wearing the sidebar's own card fill and
+    /// border so it reads as a surface on top of the panel rather than as
+    /// more of it.
+    ///
+    /// The pointer is aimed at the middle of the filter button, which the
+    /// card can name without measuring anything: the two share a trailing
+    /// edge, so the middle of the button is half a chip in from it.
+    private var filterCard: some View {
+        let shape = FileExplorerFilterPanelShape(
+            pointerInset: SidebarIconChipMetrics.width / 2
+        )
+
+        return shape
+            .fill(Color.secondary.opacity(0.08))
+            .overlay(shape.stroke(Color.secondary.opacity(0.16), lineWidth: 1))
+    }
+
+    /// One filter: its name, how many of it are in force, and its control.
+    private func filterRow<Content: View>(
+        _ title: String,
+        inForce: Int,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(palette.font(size: 10, weight: .semibold))
+                    .textCase(.uppercase)
+
+                if inForce > 0 {
+                    SidebarCountBadge(count: inForce)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.secondary)
+
+            content()
+        }
+    }
+
+    /// The excludes control: one line of comma-separated glob patterns, and
     /// a chip for each pattern that took effect.
     ///
     /// The chips are the field's only feedback, and they are the reason the
@@ -248,52 +350,25 @@ struct FileExplorerView: View {
     /// so `(build|dist` and `*.{ts` say what is wrong by being absent, and
     /// nothing has to be explained in prose next to an input.
     private var excludes: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                excludesExpanded.toggle()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: excludesExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("node_modules, *.log, (build|dist)/**", text: $model.excludeText)
+                .textFieldStyle(.plain)
+                .font(palette.font(size: 11))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.12))
+                )
 
-                    Text("Excludes")
-                        .font(palette.font(size: 10, weight: .semibold))
-                        .textCase(.uppercase)
-
-                    if !model.excludes.isEmpty {
-                        SidebarCountBadge(count: model.excludes.patterns.count)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Patterns the search skips")
-
-            if excludesExpanded {
-                TextField("node_modules, *.log, (build|dist)/**", text: $model.excludeText)
-                    .textFieldStyle(.plain)
-                    .font(palette.font(size: 11))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.secondary.opacity(0.12))
-                    )
-
-                if !model.excludes.isEmpty {
-                    WrapLayout(horizontalSpacing: 4, verticalSpacing: 3) {
-                        ForEach(model.excludes.patterns) { pattern in
-                            excludeChip(pattern)
-                        }
+            if !model.excludes.isEmpty {
+                WrapLayout(horizontalSpacing: 4, verticalSpacing: 3) {
+                    ForEach(model.excludes.patterns) { pattern in
+                        excludeChip(pattern)
                     }
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 4)
     }
 
     /// One pattern, with the click that drops it.
@@ -761,6 +836,25 @@ struct FileExplorerView: View {
     }
 }
 
+/// One entry of the Icon Theme menu: the pack's name beside artwork the
+/// pack itself draws, so the menu shows what picking it does.
+///
+/// A pack with no artwork gets no icon rather than a placeholder one. The
+/// only packs that reach that branch are the font-based ones, which the
+/// menu already draws disabled.
+private struct IconThemeMenuLabel: View {
+    let title: String
+    let artwork: NSImage?
+
+    var body: some View {
+        if let artwork {
+            Label { Text(verbatim: title) } icon: { Image(nsImage: artwork) }
+        } else {
+            Text(verbatim: title)
+        }
+    }
+}
+
 /// One row of the tree.
 private struct FileExplorerRow: View {
     let row: FileRow
@@ -1095,7 +1189,7 @@ private struct FileExplorerRow: View {
     private var icon: FileIcon {
         row.node.isDirectory
             ? icons.icon(forFolder: row.node.name, expanded: isExpanded)
-            : icons.icon(forFile: row.node.name)
+            : icons.icon(forFile: row.node.name, at: row.node.path)
     }
 
     /// One filled row, and it is the file open in the focused tab.

@@ -487,7 +487,9 @@ final class ExtensionStore: ObservableObject {
     /// and the icon its page declares is in the card rather than the
     /// manifest. Until the catalogue arrives that left a restored theme tab
     /// wearing the puzzle mark, so the packaged file answers first.
-    nonisolated private static func artworkURL(in root: URL) -> URL? {
+    ///
+    /// Also what the icon theme picker falls back to: see `IconTheme.artworkURL`.
+    nonisolated static func artworkURL(in root: URL) -> URL? {
         let url = root
             .appendingPathComponent(ExtensionMediaGate.mediaDirectoryName, isDirectory: true)
             .appendingPathComponent("icon.png")

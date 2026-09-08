@@ -1,18 +1,25 @@
 import AppKit
 import SwiftUI
 
-/// The welcome window's four steps.
+/// The welcome window's five steps.
 ///
 /// Hero, then what the app does, then where the sidebar's tabs go, then the
-/// agents — in that order because the agents step is the one that installs
-/// things on the machine, and a reader who has just met this app should know
-/// what an agent hook *is* before being offered six of them. It is also the
-/// only step with a way past it that does nothing: Skip.
+/// theme, then the agents — with the agents last because that step is the one
+/// that installs things on the machine *and* has a plan to tick, and a reader
+/// who has just met this app should know what an agent hook is before being
+/// offered six of them. It is also the only step with a way past it that does
+/// nothing: Skip.
 ///
 /// The placement step sits third because it is a choice about this window's
 /// own shape, made against the sidebar the step before it has just named — and
 /// because it takes effect on the click rather than on Finish, so it has
 /// nothing to do with the agents step's plan.
+///
+/// The theme step sits fourth, beside it, because the two are the same kind of
+/// question: what this window is to look like. It is the later of the pair
+/// because it is the one that needs the network — the placement step can
+/// answer offline, and putting the reachable choice first means an offline
+/// reader has already made one before meeting anything that can fail.
 struct WelcomeView: View {
     let close: () -> Void
 
@@ -27,6 +34,7 @@ struct WelcomeView: View {
         case hero
         case basics
         case layout
+        case theme
         case agents
 
         /// What the header calls this step, beside the app's name. Nil for
@@ -36,9 +44,14 @@ struct WelcomeView: View {
             case .hero: return nil
             case .basics: return "What this app does"
             case .layout: return "Where the tabs go"
+            case .theme: return "Your theme"
             case .agents: return "Your agents"
             }
         }
+
+        /// The step behind this one, or nil for the first. Read by the bottom
+        /// bar to decide whether there is a Back button at all.
+        var previous: Step? { Step(rawValue: rawValue - 1) }
     }
 
     @State private var step: Step = .hero
@@ -69,6 +82,11 @@ struct WelcomeView: View {
     @State private var didSeed = false
 
     @State private var showsAtLaunch = WelcomeShownRecord.showsAtLaunch
+
+    /// The theme step's choice, held here rather than in the step: Next is a
+    /// button in this window's bottom bar, and going on is what installs the
+    /// theme. See `WelcomeThemeSelection`.
+    @StateObject private var themeSelection = WelcomeThemeSelection()
 
     private var accent: Color { palette.accent ?? .accentColor }
 
@@ -160,7 +178,7 @@ struct WelcomeView: View {
         .padding(.vertical, 12)
     }
 
-    // MARK: Steps two, three and four
+    // MARK: Steps two to five
 
     @ViewBuilder
     private var content: some View {
@@ -173,6 +191,10 @@ struct WelcomeView: View {
                 .padding(.vertical, 14)
         case .layout:
             WelcomeTabPlacementStep()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+        case .theme:
+            WelcomeThemeStep(selection: themeSelection)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
         case .agents:
@@ -310,8 +332,22 @@ struct WelcomeView: View {
         }
     }
 
-    @ViewBuilder
     private var buttons: some View {
+        HStack(spacing: 8) {
+            if let previous = step.previous {
+                Button("Back") { advance(to: previous) }
+                    .keyboardShortcut("[", modifiers: .command)
+            }
+            forward
+        }
+    }
+
+    /// Going back never undoes what a step did. Every step here writes either
+    /// a preference the next launch reads or a theme already applied, and each
+    /// of those is idempotent, so leaving and returning costs a reader
+    /// nothing and hides nothing they had chosen.
+    @ViewBuilder
+    private var forward: some View {
         switch step {
         case .hero:
             Button("Start") { advance(to: .basics) }
@@ -320,14 +356,22 @@ struct WelcomeView: View {
             Button("Next") { advance(to: .layout) }
                 .keyboardShortcut(.defaultAction)
         case .layout:
-            Button("Next") { advance(to: .agents) }
+            Button("Next") { advance(to: .theme) }
                 .keyboardShortcut(.defaultAction)
-        case .agents:
-            HStack(spacing: 8) {
-                Button("Skip", action: close)
-                Button("Finish", action: finish)
-                    .keyboardShortcut(.defaultAction)
+        case .theme:
+            /// Going on is what installs the chosen theme, and it does not
+            /// wait for it: a reader on a slow line must still be able to
+            /// leave, and the step is honest about a download that fails
+            /// afterwards because it writes nothing until one succeeds.
+            Button("Next") {
+                themeSelection.goOn()
+                advance(to: .agents)
             }
+            .keyboardShortcut(.defaultAction)
+        case .agents:
+            Button("Skip", action: close)
+            Button("Finish", action: finish)
+                .keyboardShortcut(.defaultAction)
         }
     }
 

@@ -185,12 +185,15 @@ final class FileExplorerModel: ObservableObject {
     /// same notification the hidden-files toggle already rides.
     static let excludeTextKey = "FileExplorerSearchExcludes"
 
-    /// Whether the excludes section under the search field is open.
+    /// Whether the filter panel under the search field is open.
     ///
-    /// The view owns it through `@AppStorage` — it is the disclosure's
-    /// state and nothing in the model reads it — but the key lives here so
-    /// the explorer's preference keys are one list rather than two.
-    static let excludesExpandedKey = "FileExplorerSearchExcludesExpanded"
+    /// The view owns it through `@AppStorage` — it is the panel's state and
+    /// nothing in the model reads it — but the key lives here so the
+    /// explorer's preference keys are one list rather than two. The stored
+    /// name still says "excludes" because it is the same answer readers
+    /// have already given, and renaming it would close every open panel
+    /// once for nothing.
+    static let filtersExpandedKey = "FileExplorerSearchExcludesExpanded"
 
     /// The toggle's starting value: whatever the reader last chose, or the
     /// default when they never chose.

@@ -260,6 +260,20 @@ enum LSPTimeout {
     /// the rest of the session. So the relay outlives the completion and
     /// still ends, in every case, with an answer.
     static let tsserverRelay: TimeInterval = 15
+
+    /// One `textDocument/diagnostic` pull. Nobody is waiting on a keystroke
+    /// for it — the underlines arrive when they arrive — and what happens
+    /// behind it is a whole file linted rather than one position answered.
+    ///
+    /// Generous because the first pull of a session is not the shape of the
+    /// rest. Measured against `vscode-eslint-language-server` 4.10.0 on a
+    /// flat-config project: 653 ms for the first report, where the config,
+    /// the parser and the plugins all load, then 3–5 ms for the seven after
+    /// it. A type-aware configuration on a large project is slower still,
+    /// and the cost of expiring early is a file that shows no problems at
+    /// all. Bounded all the same, so a wedged server does not leave a pull
+    /// in flight for the rest of the session.
+    static let diagnostic: TimeInterval = 10
 }
 
 /// The debounced `didChange` text waiting to be sent, per document.
@@ -365,6 +379,185 @@ struct LSPCompletionCapability: Equatable, Sendable {
             (provider?["triggerCharacters"]?.arrayValue ?? []).compactMap { $0.stringValue?.first }
         )
         self.resolveProvider = provider?["resolveProvider"]?.boolValue ?? false
+    }
+}
+
+/// What a server said it can do for diagnostics it will **not** push.
+///
+/// `textDocument/publishDiagnostics` is the server volunteering a file's
+/// problems. LSP 3.17 added the other direction — the client asks, with
+/// `textDocument/diagnostic` — and a server that answers that way is not
+/// obliged to volunteer anything ever again. Measured:
+/// `vscode-eslint-language-server` 4.10.0 declares the capability below,
+/// answers the request, and calls `sendDiagnostics` nowhere in its source.
+/// A client that reads only the push therefore shows a spotless file with a
+/// dozen lint errors in it, and reports no failure of any kind while doing
+/// so.
+///
+/// Parsed once, at `initialize`, for the same reason
+/// `LSPCompletionCapability` is: "does this server pull" is asked on every
+/// open, every flushed change and every refresh.
+struct LSPDiagnosticCapability: Equatable, Sendable {
+    /// The server said it answers `textDocument/diagnostic`.
+    let isDeclared: Bool
+
+    /// What the server calls its own diagnostics, from
+    /// `diagnosticProvider.identifier` — `eslint` on the server above, and
+    /// nil for one that named none.
+    ///
+    /// Echoed back in every request, which is how a server that computes
+    /// more than one kind of report tells them apart, and how it matches a
+    /// `previousResultId` to the computation that issued it.
+    let identifier: String?
+
+    /// The server said an edit in one file can change another file's
+    /// problems, from `diagnosticProvider.interFileDependencies`.
+    ///
+    /// Acted on: a change to one document re-pulls the *other* open
+    /// documents this server serves, because for such a server the file the
+    /// reader is not looking at is where the new error appeared. False for
+    /// the ESLint server, whose rules see one file at a time.
+    let interFileDependencies: Bool
+
+    /// The server said it also answers `workspace/diagnostic` — every file
+    /// in the project rather than one open document.
+    ///
+    /// Read and stored, never asked. A workspace pull is a long-running
+    /// streaming request whose answers are about files the reader has not
+    /// opened, and this client draws problems into an open editor and
+    /// nowhere else. Kept so the decision not to ask is visible here rather
+    /// than being re-derived off the wire by whoever wants it next.
+    let workspaceDiagnostics: Bool
+
+    /// What a server that never mentioned diagnostics supports. Distinct
+    /// from nil, which means no server is running at all.
+    static let none = LSPDiagnosticCapability(
+        isDeclared: false,
+        identifier: nil,
+        interFileDependencies: false,
+        workspaceDiagnostics: false
+    )
+
+    init(
+        isDeclared: Bool,
+        identifier: String?,
+        interFileDependencies: Bool,
+        workspaceDiagnostics: Bool
+    ) {
+        self.isDeclared = isDeclared
+        self.identifier = identifier
+        self.interFileDependencies = interFileDependencies
+        self.workspaceDiagnostics = workspaceDiagnostics
+    }
+
+    /// - Parameter capabilities: the whole `capabilities` object from
+    ///   `initialize`, not the `diagnosticProvider` subtree — so a server
+    ///   that answered without one parses to `none` here rather than being
+    ///   mistaken for one that pulls.
+    ///
+    /// The specification gives this capability as an object, and the object
+    /// is what the ESLint server sends. A bare `true` is read as a
+    /// declaration with no fields anyway: it costs one case, and the
+    /// alternative is a server that pulls being silently classified as one
+    /// that pushes — which is the failure this whole type exists to end.
+    init(_ capabilities: LSPValue?) {
+        let provider = capabilities?["diagnosticProvider"]
+
+        switch provider {
+        case .bool(let flag):
+            self.isDeclared = flag
+            self.identifier = nil
+            self.interFileDependencies = false
+            self.workspaceDiagnostics = false
+        case .object:
+            self.isDeclared = true
+            self.identifier = provider?["identifier"]?.stringValue
+            self.interFileDependencies = provider?["interFileDependencies"]?.boolValue ?? false
+            self.workspaceDiagnostics = provider?["workspaceDiagnostics"]?.boolValue ?? false
+        default:
+            self = .none
+        }
+    }
+}
+
+/// A server's answer to `textDocument/diagnostic`.
+///
+/// Two kinds, and the second is what makes asking repeatedly affordable. A
+/// `full` report carries the file's problems. An `unchanged` report carries
+/// a result id and no items, and it means "what I told you last time still
+/// holds" — so a client that keeps its previous answer pays one round trip
+/// and no work, while a client that reads it as an empty list erases every
+/// underline in the file the first time a keystroke changes nothing.
+struct LSPDiagnosticReport: Equatable {
+    /// One file's report: the answer's own, or one of its related
+    /// documents'.
+    struct Document: Equatable {
+        /// The server said the previous answer still holds, and sent no
+        /// items to replace it with.
+        let isUnchanged: Bool
+
+        /// The token to send back as `previousResultId` on the next pull,
+        /// and nil when the server sent none.
+        ///
+        /// Optional on a `full` report because the protocol makes it
+        /// optional there, and because a real server uses that permission:
+        /// measured, `vscode-eslint-language-server` 4.10.0 answers `full`
+        /// with no `resultId` at all — so it can never answer `unchanged`,
+        /// and every pull costs it a whole file's lint. A client that
+        /// required the field would drop that server's every report and
+        /// show nothing.
+        let resultId: String?
+
+        /// The problems, **unparsed**.
+        ///
+        /// Raw for the reason `LSPCenter.rawDiagnosticsByServer` gives: a
+        /// quick fix is matched to a diagnostic by fields `LSPDiagnostic`
+        /// does not keep, and re-encoding a parsed one asks the server
+        /// about a problem it cannot recognise.
+        ///
+        /// Empty on an `unchanged` report, where it means "unknown" rather
+        /// than "none" — which is why `isUnchanged` is a field and not
+        /// something to infer from this being empty.
+        let items: [LSPValue]
+
+        /// - Returns: nil when `kind` is absent or is a word this client
+        ///   does not know. Both are answers a client must not guess at:
+        ///   reading an unknown kind as `full` would clear a file's
+        ///   problems on the strength of a field nobody parsed.
+        init?(_ value: LSPValue) {
+            switch value["kind"]?.stringValue {
+            case "full":
+                self.isUnchanged = false
+                self.items = value["items"]?.arrayValue ?? []
+            case "unchanged":
+                self.isUnchanged = true
+                self.items = []
+            default:
+                return nil
+            }
+            self.resultId = value["resultId"]?.stringValue
+        }
+    }
+
+    /// The report for the file that was asked about.
+    let document: Document
+
+    /// Reports for *other* files, from `relatedDocuments`, keyed by the uri
+    /// the server spelled them with.
+    ///
+    /// Handled because it is claimed — see
+    /// `LSPCenter.diagnosticCapabilities`. A server whose rules span files
+    /// answers a pull about the file you edited with the problems that edit
+    /// created somewhere else, and a client that claims the capability and
+    /// then drops the extra reports leaves those files underlined as they
+    /// were before the edit, with no way to notice.
+    let related: [String: Document]
+
+    init?(_ value: LSPValue) {
+        guard let document = Document(value) else { return nil }
+        self.document = document
+        self.related = (value["relatedDocuments"]?.objectValue ?? [:])
+            .compactMapValues(Document.init)
     }
 }
 

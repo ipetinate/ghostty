@@ -10,11 +10,16 @@ import SwiftUI
 /// hierarchy (`TerminalController.makeSidebarSplitView`) has to change.
 ///
 /// **A struct rather than an enum**, and the reason is the whole of
-/// `contributes.views`: an extension contributes a panel, so the set of
-/// panels is not known at compile time and cannot be `CaseIterable`. The
-/// built-ins keep the spelling they had — `.terminals`, `.git` — because a
-/// static member of an `Equatable` type matches in a `switch` the way a case
-/// does; what a `switch` over this now needs is a `default`.
+/// `contributes.views`: an extension puts a button in the two bars, so the
+/// set of entries is not known at compile time and cannot be `CaseIterable`.
+/// The built-ins keep the spelling they had — `.terminals`, `.git` — because
+/// a static member of an `Equatable` type matches in a `switch` the way a
+/// case does; what a `switch` over this now needs is a `default`.
+///
+/// A contributed entry is not a panel. It never becomes `selectedPane`: its
+/// page opens as a tab of the editor. What it needs from this type is an
+/// identity to hang a `UserDefaults` key off, so the reader can take its
+/// button out of the bars.
 struct SidebarPane: RawRepresentable, Hashable, Identifiable, Codable, Sendable {
     let rawValue: String
 
@@ -31,20 +36,20 @@ struct SidebarPane: RawRepresentable, Hashable, Identifiable, Codable, Sendable 
     /// The panels this build ships, in tab order.
     static let builtIns: [SidebarPane] = [.terminals, .files, .git, .worktrees, .extensions]
 
-    /// What a contributed panel's `rawValue` begins with.
+    /// What a contributed entry's `rawValue` begins with.
     ///
     /// A colon, which `LanguageManifest.validID` refuses in an extension id
     /// and `LanguageContribution.validLanguageID` refuses in a view id — so
-    /// no contributed panel can ever spell a built-in's raw value, and no
+    /// no contributed entry can ever spell a built-in's raw value, and no
     /// built-in can be mistaken for a contributed one.
     static let viewPrefix = "view:"
 
-    /// The panel an extension's view is shown in.
+    /// The bars' entry for an extension's view.
     static func view(_ id: String) -> SidebarPane {
         SidebarPane(rawValue: viewPrefix + id)
     }
 
-    /// The `ExtensionViewDescriptor.id` this panel draws, or nil for a
+    /// The `ExtensionViewDescriptor.id` this entry opens, or nil for a
     /// built-in.
     var contributedViewID: String? {
         guard rawValue.hasPrefix(Self.viewPrefix) else { return nil }
@@ -54,7 +59,7 @@ struct SidebarPane: RawRepresentable, Hashable, Identifiable, Codable, Sendable 
 
     var id: String { rawValue }
 
-    /// The built-in's name. A contributed panel's name is its manifest's
+    /// The built-in's name. A contributed entry's name is its manifest's
     /// `title` and travels on `SidebarPaneItem`, because it is a third
     /// party's string and this type is not where escaping belongs.
     var title: String {
@@ -108,12 +113,14 @@ struct SidebarPane: RawRepresentable, Hashable, Identifiable, Codable, Sendable 
     }
 }
 
-/// A panel as the two bars draw it: which panel, what it is called, and the
-/// artwork it wears when it ships one.
+/// One entry of the two bars: what it is called, the artwork it wears when
+/// it ships one, and what pressing it does.
 ///
-/// The bars used to take `[SidebarPane]` and ask the pane for both. A
-/// contributed panel's name and icon come from a manifest and belong to the
-/// extension, not to the pane's identity, so they travel here instead.
+/// The bars used to take `[SidebarPane]` and ask the pane for the name and
+/// the icon. A contributed view's name and icon come from a manifest and
+/// belong to the extension, not to the pane's identity, so they travel here
+/// instead — and so does the descriptor, which is what tells the bar that
+/// this entry opens a tab rather than switching the panel under it.
 struct SidebarPaneItem: Identifiable, Equatable {
     let pane: SidebarPane
     let title: String
@@ -127,18 +134,27 @@ struct SidebarPaneItem: Identifiable, Equatable {
     /// symbol name. See `ExtensionArtwork`.
     let artwork: URL?
 
+    /// The contributed view this entry draws, or nil for a built-in.
+    ///
+    /// Only ever a `sidebar` view. An `editor` view has no button: its
+    /// `placements` is empty whatever the manifest says, so it never reaches
+    /// either bar — see `ExtensionViewContribution.placements(_:surface:)`.
+    let descriptor: ExtensionViewDescriptor?
+
     var id: String { pane.rawValue }
 
     init(_ pane: SidebarPane) {
         self.pane = pane
         self.title = pane.title
         self.artwork = nil
+        self.descriptor = nil
     }
 
     init(_ descriptor: ExtensionViewDescriptor) {
         self.pane = .view(descriptor.id)
         self.title = descriptor.title
         self.artwork = descriptor.icon
+        self.descriptor = descriptor
     }
 }
 
@@ -175,9 +191,9 @@ enum SidebarTabBarPlacement: String, CaseIterable, Identifiable {
     /// The placement a manifest names, for this bar.
     ///
     /// The switcher is one list drawn in one of two places, so this is what
-    /// `contributes.views[].placements` is checked against: a view that
-    /// names only `topBar` is offered while the bar is at the top and not
-    /// while it is at the side, which is what the author asked for.
+    /// `contributes.views[].placements` is checked against: a view whose
+    /// button is only in the `topBar` is offered while the bar is at the top
+    /// and not while it is at the side, which is what the author asked for.
     var contribution: ExtensionViewContribution.Placement {
         switch self {
         case .top: return .topBar
@@ -186,7 +202,8 @@ enum SidebarTabBarPlacement: String, CaseIterable, Identifiable {
     }
 }
 
-/// A panel's icon: an SF Symbol, an asset, or a file an extension shipped.
+/// A bar entry's icon: an SF Symbol, an asset, or a file an extension
+/// shipped.
 struct SidebarPaneIcon: View {
     let item: SidebarPaneItem
     var size: CGFloat = 10
@@ -214,8 +231,8 @@ struct SidebarPaneIcon: View {
     }
 }
 
-/// Which panels the sidebar offers: the built-ins the reader kept, then the
-/// views the installed extensions contribute.
+/// What the two bars offer: the built-in panels the reader kept, then a
+/// button per view the installed extensions contribute.
 ///
 /// One object for both because the answer is one list, and because
 /// `SidebarPane.isEnabled` reads `UserDefaults` directly — which SwiftUI has
@@ -249,7 +266,7 @@ final class SidebarPaneVisibility: ObservableObject {
             .store(in: &subscriptions)
     }
 
-    /// The panels, as panes. Kept for the callers that only need identity —
+    /// The entries, as panes. Kept for the callers that only need identity —
     /// the fallback in `SidebarView` and the titlebar chrome.
     var enabled: [SidebarPane] {
         items.map(\.pane)
@@ -280,8 +297,8 @@ final class SidebarPaneVisibility: ObservableObject {
         )
     }
 
-    /// The contributed panels, whether or not the reader kept them, so the
-    /// switcher menu can offer one that is switched off.
+    /// The contributed views, whether or not the reader kept their buttons,
+    /// so the switcher menu can offer one that is switched off.
     var contributed: [SidebarPaneItem] {
         registry.views(at: SidebarTabBarPlacement.current.contribution).map(SidebarPaneItem.init)
     }
@@ -319,10 +336,10 @@ struct SidebarPaneSwitcherMenu: View {
     private var placementRaw = SidebarTabBarPlacement.top.rawValue
 
     /// Both placements, then every built-in panel, then the contributed
-    /// ones behind a separator of their own.
+    /// views behind a separator of their own.
     ///
-    /// A contributed panel is always toggleable: it is somebody else's
-    /// window inside this app, and the reader gets to close it.
+    /// A contributed view's button is always toggleable: it is somebody
+    /// else's page, and the reader gets to take it out of the bar.
     static func entries(contributing contributed: [SidebarPaneItem]) -> [Entry] {
         SidebarTabBarPlacement.allCases.map(Entry.placement)
             + [.separator]

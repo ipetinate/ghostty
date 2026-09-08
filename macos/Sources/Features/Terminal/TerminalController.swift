@@ -2007,6 +2007,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         editorCenter.openExtension(document)
     }
 
+    /// Opens a file drawn by one of an extension's editor views.
+    func openFileWithView(_ url: URL, viewID: String) -> Bool {
+        editorCenter.openWith(url, viewID: viewID)
+    }
+
     /// Opens a file as the branch review sees it: its diff against the base
     /// the review was measured from, rather than against the working tree.
     func openBranchDiff(_ url: URL, base: String) {
@@ -2914,8 +2919,30 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         editorTerminalDirectoryCancellable = surface.$pwd
             .removeDuplicates()
             .sink { [weak self] pwd in
-                self?.editorTerminalDirectory.path = (pwd?.isEmpty ?? true) ? nil : pwd
+                guard let self else { return }
+                let reported = (pwd?.isEmpty ?? true) ? nil : pwd
+                editorTerminalDirectory.path = reported ?? fallbackTerminalPwd
             }
+    }
+
+    /// A directory for the pane when the focused surface has not reported
+    /// one, read from the selected sidebar tab.
+    ///
+    /// The same two-source shape ``workingDirectoryForPaths`` uses, and it
+    /// exists because of what a nil costs a contributed view: the view's
+    /// filesystem methods are bounded to this folder, so a nil is the whole
+    /// feature refusing rather than a banner staying down. A surface that
+    /// has never sent OSC 7 — a shell without the integration, or one that
+    /// is not the focused surface yet — used to produce exactly that.
+    ///
+    /// Not a guess. The selected tab is this window's terminal, and its
+    /// `pwd` is that surface's own working directory read from the sidebar's
+    /// model rather than from the surface.
+    private var fallbackTerminalPwd: String? {
+        guard let pwd = sidebarTabManager?.models.first(where: { $0.isSelected })?.pwd,
+              !pwd.isEmpty
+        else { return nil }
+        return pwd
     }
 
     private func syncAppearanceOnPropertyChange(_ surface: Ghostty.SurfaceView?) {

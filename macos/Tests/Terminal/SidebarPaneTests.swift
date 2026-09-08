@@ -174,7 +174,8 @@ struct SidebarPaneTests {
                     viewID: "http", title: "HTTP",
                     icon: URL(fileURLWithPath: "/tmp/bruno/views/http.png"),
                     entry: URL(fileURLWithPath: "/tmp/bruno/views/http.js"),
-                    style: nil, placements: [.sidebar], permissions: [])))
+                    style: nil, surface: .sidebar, filenamePatterns: [], priority: .option,
+                    placements: [.sidebar], permissions: [])))
 
         let entries = SidebarPaneSwitcherMenu.entries(contributing: [item])
         #expect(entries.suffix(2) == [.separator, .pane(item, canToggle: true)])

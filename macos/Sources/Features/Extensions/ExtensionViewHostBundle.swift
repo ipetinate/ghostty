@@ -206,6 +206,9 @@ enum ExtensionViewHostBundle {
       var nextCall = 1;
       var theme = null;
       var listeners = [];
+      var file = null;
+      var fileListeners = [];
+      var saveHandler = null;
 
       function post(message) {
         window.webkit.messageHandlers.\(handlerName).postMessage(message);
@@ -235,6 +238,26 @@ enum ExtensionViewHostBundle {
         }
       }
 
+      function setFile(next) {
+        file = next;
+        for (var index = 0; index < fileListeners.length; index += 1) {
+          try {
+            fileListeners[index](file);
+          } catch (error) {
+            void error;
+          }
+        }
+      }
+
+      function requestSave() {
+        if (saveHandler === null) return;
+        try {
+          saveHandler();
+        } catch (error) {
+          void error;
+        }
+      }
+
       window.phantom = {
         call: function (method, params) {
           var id = nextCall;
@@ -253,8 +276,20 @@ enum ExtensionViewHostBundle {
         read: function (params) {
           return window.phantom.call('workspace.read', params || {});
         },
+        create: function (params) {
+          return window.phantom.call('workspace.create', params || {});
+        },
+        replace: function (params) {
+          return window.phantom.call('workspace.replace', params || {});
+        },
         request: function (params) {
           return window.phantom.call('http.request', params || {});
+        },
+        choose: function (params) {
+          return window.phantom.call('workspace.choose', params || {});
+        },
+        open: function (params) {
+          return window.phantom.call('views.open', params || {});
         },
         theme: function () {
           return theme;
@@ -263,9 +298,33 @@ enum ExtensionViewHostBundle {
           listeners.push(listener);
           if (theme !== null) listener(theme);
         },
+        file: function () {
+          return file;
+        },
+        onFile: function (listener) {
+          fileListeners.push(listener);
+          if (file !== null) listener(file);
+        },
+        state: function () {
+          return window.phantom.call('state.read', {});
+        },
+        remember: function (state) {
+          return window.phantom.call('state.write', { state: state || {} });
+        },
+        dirty: function (isDirty) {
+          return window.phantom.call('editor.dirty', { isDirty: isDirty === true });
+        },
+        onSave: function (handler) {
+          saveHandler = handler;
+        },
       };
 
-      window.\(hostObjectName) = { settle: settle, setTheme: setTheme };
+      window.\(hostObjectName) = {
+        settle: settle,
+        setTheme: setTheme,
+        setFile: setFile,
+        requestSave: requestSave,
+      };
 
       post({ type: 'ready' });
     })();

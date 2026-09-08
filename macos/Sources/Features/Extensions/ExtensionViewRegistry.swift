@@ -59,6 +59,22 @@ final class ExtensionViewRegistry: ObservableObject {
         views.filter { $0.contribution.placements.contains(placement) }
     }
 
+    /// The editor view that claims this file name, or nil.
+    ///
+    /// First claim in registry order wins, and the order is the installed
+    /// set's — alphabetical by name. Two extensions claiming `*.bru` is an
+    /// arbitrary winner, and it is arbitrary in a stable way rather than by
+    /// whichever was scanned first; the reader still reaches the other
+    /// through "Open with" on the tab.
+    func editorView(claiming fileName: String) -> ExtensionViewDescriptor? {
+        views.first { $0.contribution.claims(fileName: fileName) }
+    }
+
+    /// Every editor view that claims this file name, for the tab's menu.
+    func editorViews(claiming fileName: String) -> [ExtensionViewDescriptor] {
+        views.filter { $0.contribution.claims(fileName: fileName) }
+    }
+
     private func publish(_ descriptors: [ExtensionViewDescriptor]) {
         guard descriptors != views else { return }
         views = descriptors

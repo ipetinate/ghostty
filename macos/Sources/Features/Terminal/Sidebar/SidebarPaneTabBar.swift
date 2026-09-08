@@ -20,7 +20,7 @@ struct SidebarPaneTabBar: View {
 
     private var accent: Color { palette.accent ?? .accentColor }
 
-    /// Which panels to offer. Owned by `SidebarView`, which also decides
+    /// Which entries to offer. Owned by `SidebarView`, which also decides
     /// whether this bar appears at all.
     let items: [SidebarPaneItem]
 

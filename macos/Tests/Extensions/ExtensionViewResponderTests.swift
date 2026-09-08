@@ -115,4 +115,74 @@ struct ExtensionViewResponderTests {
         let answer = ExtensionViewResponder.answer(.httpRequest(request), scope: try scope(), theme: [:])
         #expect((try? answer.get()) == nil)
     }
+
+    // MARK: The file an editor tab is pinned to
+
+    /// The tighter statement an editor tab can make: not "a file this
+    /// extension may write" but "the file this tab is".
+    @Test func replaceWritesOnlyToTheFileTheViewWasOpenedOn() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try Data("get {}".utf8).write(to: directory.appendingPathComponent("users.bru"))
+        try Data("post {}".utf8).write(to: directory.appendingPathComponent("orders.bru"))
+
+        let scope = ExtensionViewFileScope(workspace: directory, package: directory)
+        let bound = ExtensionViewFile(root: .workspace, path: "users.bru")
+
+        let ownFile = ExtensionViewResponder.answer(
+            .workspaceWrite(root: .workspace, path: "users.bru", text: "get { }", mode: .replace),
+            scope: scope, theme: [:], boundFile: bound)
+        #expect(!ownFile.isFailure)
+        #expect(try scope.read(root: .workspace, path: "users.bru") == "get { }")
+
+        let otherFile = ExtensionViewResponder.answer(
+            .workspaceWrite(root: .workspace, path: "orders.bru", text: "owned", mode: .replace),
+            scope: scope, theme: [:], boundFile: bound)
+        if case .failure(let rejection) = otherFile {
+            #expect(rejection == .notThisFile("users.bru"))
+            #expect(rejection.code == "not-this-file")
+        } else {
+            Issue.record("a write to another file was allowed")
+        }
+        #expect(try scope.read(root: .workspace, path: "orders.bru") == "post {}")
+    }
+
+    /// The pin is on `replace` alone. `create` cannot write over anything,
+    /// so pinning it would stop a page saving a new document beside the one
+    /// it is showing without closing any hole.
+    @Test func createIsNotPinnedToTheOpenedFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try Data("get {}".utf8).write(to: directory.appendingPathComponent("users.bru"))
+        let scope = ExtensionViewFileScope(workspace: directory, package: directory)
+        let bound = ExtensionViewFile(root: .workspace, path: "users.bru")
+
+        let answer = ExtensionViewResponder.answer(
+            .workspaceWrite(root: .workspace, path: "orders.bru", text: "post {}", mode: .create),
+            scope: scope, theme: [:], boundFile: bound)
+        #expect(!answer.isFailure)
+    }
+
+    /// A page with no file behind it keeps the general capability its
+    /// manifest asked for: there is no file to be pinned to.
+    @Test func aViewWithNoFileIsNotPinned() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try Data("get {}".utf8).write(to: directory.appendingPathComponent("users.bru"))
+        let scope = ExtensionViewFileScope(workspace: directory, package: directory)
+
+        let answer = ExtensionViewResponder.answer(
+            .workspaceWrite(root: .workspace, path: "users.bru", text: "get { }", mode: .replace),
+            scope: scope, theme: [:], boundFile: nil)
+        #expect(!answer.isFailure)
+    }
 }

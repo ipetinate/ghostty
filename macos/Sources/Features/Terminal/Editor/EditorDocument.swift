@@ -109,6 +109,18 @@ final class EditorDocument: ObservableObject, Identifiable {
     /// file clicked in the Changes list was chosen for its changes.
     @Published var presentation: EditorPresentation
 
+    /// The `ExtensionViewDescriptor.id` drawing this file instead of the
+    /// text editor, or nil for the text editor.
+    ///
+    /// Beside `presentation` rather than a case of it, and for a reason
+    /// `presentation` states about itself: it is `CaseIterable` over what
+    /// this build can draw, and a contributed view is not known at compile
+    /// time. Property of the *document* for the same reason `presentation`
+    /// is — a tab switched away from and back to returns the way it was
+    /// left, and the reader who chose "Open with" did not ask to be put
+    /// back into text.
+    @Published var contributedView: String?
+
     /// The ref this file is being compared against, when it was opened from a
     /// branch review rather than from the working tree.
     ///

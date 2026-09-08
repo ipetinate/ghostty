@@ -492,6 +492,14 @@ final class EditorCenter: ObservableObject {
             if let showing { document.presentation = showing }
             document.reviewBase = reviewBase
 
+            /// A view that claims this name with `priority: "default"` draws
+            /// it from the first frame. `option` — the default — leaves the
+            /// text editor in place and the view is reached through
+            /// ``openWith(_:viewID:)`` or the tab's own menu, because a
+            /// claimed file is still a text file the reader may have come to
+            /// read as text.
+            document.contributedView = Self.claimingView(fileName: url.lastPathComponent)
+
             /// Before anything renders, so a file with unsaved work appears
             /// the way it was left rather than appearing clean and changing
             /// under the reader a frame later.
@@ -629,6 +637,101 @@ final class EditorCenter: ObservableObject {
         refreshPaneVisibility()
     }
 
+    /// How many times the reader has pressed ⌘S on each contributed tab.
+    ///
+    /// A count and not a flag, because a second press has to reach the page
+    /// too: `ExtensionViewHost` compares the number it last served, and a
+    /// flag already true would compare equal and send nothing.
+    @Published private(set) var saveTickets: [String: Int] = [:]
+
+    /// The contributed tabs whose page says it has unsaved work.
+    ///
+    /// Kept beside `documents` rather than written into
+    /// ``EditorDocument/isDirty``, which is derived from the text buffer on
+    /// disk and would then be claiming something about a buffer this app
+    /// does not hold. The tab's mark is the editor's own — see
+    /// ``setContributedDirty(_:for:)``.
+    @Published private(set) var contributedDirty: Set<String> = []
+
+    /// What the page says about its unsaved work, put on the tab.
+    ///
+    /// The path is the app's own and never the page's: the closure the pane
+    /// hands `ExtensionViewHost` captures the document it is drawing, so a
+    /// page has no way to name another tab. The guard is that the path is
+    /// open at all.
+    func setContributedDirty(_ isDirty: Bool, for path: String) {
+        guard documents[path] != nil else { return }
+        let changed = isDirty
+            ? contributedDirty.insert(path).inserted
+            : contributedDirty.remove(path) != nil
+        guard changed else { return }
+        setDirty(isDirty, for: path)
+    }
+
+    /// Asks the page drawing the focused tab to save, and answers whether
+    /// there was such a page.
+    ///
+    /// `false` hands ⌘S back to whatever would have answered it, so a code
+    /// view keeps the key it always had.
+    @discardableResult
+    func requestContributedSave() -> Bool {
+        guard let path = tabs.selectedPath,
+              documents[path]?.contributedView != nil
+        else { return false }
+        saveTickets[path, default: 0] += 1
+        return true
+    }
+
+    func saveTicket(for path: String) -> Int {
+        saveTickets[path] ?? 0
+    }
+
+    /// The view that takes a file over on open, or nil.
+    static func claimingView(fileName: String) -> String? {
+        guard let descriptor = ExtensionViewRegistry.shared.editorView(claiming: fileName),
+              descriptor.contribution.priority == .default
+        else { return nil }
+        return descriptor.id
+    }
+
+    /// Opens a file and draws it with one of an extension's editor views.
+    ///
+    /// The identity of the tab is the **file**, not the view: this is the
+    /// ordinary `open(_:)` with a choice of who draws it, so the tab
+    /// de-duplicates, closes and comes back after a restart the way every
+    /// file tab does. That is the whole reason a contributed editor claims a
+    /// file name rather than carrying an argument.
+    ///
+    /// A `viewID` no installed extension declares on the editor surface is
+    /// refused, and the file is not opened: silently falling back to the
+    /// text editor would answer a request the caller can check for with a
+    /// tab the reader did not ask for.
+    @discardableResult
+    func openWith(_ url: URL, viewID: String) -> Bool {
+        guard let descriptor = ExtensionViewRegistry.shared.descriptor(id: viewID),
+              descriptor.contribution.surface == .editor
+        else { return false }
+        guard open(url) else { return false }
+        documents[url.path]?.contributedView = viewID
+        return true
+    }
+
+    /// The view the tab's "Open with" offers for this file, or nil.
+    func viewClaiming(path: String) -> ExtensionViewDescriptor? {
+        guard let document = documents[path] else { return nil }
+        return ExtensionViewRegistry.shared.editorView(claiming: document.url.lastPathComponent)
+    }
+
+    /// Switches who draws an open file: a contributed view, or nil for the
+    /// text editor.
+    func setContributedView(_ viewID: String?, for path: String) {
+        guard let document = documents[path] else { return }
+        guard viewID == nil || ExtensionViewRegistry.shared.descriptor(id: viewID!) != nil else {
+            return
+        }
+        document.contributedView = viewID
+    }
+
     /// A tab the reader tried to close while it still had edits.
     ///
     /// Raised instead of acting, so the *view* asks and this stays testable
@@ -640,6 +743,15 @@ final class EditorCenter: ObservableObject {
     struct CloseConfirmation: Identifiable {
         let id = UUID()
         let path: String
+
+        /// Whether the app can write the buffer itself.
+        ///
+        /// False for a tab an extension draws. The unsaved text is in the
+        /// page, not in a buffer this app holds, so `saveAndClose(_:)` would
+        /// write the file as it already is on disk and report success. The
+        /// dialog leaves Save out instead and says to press ⌘S, which does
+        /// reach the page.
+        var canSave = true
 
         var name: String { (path as NSString).lastPathComponent }
     }
@@ -664,6 +776,19 @@ final class EditorCenter: ObservableObject {
     /// every tab's close button takes — had not, so the prompt went on
     /// appearing for every unsaved file.
     func requestClose(_ path: String) {
+        /// Asked first, and asked of the app rather than of the page: the
+        /// page said it was dirty when it called `editor.dirty`, and that is
+        /// the whole of what this decision needs. Nothing here waits on it.
+        ///
+        /// Before the document check on purpose. A file opened as text,
+        /// edited, then switched to a contributed view can be dirty both
+        /// ways, and the text buffer has a backup while the page's edits
+        /// have none — so the stricter path wins.
+        if contributedDirty.contains(path) {
+            closeConfirmation = CloseConfirmation(path: path, canSave: false)
+            return
+        }
+
         guard let document = documents[path], document.isDirty else {
             close(path)
             return
@@ -754,7 +879,14 @@ final class EditorCenter: ObservableObject {
             }(),
             isPinned: tab?.isPinned ?? false,
             canMoveLeft: canMove(-1),
-            canMoveRight: canMove(1)
+            canMoveRight: canMove(1),
+            canOpenWithView: {
+                guard let path, let document = documents[path] else { return false }
+                let claiming = ExtensionViewRegistry.shared
+                    .editorView(claiming: document.url.lastPathComponent)
+                return claiming != nil && claiming?.id != document.contributedView
+            }(),
+            isDrawnByView: path.flatMap { documents[$0]?.contributedView } != nil
         )
     }
 
@@ -840,6 +972,12 @@ final class EditorCenter: ObservableObject {
     private func close(_ paths: [String]) -> [String] {
         var unsafe: [String] = []
         for path in paths {
+            /// Kept back rather than closed. A bulk close asks about
+            /// nothing, and a page's unsaved work is written down nowhere.
+            if contributedDirty.contains(path) {
+                unsafe.append(path)
+                continue
+            }
             guard let document = documents[path], document.isDirty else {
                 close(path)
                 continue
@@ -877,6 +1015,8 @@ final class EditorCenter: ObservableObject {
         documentObservers.removeValue(forKey: path)
         media.removeValue(forKey: path)
         extensions.removeValue(forKey: path)
+        saveTickets.removeValue(forKey: path)
+        contributedDirty.remove(path)
         mutateHolder(of: path) { $0.close(path) }
     }
 
@@ -991,6 +1131,8 @@ final class EditorCenter: ObservableObject {
         documentObservers.removeAll()
         media.removeAll()
         extensions.removeAll()
+        saveTickets.removeAll()
+        contributedDirty.removeAll()
         tree.closeAllFiles()
         activeGroupID = tree.terminalHost ?? tree.groupIDs[0]
         refreshPaneVisibility()
@@ -1023,6 +1165,10 @@ final class EditorCenter: ObservableObject {
                 opened.insert(path)
                 continue
             }
+            /// A view whose extension has been uninstalled since the session
+            /// was written costs its own tab, the way a missing file does.
+            /// The registry is the only thing that knows the title and the
+            /// directory, and without it there is no page to draw.
             guard FileManager.default.fileExists(atPath: path) else { continue }
             if open(URL(fileURLWithPath: path)) { opened.insert(path) }
         }

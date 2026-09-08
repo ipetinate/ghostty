@@ -190,7 +190,25 @@ final class SidebarSplitView: NSSplitView {
         return NSApp.sendAction(selector, to: responder, from: nil)
     }
 
+    /// ⌘S, when a contributed view is drawing the focused tab.
+    ///
+    /// Asked before the code view and before the terminal surface, and only
+    /// for a tab an extension draws: a page has no `NSTextView` to hold the
+    /// caret, so nothing else in the responder chain would answer the key on
+    /// its behalf. A code view still answers for a caret in the code, and
+    /// the terminal still answers when no page is in front.
+    private func routeContributedSave(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "s",
+              let center = editorCenter
+        else { return false }
+
+        return center.requestContributedSave()
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if routeContributedSave(event) { return true }
+
         if routeEditingCommand(event) { return true }
 
         if let center = editorCenter,

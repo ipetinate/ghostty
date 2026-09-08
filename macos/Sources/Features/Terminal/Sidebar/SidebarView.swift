@@ -158,10 +158,6 @@ struct SidebarView: View {
     /// SwiftUI has no way to observe.
     @ObservedObject private var visibility: SidebarPaneVisibility = .shared
 
-    /// The extensions' contributed panels, for the one branch of
-    /// `paneContent` that draws one.
-    @ObservedObject private var extensionViews: ExtensionViewRegistry = .shared
-
     private var paneItems: [SidebarPaneItem] {
         visibility.items
     }
@@ -172,11 +168,12 @@ struct SidebarView: View {
     /// and a correction that lives in the bar would never run, leaving the
     /// sidebar stuck on a panel with no way back to the terminals.
     ///
-    /// An extension being removed while its view is open lands here too: the
-    /// panel simply stops being offered, and the sidebar goes back to the
-    /// terminals rather than to a blank pane.
+    /// A contributed `sidebar` entry passes, and `paneContent` draws it. An
+    /// `editor` entry never reaches the bars at all, so a session file
+    /// naming one falls back to the terminals.
     private var visiblePane: SidebarPane {
-        paneItems.contains { $0.pane == layout.selectedPane } ? layout.selectedPane : .terminals
+        let pane = layout.selectedPane
+        return paneItems.contains { $0.pane == pane } ? pane : .terminals
     }
 
     @AppStorage(SidebarTabBarPlacement.defaultsKey)
@@ -202,6 +199,10 @@ struct SidebarView: View {
         }
     }
 
+    /// The extensions' contributed panels, for the one branch of
+    /// `paneContent` that draws one.
+    @ObservedObject private var extensionViews: ExtensionViewRegistry = .shared
+
     @ViewBuilder
     private var paneContent: some View {
         if let id = visiblePane.contributedViewID, let descriptor = extensionViews.descriptor(id: id) {
@@ -211,7 +212,7 @@ struct SidebarView: View {
         }
     }
 
-    /// The folder a contributed view's filesystem methods are bounded to:
+    /// The folder a contributed panel's filesystem methods are bounded to:
     /// the repository the followed terminal is in, or that terminal's own
     /// folder.
     ///
@@ -420,7 +421,9 @@ struct SidebarTitlebarChrome: View {
     }
 
     private var visiblePane: SidebarPane {
-        visibility.isEnabled(layout.selectedPane) ? layout.selectedPane : .terminals
+        let pane = layout.selectedPane
+        guard pane.contributedViewID == nil else { return .terminals }
+        return visibility.isEnabled(pane) ? pane : .terminals
     }
 
     var body: some View {

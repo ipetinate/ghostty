@@ -82,17 +82,22 @@ struct EditorPaneView: View {
                 ),
                 presenting: center.closeConfirmation
             ) { confirmation in
-                Button("Save") {
-                    center.saveAndClose(confirmation.path)
-                    center.closeConfirmation = nil
+                if confirmation.canSave {
+                    Button("Save") {
+                        center.saveAndClose(confirmation.path)
+                        center.closeConfirmation = nil
+                    }
                 }
                 Button("Don't Save", role: .destructive) {
                     center.close(confirmation.path)
                     center.closeConfirmation = nil
                 }
                 Button("Cancel", role: .cancel) { center.closeConfirmation = nil }
-            } message: { _ in
-                Text("Your changes will be lost if you don't save them.")
+            } message: { confirmation in
+                Text(confirmation.canSave
+                    ? "Your changes will be lost if you don't save them."
+                    : "Your changes will be lost if you don't save them. "
+                        + "Cancel and press \u{2318}S to save.")
             }
             .sheet(isPresented: Binding(
                 get: { !references.isEmpty },
@@ -151,7 +156,19 @@ struct EditorPaneView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let document = center.selectedDocument(in: groupID) {
+        if let document = center.selectedDocument(in: groupID), let viewID = document.contributedView {
+            /// A claimed file, drawn by the extension that claimed it. The
+            /// tab is still the file's own tab — this only changes who
+            /// draws it, the way `EditorPresentation` does.
+            ExtensionViewPaneView(
+                viewID: viewID,
+                terminalDirectory: terminalDirectory.path,
+                file: document.url,
+                saveTicket: center.saveTicket(for: document.id),
+                onDirty: { center.setContributedDirty($0, for: document.id) }
+            )
+            .id(document.id + "\u{1}" + viewID)
+        } else if let document = center.selectedDocument(in: groupID) {
             DocumentView(
                 document: document,
                 theme: theme,

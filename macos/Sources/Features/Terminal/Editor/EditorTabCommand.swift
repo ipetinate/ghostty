@@ -30,6 +30,8 @@ enum EditorTabCommand: String, Equatable, Hashable, CaseIterable {
     case splitTop
     case splitBottom
     case moveToMainPane
+    case openWithView
+    case openAsText
     case revealInFinder
     case copyPath
 
@@ -47,6 +49,12 @@ enum EditorTabCommand: String, Equatable, Hashable, CaseIterable {
         case .splitTop: return "Split Up"
         case .splitBottom: return "Split Down"
         case .moveToMainPane: return "Move to Main Pane"
+        /// Named for the concept and not for the extension. A title that
+        /// carried the extension's name would have to be resolved at both
+        /// call sites and at the test, where `title` is read off the case
+        /// alone — the same argument `pin`/`unpin` settles the same way.
+        case .openWithView: return "Open with Extension Editor"
+        case .openAsText: return "Open as Text"
         case .revealInFinder: return "Reveal in Finder"
         case .copyPath: return "Copy Path"
         }
@@ -78,6 +86,8 @@ enum EditorTabCommand: String, Equatable, Hashable, CaseIterable {
         case .splitTop: return "arrow.up.square"
         case .splitBottom: return "arrow.down.square"
         case .moveToMainPane: return "arrow.uturn.backward"
+        case .openWithView: return "puzzlepiece.extension"
+        case .openAsText: return "text.alignleft"
         case .revealInFinder: return "folder"
         case .copyPath: return "doc.on.doc"
         }
@@ -91,7 +101,8 @@ enum EditorTabCommand: String, Equatable, Hashable, CaseIterable {
         case .close, .closeOthers, .closeAll: return 0
         case .pin, .unpin, .moveLeft, .moveRight: return 1
         case .splitLeading, .splitTrailing, .splitTop, .splitBottom, .moveToMainPane: return 2
-        case .revealInFinder, .copyPath: return 3
+        case .openWithView, .openAsText: return 3
+        case .revealInFinder, .copyPath: return 4
         }
     }
 
@@ -138,6 +149,15 @@ enum EditorTabCommand: String, Equatable, Hashable, CaseIterable {
         /// end of a run the item is left out rather than offered as a no-op.
         var canMoveLeft: Bool
         var canMoveRight: Bool
+
+        /// Whether an installed extension claims this file's name and is not
+        /// already drawing it. The switch is offered rather than imposed:
+        /// see `ExtensionViewContribution.Priority`.
+        var canOpenWithView = false
+
+        /// Whether a contributed view is drawing this file, so there is a
+        /// text editor to go back to.
+        var isDrawnByView = false
     }
 
     private func isOffered(_ availability: Availability) -> Bool {
@@ -150,6 +170,8 @@ enum EditorTabCommand: String, Equatable, Hashable, CaseIterable {
         case .splitLeading, .splitTrailing, .splitTop, .splitBottom:
             return availability.canSplitOut
         case .moveToMainPane: return availability.canReturnToMainPane
+        case .openWithView: return availability.canOpenWithView
+        case .openAsText: return availability.isDrawnByView
         default: return true
         }
     }

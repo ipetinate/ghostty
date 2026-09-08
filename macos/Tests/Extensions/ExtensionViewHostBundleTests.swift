@@ -28,6 +28,9 @@ struct ExtensionViewHostBundleTests {
             icon: package.appendingPathComponent("views/http.png"),
             entry: package.appendingPathComponent("views/http.js"),
             style: withStyle ? package.appendingPathComponent("views/http.css") : nil,
+            surface: .sidebar,
+            filenamePatterns: [],
+            priority: .option,
             placements: [.sidebar, .topBar],
             permissions: [.httpRequest]
         )

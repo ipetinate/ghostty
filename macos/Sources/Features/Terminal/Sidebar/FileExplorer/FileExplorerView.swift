@@ -148,20 +148,52 @@ struct FileExplorerView: View {
 
                 Toggle("Show Hidden Files", isOn: $model.showHiddenFiles)
 
-                if !icons.themes.isEmpty {
-                    Menu("Icon Theme") {
-                        Button {
-                            icons.select(FileIconProvider.symbolsOnly)
-                        } label: {
-                            Label("SF Symbols", systemImage: "textformat")
-                        }
+                /// Drawn even with no pack installed, which is now the state a
+                /// fresh install opens in: the app bundles none. The guard
+                /// that hid this menu was written when a pack always shipped,
+                /// where an empty list meant an impossible choice — it now
+                /// hides the choice at the one moment a reader needs to be
+                /// told it exists.
+                Menu("Icon Theme") {
+                    /// `active`, not `selectedName`. A reader who selected the
+                    /// bundled pack before it was removed has `symbols`
+                    /// stored and is looking at SF Symbols, so the stored name
+                    /// would mark a row for a pack that draws nothing here.
+                    /// `active` is what the explorer resolved and therefore
+                    /// what the menu exists to report.
+                    Button {
+                        icons.select(FileIconProvider.symbolsOnly)
+                    } label: {
+                        IconThemeMenuLabel(
+                            title: "SF Symbols",
+                            symbol: "textformat",
+                            isInUse: icons.active == nil)
+                    }
+
+                    if !icons.themes.isEmpty {
                         Divider()
                         ForEach(icons.themes, id: \.name) { theme in
                             Button { icons.select(theme.name) } label: {
-                                IconThemeMenuLabel(title: theme.displayName, artwork: icons.artwork(for: theme))
+                                IconThemeMenuLabel(
+                                    title: theme.displayName,
+                                    artwork: icons.artwork(for: theme),
+                                    isInUse: icons.active?.foldedName == theme.foldedName)
                             }
                             .disabled(!theme.isSupported)
                         }
+                    }
+
+                    Divider()
+
+                    /// An offer, not a state, and the only route from this
+                    /// panel to the store. A reader who skipped the tour and
+                    /// never opens Settings has no other way to learn that
+                    /// icon packs exist. It goes where `WelcomeIconPacks`
+                    /// sends a reader whose pack has no page of its own yet.
+                    Button {
+                        NSWorkspace.shared.open(ExtensionsSettingsView.registryURL)
+                    } label: {
+                        Label("Get Icon Packs…", systemImage: "arrow.up.right.square")
                     }
                 }
 
@@ -842,15 +874,37 @@ struct FileExplorerView: View {
 /// A pack with no artwork gets no icon rather than a placeholder one. The
 /// only packs that reach that branch are the font-based ones, which the
 /// menu already draws disabled.
+/// The row the explorer is drawing with carries a `checkmark`, which is the
+/// whole of what the menu says about state.
+///
+/// Trailing, and conditional rather than reserved: this is the shape
+/// `SidebarView.colorMenu` already uses for a hand-built menu whose rows
+/// carry artwork — swatch, name, then the mark on the one in force. Nothing
+/// ahead of the mark moves when it moves, so there is no leading space to
+/// reserve, and two hand-built menus in one app mark the row in force the
+/// same way.
 private struct IconThemeMenuLabel: View {
     let title: String
-    let artwork: NSImage?
+    var artwork: NSImage?
+
+    /// For the one row that stands for no pack at all, which has no artwork
+    /// to draw and is not the artwork-less case above — that one is a pack
+    /// that draws nothing.
+    var symbol: String?
+
+    let isInUse: Bool
 
     var body: some View {
-        if let artwork {
-            Label { Text(verbatim: title) } icon: { Image(nsImage: artwork) }
-        } else {
+        HStack {
+            if let artwork {
+                Image(nsImage: artwork)
+            } else if let symbol {
+                Image(systemName: symbol)
+            }
+
             Text(verbatim: title)
+
+            if isInUse { Image(systemName: "checkmark") }
         }
     }
 }

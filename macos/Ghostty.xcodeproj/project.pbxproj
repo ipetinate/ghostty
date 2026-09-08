@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		FE1C0N7HEME50000000001 /* icon-themes in Resources */ = {isa = PBXBuildFile; fileRef = FE1C0N7HEME50000000002 /* icon-themes */; };
 		FEC0D1C0N50000000001 /* codicons in Resources */ = {isa = PBXBuildFile; fileRef = FEC0D1C0N50000000002 /* codicons */; };
 		FEE7B1E00000000000000001 /* extension-viewer in Resources */ = {isa = PBXBuildFile; fileRef = FEE7B1E00000000000000002 /* extension-viewer */; };
 		FEE7B1E00000000000000003 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FEE7B1E00000000000000004 /* WebKit.framework */; };
@@ -71,7 +70,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		FE1C0N7HEME50000000002 /* icon-themes */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "icon-themes"; path = "Resources/icon-themes"; sourceTree = "<group>"; };
 		FEC0D1C0N50000000002 /* codicons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = codicons; path = "Resources/codicons"; sourceTree = "<group>"; };
 		FEE7B1E00000000000000002 /* extension-viewer */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "extension-viewer"; path = "Resources/extension-viewer"; sourceTree = "<group>"; };
 		FEE7B1E00000000000000004 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
@@ -171,7 +169,6 @@
 				29C15B1C2CDC3B2000520DD4 /* bat */,
 				FEC0D1C0N50000000002 /* codicons */,
 				FEE7B1E00000000000000002 /* extension-viewer */,
-				FE1C0N7HEME50000000002 /* icon-themes */,
 				1A193CAD60CA403F9852A3A2 /* PhantomIconVariants */,
 				A586167B2B7703CC009BDB1D /* fish */,
 				55154BDF2B33911F001622DC /* ghostty */,
@@ -401,7 +398,6 @@
 				29C15B1D2CDC3B2900520DD4 /* bat in Resources */,
 				FEC0D1C0N50000000001 /* codicons in Resources */,
 				FEE7B1E00000000000000001 /* extension-viewer in Resources */,
-				FE1C0N7HEME50000000001 /* icon-themes in Resources */,
 				6F12C049EEFE4A658EF336CB /* PhantomIconVariants in Resources */,
 				A586167C2B7703CC009BDB1D /* fish in Resources */,
 				8F3A9B4C2FA6B88000A18D13 /* Ghostty.sdef in Resources */,

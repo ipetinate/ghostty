@@ -2703,13 +2703,14 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     /// The editor's page first, the terminal second.
     ///
-    /// The same rule ``SidebarSplitView/routeCloseTab(_:)`` applies to the
-    /// key, stated once more on the path a *click* on File ▸ Close takes.
-    /// Without it the two disagree: the item is the shortcut's own menu
-    /// entry, and it would go on closing a terminal the reader is not
-    /// looking at, because ``BaseTerminalController/focusedSurface`` keeps
-    /// the last surface that had focus rather than dropping to nil when the
-    /// pane takes it.
+    /// The rule ``SidebarSplitView/routeCloseTab(_:)`` states for the key,
+    /// stated again on the path a click on File ▸ Close takes. Without it the
+    /// two disagree: ``BaseTerminalController/focusedSurface`` keeps the last
+    /// surface that had focus rather than dropping to nil when a page covers
+    /// it, so the item closed a terminal the reader was not looking at.
+    ///
+    /// `super` keeps the running-process question: it asks the surface to
+    /// close itself, and `confirm-close-surface` answers for it.
     override func close(_ sender: Any) {
         guard !editorCenter.closeFocusedTab() else { return }
         super.close(sender)

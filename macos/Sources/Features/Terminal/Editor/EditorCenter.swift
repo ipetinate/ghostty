@@ -683,25 +683,19 @@ final class EditorCenter: ObservableObject {
         requestClose(path)
     }
 
-    /// Closes whatever the cell in focus is showing, answering whether there
-    /// was anything of the editor's to close.
+    /// Closes what the cell in focus is showing, answering whether there was
+    /// anything of the editor's to close.
     ///
-    /// The question is *what is in front of the reader*, not what kind of
-    /// page it is. Every tab the grid can hold is a `.file` or a `.review` —
-    /// a media file, an extension and a theme all arrive as the first — so a
-    /// fourth kind of page is closed by this the day it is added, and the
-    /// `switch` stops compiling if it needs an answer of its own instead.
-    /// That is the difference from asking "is a file open": a rule about
-    /// focus stays right when the pane grows a page nobody has written yet.
+    /// The question is which page the reader has in front of them, not what
+    /// kind of page it is: a media file, an extension and a theme all arrive
+    /// as `.file`, and a fourth kind stops the `switch` compiling rather than
+    /// slipping through as a terminal.
     ///
-    /// `false` is the terminal's own answer, and it is what hands the key
-    /// back: the surface closes itself through `close_surface`, with the
-    /// running-process confirmation `confirm-close-surface` governs, and the
-    /// window answers after that.
+    /// `false` is the terminal's own answer, and it hands the key back to
+    /// `close_surface` and the `confirm-close-surface` question with it.
     ///
-    /// One tab per call, deliberately. ``EditorTabSet/close(_:)`` moves the
-    /// selection to the neighbour, so pressing the key again closes the next
-    /// one — which is the whole of "let me close them one by one".
+    /// One page per call. ``EditorTabSet/close(_:)`` moves the selection to
+    /// the neighbour, so the next press closes the next one.
     @discardableResult
     func closeFocusedTab() -> Bool {
         switch tabs.selection {

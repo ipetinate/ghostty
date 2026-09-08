@@ -192,14 +192,14 @@ final class SidebarSplitView: NSSplitView {
 
     /// Close File Tab, whatever page the cell in focus is showing.
     ///
-    /// Consulted before the view tree and before the main menu, and that is
-    /// the whole of the fix. The terminal surface keeps first responder while
-    /// it is hidden behind a file, an extension page or a review — focus
-    /// moves into the pane only once the reader clicks *into* it — so the key
-    /// went to a terminal they could not see, and from there to the window,
-    /// which took every tab with it. `CodeNSTextView` answered for the one
-    /// case where the caret really was in the editor, which is why a plain
-    /// source file behaved and every other kind of page did not.
+    /// Asked before the code view and before the terminal surface, which is
+    /// the whole of the fix. Selecting a tab takes nothing away from the
+    /// surface, so it stays first responder behind the page on screen and
+    /// ``Ghostty/SurfaceView/performKeyEquivalent(with:)`` answered the key
+    /// with `close_surface` — closing a terminal the reader could not see
+    /// and, for a root surface, the window's every tab with it.
+    /// `CodeNSTextView` answered only for a caret in the code itself, which
+    /// is why a source file behaved and no other kind of page did.
     ///
     /// The reader's own binding, read from ``PhantomShortcutStore``, so this
     /// answers exactly the keys `Close File Tab` answers in Settings —

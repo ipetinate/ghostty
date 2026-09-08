@@ -303,8 +303,10 @@ struct SidebarSettingsView: View {
             Section {
                 SettingsMultiSelect(
                     title: "Show",
-                    options: SidebarPane.allCases.filter(\.canBeHidden).map { pane in
+                    options: SidebarPane.builtIns.filter(\.canBeHidden).map { pane in
                         .init(id: pane.rawValue, title: pane.title, isOn: visibility.binding(for: pane))
+                    } + visibility.contributed.map { item in
+                        .init(id: item.id, title: item.title, isOn: visibility.binding(for: item.pane))
                     },
                     emptyLabel: "Terminals only")
 

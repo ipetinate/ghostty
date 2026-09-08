@@ -45,7 +45,7 @@ enum ExtensionViewCall: Equatable, Sendable {
 
 /// Why a call was not performed. Every case is answered to the page, so
 /// each message is written for the extension author reading a console.
-enum ExtensionViewRejection: Equatable, Sendable {
+enum ExtensionViewRejection: Error, Equatable, Sendable {
     case notPermitted(ExtensionViewMethod)
     case unknownMethod
     case badParameters(String)
@@ -197,9 +197,11 @@ enum ExtensionViewBridge {
     static func relativePath(_ value: Any?) -> String? {
         guard let raw = LanguageManifest.string(value), raw.count <= maxPathLength else { return nil }
         guard !raw.hasPrefix("/"), !raw.hasPrefix("~"), !raw.contains("\\") else { return nil }
-        guard !raw.unicodeScalars.contains(where: LanguageManifest.isUnsafeScalar) else { return nil }
+        guard !raw.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar) else { return nil }
         let segments = raw.split(separator: "/", omittingEmptySubsequences: true)
         guard !segments.contains("..") else { return nil }
-        return segments.joined(separator: "/")
+        let named = segments.filter { $0 != "." }
+        guard !named.isEmpty else { return nil }
+        return named.joined(separator: "/")
     }
 }

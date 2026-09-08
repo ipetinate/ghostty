@@ -134,7 +134,7 @@ struct ExtensionViewFileScope: Equatable, Sendable {
         for child in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             guard entries.count < maxEntries else { break }
             let name = child.lastPathComponent
-            guard !name.unicodeScalars.contains(where: LanguageManifest.isUnsafeScalar) else { continue }
+            guard !name.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar) else { continue }
             let values = try? child.resourceValues(forKeys: Set(keys))
             let isDirectory = values?.isDirectory == true
             guard isDirectory || values?.isRegularFile == true else { continue }

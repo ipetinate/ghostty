@@ -200,7 +200,7 @@ enum ExtensionViewHTTP {
 extension ExtensionViewHTTP.Request {
     static func parse(_ params: [String: Any]) -> Result<Self, ExtensionViewRejection> {
         guard let raw = LanguageManifest.string(params["url"]), raw.count <= ExtensionViewHTTP.maxURLLength,
-              !raw.unicodeScalars.contains(where: LanguageManifest.isUnsafeScalar),
+              !raw.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar),
               let url = URL(string: raw)
         else { return .failure(.badParameters("'url' must be an absolute http or https URL.")) }
 

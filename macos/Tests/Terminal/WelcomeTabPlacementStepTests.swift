@@ -120,10 +120,11 @@ struct WelcomeTabPlacementStepTests {
     /// Three named tabs are what the preview's sidebar fits. The count is the
     /// constraint; terminals leading is the sidebar's own tab order.
     @Test func thePreviewShowsThreePanelsStartingWithTerminals() {
-        #expect(WelcomeSidebarPreview.panes.count == 3)
-        #expect(WelcomeSidebarPreview.panes.first == .terminals)
-        #expect(Set(WelcomeSidebarPreview.panes).count == WelcomeSidebarPreview.panes.count)
-        #expect(WelcomeSidebarPreview.panes.allSatisfy { SidebarPane.allCases.contains($0) })
+        let panes = WelcomeSidebarPreview.panes.map(\.pane)
+        #expect(panes.count == 3)
+        #expect(panes.first == .terminals)
+        #expect(Set(panes).count == panes.count)
+        #expect(panes.allSatisfy { SidebarPane.builtIns.contains($0) })
     }
 
     /// The one thing the two cards are there to show: moving the tabs to the

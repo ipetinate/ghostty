@@ -93,6 +93,14 @@ struct LanguageManifest: Equatable, Sendable {
     let grammars: [GrammarContribution]
     let agents: [AgentDescriptor]
 
+    /// Interactive pages this extension draws inside Phantom.
+    ///
+    /// Read only for an `.eligible` manifest, the way `servers` and `agents`
+    /// are. A view is not a process, but it is the other contribution that
+    /// runs third-party code, and a file written against rules this build
+    /// does not have must not get either.
+    let views: [ExtensionViewContribution]
+
     let agentInstallPlans: [String: ExtensionInstallPlan]
 
     /// Keys this build ignored, top-level and under `contributes`, so
@@ -193,7 +201,7 @@ struct LanguageManifest: Equatable, Sendable {
         "description", "homepage", "phantom",
     ]
     private static let knownContributesKeys: Set<String> = [
-        "languages", "servers", "formatters", "themes", "iconThemes", "grammars", "agents",
+        "languages", "servers", "formatters", "themes", "iconThemes", "grammars", "agents", "views",
     ]
 
     /// Builds the value from an already-decoded object and a digest taken
@@ -233,6 +241,7 @@ struct LanguageManifest: Equatable, Sendable {
         let servers: [CompanionServerContribution]
         let formatters: [FormatterContribution]
         let agents: [AgentDescriptor]
+        let views: [ExtensionViewContribution]
         let agentInstallPlans: [String: ExtensionInstallPlan]
         switch eligibility {
         case .eligible:
@@ -242,11 +251,14 @@ struct LanguageManifest: Equatable, Sendable {
                 .compactMap(FormatterContribution.parse(json:))
             let rawAgents = objects(contributes["agents"], limit: AgentContribution.maxAgents)
             agents = rawAgents.compactMap { AgentContribution.parse(json: $0, root: root) }
+            views = objects(contributes["views"], limit: ExtensionViewContribution.maxViews)
+                .compactMap { ExtensionViewContribution.parse(json: $0, root: root) }
             agentInstallPlans = installPlans(in: rawAgents)
         case .needsNewerApp, .unidentified:
             servers = []
             formatters = []
             agents = []
+            views = []
             agentInstallPlans = [:]
         }
         let themes = objects(contributes["themes"], limit: ThemeContribution.maxThemes)
@@ -269,6 +281,7 @@ struct LanguageManifest: Equatable, Sendable {
             iconThemes: deduped(iconThemes, by: \.name),
             grammars: deduped(grammars, by: \.scopeName),
             agents: deduped(agents, by: \.id),
+            views: deduped(views, by: \.viewID),
             agentInstallPlans: agentInstallPlans,
             unrecognizedFields: unrecognized.sorted(),
             digest: digest,

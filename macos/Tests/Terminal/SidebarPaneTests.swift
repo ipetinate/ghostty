@@ -20,7 +20,7 @@ struct SidebarPaneTests {
     /// behind it.
     private func withPanes(_ values: [SidebarPane: Bool], _ body: () -> Void) {
         let defaults = UserDefaults.standard
-        let keys = SidebarPane.allCases.compactMap(\.defaultsKey)
+        let keys = SidebarPane.builtIns.compactMap(\.defaultsKey)
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
@@ -28,7 +28,7 @@ struct SidebarPaneTests {
             }
         }
 
-        for pane in SidebarPane.allCases {
+        for pane in SidebarPane.builtIns {
             guard let key = pane.defaultsKey else { continue }
             defaults.set(values[pane], forKey: key)
         }
@@ -36,21 +36,19 @@ struct SidebarPaneTests {
     }
 
     private var everyExtraOff: [SidebarPane: Bool] {
-        Dictionary(uniqueKeysWithValues: SidebarPane.allCases.filter(\.canBeHidden).map { ($0, false) })
+        Dictionary(uniqueKeysWithValues: SidebarPane.builtIns.filter(\.canBeHidden).map { ($0, false) })
     }
 
     /// Absent keys mean a fresh install, which gets everything.
     @Test func panesDefaultToEnabled() {
         withPanes([:]) {
-            #expect(SidebarPane.enabled == SidebarPane.allCases)
-            #expect(SidebarPane.showsTabBar)
+            #expect(SidebarPane.enabled == SidebarPane.builtIns)
         }
     }
 
     @Test func aDisabledPaneDropsOutOfTheTabOrder() {
         withPanes([.files: false, .git: true, .worktrees: true, .extensions: true]) {
             #expect(SidebarPane.enabled == [.terminals, .git, .worktrees, .extensions])
-            #expect(SidebarPane.showsTabBar)
         }
     }
 
@@ -58,16 +56,24 @@ struct SidebarPaneTests {
         #expect(SidebarPane.extensions.canBeHidden)
         #expect(SidebarPane.extensions.defaultsKey == "SidebarShowExtensionsPane")
         #expect(SidebarPane.extensions.symbol == "square.grid.2x2")
-        #expect(SidebarPane.allCases.last == .extensions)
+        #expect(SidebarPane.builtIns.last == .extensions)
     }
 
     /// With both extras off there is nothing to switch between, so the bar
     /// hides and the sidebar goes back to being the plain terminal list it
     /// started as.
-    @Test func turningEveryExtraOffHidesTheTabBar() {
+    @Test @MainActor func turningEveryExtraOffHidesTheTabBar() {
         withPanes(everyExtraOff) {
-            #expect(SidebarPane.enabled == [.terminals])
-            #expect(!SidebarPane.showsTabBar)
+            let visibility = SidebarPaneVisibility.shared
+            RunLoop.main.run(until: Date() + 0.05)
+            #expect(visibility.enabled == [.terminals])
+            #expect(!visibility.showsTabBar)
+        }
+
+        withPanes([:]) {
+            let visibility = SidebarPaneVisibility.shared
+            RunLoop.main.run(until: Date() + 0.05)
+            #expect(visibility.showsTabBar)
         }
     }
 
@@ -90,7 +96,7 @@ struct SidebarPaneTests {
             UserDefaults.standard.set(false, forKey: "SidebarShowGitPane")
             RunLoop.main.run(until: Date() + 0.05)
             #expect(!visibility.isEnabled(.git))
-            #expect(visibility.enabled == SidebarPane.enabled)
+            #expect(visibility.enabled.filter { $0.contributedViewID == nil } == SidebarPane.enabled)
 
             UserDefaults.standard.set(true, forKey: "SidebarShowGitPane")
             RunLoop.main.run(until: Date() + 0.05)
@@ -101,7 +107,7 @@ struct SidebarPaneTests {
     @Test @MainActor func theVisibilityBindingWritesAndReadsThePaneKey() {
         withPanes([:]) {
             let visibility = SidebarPaneVisibility.shared
-            for pane in SidebarPane.allCases.filter(\.canBeHidden) {
+            for pane in SidebarPane.builtIns.filter(\.canBeHidden) {
                 guard let key = pane.defaultsKey else { continue }
                 let binding = visibility.binding(for: pane)
                 #expect(binding.wrappedValue)
@@ -117,6 +123,24 @@ struct SidebarPaneTests {
         }
     }
 
+    /// A contributed panel is switched by the same binding, on a key of its
+    /// own, so the reader can close somebody else's window without
+    /// uninstalling the extension.
+    @Test @MainActor func aContributedPaneIsSwitchedByItsOwnKey() {
+        let pane = SidebarPane.view("ipetinate.bruno/http")
+        let key = "SidebarShowExtensionView.ipetinate.bruno/http"
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+
+        #expect(pane.defaultsKey == key)
+        let binding = SidebarPaneVisibility.shared.binding(for: pane)
+        #expect(binding.wrappedValue)
+
+        binding.wrappedValue = false
+        #expect(UserDefaults.standard.object(forKey: key) as? Bool == false)
+        #expect(!pane.isEnabled)
+    }
+
     @Test @MainActor func theTerminalsBindingHasNoKeyToWrite() {
         withPanes(everyExtraOff) {
             let binding = SidebarPaneVisibility.shared.binding(for: .terminals)
@@ -127,56 +151,95 @@ struct SidebarPaneTests {
     }
 
     @Test func theSwitcherMenuOffersBothPlacementsThenEveryPane() {
-        #expect(SidebarPaneSwitcherMenu.entries == [
+        #expect(SidebarPaneSwitcherMenu.entries(contributing: []) == [
             .placement(.top),
             .placement(.side),
             .separator,
-            .pane(.terminals, canToggle: false),
-            .pane(.files, canToggle: true),
-            .pane(.git, canToggle: true),
-            .pane(.worktrees, canToggle: true),
-            .pane(.extensions, canToggle: true),
+            .pane(SidebarPaneItem(.terminals), canToggle: false),
+            .pane(SidebarPaneItem(.files), canToggle: true),
+            .pane(SidebarPaneItem(.git), canToggle: true),
+            .pane(SidebarPaneItem(.worktrees), canToggle: true),
+            .pane(SidebarPaneItem(.extensions), canToggle: true),
         ])
     }
 
+    /// A contributed panel lands after a separator of its own, so the
+    /// built-ins the reader knows stay where they were.
+    @Test func aContributedPaneLandsAfterTheBuiltIns() {
+        let item = SidebarPaneItem(
+            ExtensionViewDescriptor(
+                extensionID: "ipetinate.bruno", extensionName: "Bruno",
+                root: URL(fileURLWithPath: "/tmp/bruno"),
+                contribution: ExtensionViewContribution(
+                    viewID: "http", title: "HTTP",
+                    icon: URL(fileURLWithPath: "/tmp/bruno/views/http.png"),
+                    entry: URL(fileURLWithPath: "/tmp/bruno/views/http.js"),
+                    style: nil, placements: [.sidebar], permissions: [])))
+
+        let entries = SidebarPaneSwitcherMenu.entries(contributing: [item])
+        #expect(entries.suffix(2) == [.separator, .pane(item, canToggle: true)])
+        #expect(entries.dropLast(2) == SidebarPaneSwitcherMenu.entries(contributing: []))
+    }
+
     @Test func theSwitcherMenuNamesEveryPaneOnce() {
-        let panes = SidebarPaneSwitcherMenu.entries.compactMap { entry -> SidebarPane? in
-            guard case .pane(let pane, _) = entry else { return nil }
-            return pane
+        let panes = SidebarPaneSwitcherMenu.entries(contributing: []).compactMap { entry -> SidebarPane? in
+            guard case .pane(let item, _) = entry else { return nil }
+            return item.pane
         }
-        #expect(panes == SidebarPane.allCases)
+        #expect(panes == SidebarPane.builtIns)
     }
 
     @Test func onlyTerminalsIsUntoggleableInTheSwitcherMenu() {
-        let locked = SidebarPaneSwitcherMenu.entries.compactMap { entry -> SidebarPane? in
-            guard case .pane(let pane, let canToggle) = entry, !canToggle else { return nil }
-            return pane
+        let locked = SidebarPaneSwitcherMenu.entries(contributing: []).compactMap { entry -> SidebarPane? in
+            guard case .pane(let item, let canToggle) = entry, !canToggle else { return nil }
+            return item.pane
         }
         #expect(locked == [.terminals])
     }
 
     @Test func everySwitcherMenuEntryHasItsOwnIdentity() {
-        let ids = SidebarPaneSwitcherMenu.entries.map(\.id)
+        let ids = SidebarPaneSwitcherMenu.entries(contributing: []).map(\.id)
         #expect(Set(ids).count == ids.count)
     }
 
     @Test func everyHideablePaneHasItsOwnDefaultsKey() {
-        let keys = SidebarPane.allCases.compactMap(\.defaultsKey)
-        #expect(keys.count == SidebarPane.allCases.filter(\.canBeHidden).count)
+        let keys = SidebarPane.builtIns.compactMap(\.defaultsKey)
+        #expect(keys.count == SidebarPane.builtIns.filter(\.canBeHidden).count)
         #expect(Set(keys).count == keys.count)
     }
 
-    /// Git ships its own artwork instead of an SF Symbol, so the tab bar
-    /// has to go through `SidebarPaneIcon` rather than reading `symbol`
-    /// directly — a nil here is the contract that keeps it honest.
     /// Git and worktrees ship their own artwork instead of an SF Symbol, so
     /// the tab bar has to go through `SidebarPaneIcon` rather than reading
     /// `symbol` directly — a nil here is the contract that keeps it honest.
+    /// A contributed panel is the same case, and the reason the contract
+    /// matters: its artwork is a file, and a symbol name a manifest chose
+    /// could be one this macOS does not resolve.
     @Test func thePanesWithTheirOwnArtworkHaveNoSymbol() {
         #expect(SidebarPane.git.symbol == nil)
         #expect(SidebarPane.worktrees.symbol == nil)
+        #expect(SidebarPane.view("ipetinate.bruno/http").symbol == nil)
         #expect(SidebarPane.terminals.symbol != nil)
         #expect(SidebarPane.files.symbol != nil)
         #expect(SidebarPane.extensions.symbol != nil)
+    }
+
+    /// A contributed panel's raw value can never spell a built-in's, because
+    /// the prefix holds a colon and neither an extension id nor a view id
+    /// may contain one.
+    @Test func aContributedPaneCannotSpellABuiltIn() {
+        for pane in SidebarPane.builtIns {
+            #expect(!pane.rawValue.hasPrefix(SidebarPane.viewPrefix))
+            #expect(SidebarPane.view(pane.rawValue) != pane)
+        }
+        #expect(SidebarPane(rawValue: "view:").contributedViewID == nil)
+        #expect(LanguageManifest.validID("a:b") == nil)
+        #expect(LanguageContribution.validLanguageID("a:b") == nil)
+    }
+
+    /// The switcher is one list drawn in one of two places, so a manifest's
+    /// `placements` is checked against where the reader put the bar.
+    @Test func aPlacementNamesTheContributionItAccepts() {
+        #expect(SidebarTabBarPlacement.top.contribution == .topBar)
+        #expect(SidebarTabBarPlacement.side.contribution == .sidebar)
     }
 }

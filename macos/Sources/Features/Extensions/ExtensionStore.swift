@@ -7,6 +7,11 @@ struct InstalledExtension: Identifiable, Equatable, Sendable {
     let root: URL
     var publisher: String = ""
     var iconURL: URL?
+
+    /// The pages this extension draws, already parsed out of its manifest by
+    /// the scan. Carried here rather than re-read by whoever wants them: the
+    /// sidebar asks on every layout pass, and the manifest is a file.
+    var views: [ExtensionViewContribution] = []
 }
 
 enum ExtensionState: Equatable, Sendable {
@@ -476,7 +481,8 @@ final class ExtensionStore: ObservableObject {
                 InstalledExtension(
                     id: $0.id, name: $0.name, version: $0.version, root: $0.root,
                     publisher: $0.publisher,
-                    iconURL: $0.languages.first?.iconURL ?? artworkURL(in: $0.root))
+                    iconURL: $0.languages.first?.iconURL ?? artworkURL(in: $0.root),
+                    views: $0.views)
             }
             .sorted(by: displayOrder)
     }

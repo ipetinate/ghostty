@@ -3,21 +3,60 @@ import SwiftUI
 
 /// One panel the sidebar can show.
 ///
-/// The sidebar started out only able to list terminals. This enum is the
-/// seam that lets it hold more: adding a panel is a case here plus a branch
-/// in `SidebarView.paneContent` and, if it needs its own titlebar buttons,
-/// one in `SidebarTitlebarChrome`. Nothing in the AppKit hierarchy
-/// (`TerminalController.makeSidebarSplitView`) has to change.
+/// The sidebar started out only able to list terminals. This type is the
+/// seam that lets it hold more: adding a built-in panel is a `static let`
+/// here plus a branch in `SidebarView.paneContent` and, if it needs its own
+/// titlebar buttons, one in `SidebarTitlebarChrome`. Nothing in the AppKit
+/// hierarchy (`TerminalController.makeSidebarSplitView`) has to change.
 ///
-enum SidebarPane: String, CaseIterable, Identifiable, Codable {
-    case terminals
-    case files
-    case git
-    case worktrees
-    case extensions
+/// **A struct rather than an enum**, and the reason is the whole of
+/// `contributes.views`: an extension contributes a panel, so the set of
+/// panels is not known at compile time and cannot be `CaseIterable`. The
+/// built-ins keep the spelling they had — `.terminals`, `.git` — because a
+/// static member of an `Equatable` type matches in a `switch` the way a case
+/// does; what a `switch` over this now needs is a `default`.
+struct SidebarPane: RawRepresentable, Hashable, Identifiable, Codable, Sendable {
+    let rawValue: String
+
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    static let terminals = SidebarPane(rawValue: "terminals")
+    static let files = SidebarPane(rawValue: "files")
+    static let git = SidebarPane(rawValue: "git")
+    static let worktrees = SidebarPane(rawValue: "worktrees")
+    static let extensions = SidebarPane(rawValue: "extensions")
+
+    /// The panels this build ships, in tab order.
+    static let builtIns: [SidebarPane] = [.terminals, .files, .git, .worktrees, .extensions]
+
+    /// What a contributed panel's `rawValue` begins with.
+    ///
+    /// A colon, which `LanguageManifest.validID` refuses in an extension id
+    /// and `LanguageContribution.validLanguageID` refuses in a view id — so
+    /// no contributed panel can ever spell a built-in's raw value, and no
+    /// built-in can be mistaken for a contributed one.
+    static let viewPrefix = "view:"
+
+    /// The panel an extension's view is shown in.
+    static func view(_ id: String) -> SidebarPane {
+        SidebarPane(rawValue: viewPrefix + id)
+    }
+
+    /// The `ExtensionViewDescriptor.id` this panel draws, or nil for a
+    /// built-in.
+    var contributedViewID: String? {
+        guard rawValue.hasPrefix(Self.viewPrefix) else { return nil }
+        let id = String(rawValue.dropFirst(Self.viewPrefix.count))
+        return id.isEmpty ? nil : id
+    }
 
     var id: String { rawValue }
 
+    /// The built-in's name. A contributed panel's name is its manifest's
+    /// `title` and travels on `SidebarPaneItem`, because it is a third
+    /// party's string and this type is not where escaping belongs.
     var title: String {
         switch self {
         case .terminals: return "Terminals"
@@ -25,18 +64,19 @@ enum SidebarPane: String, CaseIterable, Identifiable, Codable {
         case .git: return "Git"
         case .worktrees: return "Worktrees"
         case .extensions: return "Extensions"
+        default: return contributedViewID ?? rawValue
         }
     }
 
     /// SF Symbol for the tab bar, or nil for a panel that ships its own
-    /// artwork (see `SidebarPaneIcon`) — git and worktrees both do.
+    /// artwork (see `SidebarPaneIcon`) — git, worktrees and every
+    /// contributed view do.
     var symbol: String? {
         switch self {
         case .terminals: return "terminal"
         case .files: return "folder"
-        case .git: return nil
-        case .worktrees: return nil
         case .extensions: return "square.grid.2x2"
+        default: return nil
         }
     }
 
@@ -51,6 +91,9 @@ enum SidebarPane: String, CaseIterable, Identifiable, Codable {
         case .git: return "SidebarShowGitPane"
         case .worktrees: return "SidebarShowWorktreesPane"
         case .extensions: return "SidebarShowExtensionsPane"
+        default:
+            guard let id = contributedViewID else { return nil }
+            return "SidebarShowExtensionView." + id
         }
     }
 
@@ -59,16 +102,43 @@ enum SidebarPane: String, CaseIterable, Identifiable, Codable {
         return UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? true
     }
 
-    /// The panels to actually offer, in tab order.
+    /// The built-in panels to actually offer, in tab order.
     static var enabled: [SidebarPane] {
-        allCases.filter(\.isEnabled)
+        builtIns.filter(\.isEnabled)
+    }
+}
+
+/// A panel as the two bars draw it: which panel, what it is called, and the
+/// artwork it wears when it ships one.
+///
+/// The bars used to take `[SidebarPane]` and ask the pane for both. A
+/// contributed panel's name and icon come from a manifest and belong to the
+/// extension, not to the pane's identity, so they travel here instead.
+struct SidebarPaneItem: Identifiable, Equatable {
+    let pane: SidebarPane
+    let title: String
+
+    /// A file the extension shipped, or nil for a built-in.
+    ///
+    /// **Never an SF Symbol name from a manifest.** A symbol the running
+    /// macOS does not resolve makes SwiftUI drop the whole row out of a
+    /// `List` with nothing logged — measured, and it cost a debugging
+    /// session — so the one thing a third party must not get to choose is a
+    /// symbol name. See `ExtensionArtwork`.
+    let artwork: URL?
+
+    var id: String { pane.rawValue }
+
+    init(_ pane: SidebarPane) {
+        self.pane = pane
+        self.title = pane.title
+        self.artwork = nil
     }
 
-    /// With only terminals left there is nothing to switch between, so the
-    /// tab bar hides itself entirely and the sidebar goes back to being the
-    /// plain terminal list it started as.
-    static var showsTabBar: Bool {
-        enabled.count > 1
+    init(_ descriptor: ExtensionViewDescriptor) {
+        self.pane = .view(descriptor.id)
+        self.title = descriptor.title
+        self.artwork = descriptor.icon
     }
 }
 
@@ -97,18 +167,46 @@ enum SidebarTabBarPlacement: String, CaseIterable, Identifiable {
     init(raw: String?) {
         self = raw.flatMap(Self.init(rawValue:)) ?? .top
     }
+
+    static var current: SidebarTabBarPlacement {
+        SidebarTabBarPlacement(raw: UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    /// The placement a manifest names, for this bar.
+    ///
+    /// The switcher is one list drawn in one of two places, so this is what
+    /// `contributes.views[].placements` is checked against: a view that
+    /// names only `topBar` is offered while the bar is at the top and not
+    /// while it is at the side, which is what the author asked for.
+    var contribution: ExtensionViewContribution.Placement {
+        switch self {
+        case .top: return .topBar
+        case .side: return .sidebar
+        }
+    }
 }
 
-/// A panel's icon, whether it comes from SF Symbols or the asset catalog.
+/// A panel's icon: an SF Symbol, an asset, or a file an extension shipped.
 struct SidebarPaneIcon: View {
-    let pane: SidebarPane
+    let item: SidebarPaneItem
     var size: CGFloat = 10
 
+    init(item: SidebarPaneItem, size: CGFloat = 10) {
+        self.item = item
+        self.size = size
+    }
+
+    init(pane: SidebarPane, size: CGFloat = 10) {
+        self.init(item: SidebarPaneItem(pane), size: size)
+    }
+
     var body: some View {
-        if let symbol = pane.symbol {
+        if let artwork = item.artwork {
+            ExtensionArtwork(url: artwork, size: size + 2)
+        } else if let symbol = item.pane.symbol {
             Image(systemName: symbol)
                 .font(.system(size: size, weight: .medium))
-        } else if pane == .worktrees {
+        } else if item.pane == .worktrees {
             WorktreeIcon(size: size + 2)
         } else {
             GitIcon(size: size + 1)
@@ -116,24 +214,56 @@ struct SidebarPaneIcon: View {
     }
 }
 
+/// Which panels the sidebar offers: the built-ins the reader kept, then the
+/// views the installed extensions contribute.
+///
+/// One object for both because the answer is one list, and because
+/// `SidebarPane.isEnabled` reads `UserDefaults` directly — which SwiftUI has
+/// no way to observe.
 @MainActor
 final class SidebarPaneVisibility: ObservableObject {
     static let shared = SidebarPaneVisibility()
 
-    @Published private(set) var enabled: [SidebarPane]
+    @Published private(set) var items: [SidebarPaneItem]
 
-    private var subscription: AnyCancellable?
+    private var subscriptions: [AnyCancellable] = []
+    private let registry: ExtensionViewRegistry
 
-    init() {
-        enabled = SidebarPane.enabled
-        subscription = NotificationCenter.default
+    init(registry: ExtensionViewRegistry = .shared) {
+        self.registry = registry
+        items = Self.items(contributing: registry.views(at: SidebarTabBarPlacement.current.contribution))
+
+        NotificationCenter.default
             .publisher(for: UserDefaults.didChangeNotification)
             .receive(on: RunLoop.main)
-            .map { _ in SidebarPane.enabled }
-            .removeDuplicates()
-            .sink { [weak self] panes in
-                MainActor.assumeIsolated { self?.update(panes) }
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.recompute() }
             }
+            .store(in: &subscriptions)
+
+        registry.$views
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.recompute() }
+            }
+            .store(in: &subscriptions)
+    }
+
+    /// The panels, as panes. Kept for the callers that only need identity —
+    /// the fallback in `SidebarView` and the titlebar chrome.
+    var enabled: [SidebarPane] {
+        items.map(\.pane)
+    }
+
+    /// With only terminals left there is nothing to switch between, so the
+    /// tab bar hides itself entirely and the sidebar goes back to being the
+    /// plain terminal list it started as.
+    ///
+    /// Answered here rather than by `SidebarPane`, because the list now
+    /// includes what the extensions contribute and this object is the only
+    /// one that knows it.
+    var showsTabBar: Bool {
+        items.count > 1
     }
 
     func isEnabled(_ pane: SidebarPane) -> Bool {
@@ -150,9 +280,21 @@ final class SidebarPaneVisibility: ObservableObject {
         )
     }
 
-    private func update(_ panes: [SidebarPane]) {
-        guard enabled != panes else { return }
-        enabled = panes
+    /// The contributed panels, whether or not the reader kept them, so the
+    /// switcher menu can offer one that is switched off.
+    var contributed: [SidebarPaneItem] {
+        registry.views(at: SidebarTabBarPlacement.current.contribution).map(SidebarPaneItem.init)
+    }
+
+    private func recompute() {
+        let next = Self.items(contributing: registry.views(at: SidebarTabBarPlacement.current.contribution))
+        guard next != items else { return }
+        items = next
+    }
+
+    nonisolated static func items(contributing views: [ExtensionViewDescriptor]) -> [SidebarPaneItem] {
+        SidebarPane.enabled.map(SidebarPaneItem.init)
+            + views.map(SidebarPaneItem.init).filter { $0.pane.isEnabled }
     }
 }
 
@@ -160,21 +302,15 @@ struct SidebarPaneSwitcherMenu: View {
     enum Entry: Equatable, Identifiable {
         case placement(SidebarTabBarPlacement)
         case separator
-        case pane(SidebarPane, canToggle: Bool)
+        case pane(SidebarPaneItem, canToggle: Bool)
 
         var id: String {
             switch self {
             case .placement(let placement): return "placement." + placement.rawValue
             case .separator: return "separator"
-            case .pane(let pane, _): return "pane." + pane.rawValue
+            case .pane(let item, _): return "pane." + item.id
             }
         }
-    }
-
-    static var entries: [Entry] {
-        SidebarTabBarPlacement.allCases.map(Entry.placement)
-            + [.separator]
-            + SidebarPane.allCases.map { .pane($0, canToggle: $0.canBeHidden) }
     }
 
     @ObservedObject private var visibility: SidebarPaneVisibility = .shared
@@ -182,8 +318,21 @@ struct SidebarPaneSwitcherMenu: View {
     @AppStorage(SidebarTabBarPlacement.defaultsKey)
     private var placementRaw = SidebarTabBarPlacement.top.rawValue
 
+    /// Both placements, then every built-in panel, then the contributed
+    /// ones behind a separator of their own.
+    ///
+    /// A contributed panel is always toggleable: it is somebody else's
+    /// window inside this app, and the reader gets to close it.
+    static func entries(contributing contributed: [SidebarPaneItem]) -> [Entry] {
+        SidebarTabBarPlacement.allCases.map(Entry.placement)
+            + [.separator]
+            + SidebarPane.builtIns.map { .pane(SidebarPaneItem($0), canToggle: $0.canBeHidden) }
+            + (contributed.isEmpty ? [] : [.separator])
+            + contributed.map { .pane($0, canToggle: true) }
+    }
+
     var body: some View {
-        ForEach(Self.entries) { entry in
+        ForEach(Self.entries(contributing: visibility.contributed)) { entry in
             item(entry)
         }
     }
@@ -195,8 +344,8 @@ struct SidebarPaneSwitcherMenu: View {
             Toggle(placement.menuTitle, isOn: placementBinding(placement))
         case .separator:
             Divider()
-        case .pane(let pane, let canToggle):
-            Toggle(pane.title, isOn: visibility.binding(for: pane))
+        case .pane(let item, let canToggle):
+            Toggle(item.title, isOn: visibility.binding(for: item.pane))
                 .disabled(!canToggle)
         }
     }

@@ -22,7 +22,7 @@ struct SidebarPaneTabBar: View {
 
     /// Which panels to offer. Owned by `SidebarView`, which also decides
     /// whether this bar appears at all.
-    let panes: [SidebarPane]
+    let items: [SidebarPaneItem]
 
     /// How tall a tab is. Fixed rather than left to the label's padding
     /// because the scroll view around the row needs the same number: content
@@ -34,8 +34,8 @@ struct SidebarPaneTabBar: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: 2) {
-                    ForEach(panes) { pane in
-                        tab(for: pane).id(pane)
+                    ForEach(items) { item in
+                        tab(for: item).id(item.pane)
                     }
                 }
                 .padding(.horizontal, 8)
@@ -72,16 +72,16 @@ struct SidebarPaneTabBar: View {
         .sidebarPaneSwitcherMenu()
     }
 
-    private func tab(for pane: SidebarPane) -> some View {
-        let isSelected = selection == pane
+    private func tab(for item: SidebarPaneItem) -> some View {
+        let isSelected = selection == item.pane
 
         return Button {
-            guard selection != pane else { return }
-            withAnimation(.easeOut(duration: 0.12)) { selection = pane }
+            guard selection != item.pane else { return }
+            withAnimation(.easeOut(duration: 0.12)) { selection = item.pane }
         } label: {
             HStack(spacing: 5) {
-                SidebarPaneIcon(pane: pane)
-                Text(pane.title)
+                SidebarPaneIcon(item: item)
+                Text(item.title)
                     .font(palette.font(size: 11, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
                     /// The title at its full width, never an ellipsis. A tab
@@ -108,7 +108,7 @@ struct SidebarPaneTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(pane.title)
+        .help(item.title)
         .sidebarPaneSwitcherMenu()
     }
 }

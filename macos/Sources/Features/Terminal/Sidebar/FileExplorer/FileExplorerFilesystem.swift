@@ -206,9 +206,7 @@ enum FileExplorerFilesystem {
     /// The name the explorer should prefill when creating an item.
     ///
     /// A file gets no extension. What kind of file it is, is the reader's to
-    /// say, and a prefilled ".txt" both answers that for them and leaves half
-    /// the field outside the selection, so the first thing typed lands inside
-    /// a name nobody asked for.
+    /// say, and the editor is in no position to guess it.
     static func proposedName(isFolder: Bool) -> String {
         isFolder ? "untitled folder" : "untitled"
     }

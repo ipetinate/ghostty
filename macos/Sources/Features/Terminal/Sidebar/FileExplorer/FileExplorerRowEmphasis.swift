@@ -9,22 +9,33 @@ import Foundation
 /// time. What that looks like on screen is two highlights, one brighter, and a
 /// reader working out which shade means what.
 ///
-/// The rule now spends two marks and no more, both borrowed from the card the
-/// rest of the sidebar draws: a neutral fill, and an accent ring. Fill alone
-/// is the pointer. Ring alone is the selection. Fill and ring together is the
-/// file open in the focused tab, and only one row in the list can be that.
+/// Three marks now, and each answers a different question. A neutral fill
+/// follows the pointer. An accent tint is the file open in the focused tab,
+/// and only one row can be that. An accent ring is the selection — the row
+/// Return renames, Delete trashes, and a new file lands beside. Two of them
+/// can land on one row, and none of them repeats another's meaning.
 struct FileExplorerRowEmphasis: Equatable {
-    /// Whether the row carries the neutral surface fill.
-    let isFilled: Bool
+    /// What the row is painted with.
+    enum Fill: Equatable {
+        case none
 
-    /// Whether the row carries the accent ring.
+        /// The pointer's row, drawn on the sidebar's neutral card surface.
+        case hover
+
+        /// The open file's row: a tint of the accent, quiet enough that a
+        /// selection ring beside it still reads as the louder mark.
+        case open
+    }
+
+    let fill: Fill
+
+    /// Whether the row is outlined as the selection.
     ///
-    /// Selection survives as a fact because three commands read it — Return
-    /// renames it, Delete trashes it, a new file lands beside it — so a tree
-    /// without one is a tree where those three have nothing to act on. It stops
-    /// being a *fill* so it no longer competes with the open file for the same
-    /// visual language.
-    let isRinged: Bool
+    /// Selection survives as a fact because three commands read it, so a tree
+    /// without one is a tree where those three have nothing to act on. It is
+    /// drawn as a ring rather than as a block of the accent, which is what
+    /// made it compete with the open file for the same visual language.
+    let showsSelectionRing: Bool
 
     /// - Parameters:
     ///   - isOpenInEditor: the file this row is, is the one in the focused tab.
@@ -42,15 +53,23 @@ struct FileExplorerRowEmphasis: Equatable {
         /// for is refused until the name is settled — and a row still marked
         /// behind it is a second answer to "which one is this about".
         guard !isNaming else {
-            return FileExplorerRowEmphasis(isFilled: false, isRinged: false)
+            return FileExplorerRowEmphasis(fill: .none, showsSelectionRing: false)
         }
 
-        /// Hover fills a row that carries no mark of its own, and adds nothing
-        /// to one that does: filling the selected row would draw it exactly as
-        /// the open file is drawn, for as long as the pointer rests there.
+        let fill: Fill = if isOpenInEditor {
+            .open
+        } else if isHovered {
+            .hover
+        } else {
+            .none
+        }
+
+        /// No ring on the row that is already tinted. After a click the two
+        /// facts coincide — that is the common case — and drawing both would
+        /// put two marks on one row for one thing.
         return FileExplorerRowEmphasis(
-            isFilled: isOpenInEditor || (isHovered && !isSelected),
-            isRinged: isOpenInEditor || isSelected
+            fill: fill,
+            showsSelectionRing: isSelected && !isOpenInEditor
         )
     }
 }

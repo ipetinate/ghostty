@@ -1035,12 +1035,13 @@ private struct FileExplorerRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .strokeBorder(accent.opacity(0.55), lineWidth: 1)
+                .strokeBorder(ringColor, lineWidth: 1)
         )
     }
 
-    /// Puts the field into "type to replace the base name" state: focus it
-    /// and select everything up to the extension, the way Finder does.
+    /// Opens the field on the part of the name the reader is being asked for:
+    /// the whole of a proposal, everything before the extension of a real
+    /// file. See `FileExplorerFilesystem.selectedRange(in:isFolder:isCreating:)`.
     private func startEditing() {
         draftName = row.node.name
         fieldFocused = true
@@ -1202,8 +1203,7 @@ private struct FileExplorerRow: View {
 
     /// The neutral surface the sidebar's cards are drawn on, and the radius
     /// they carry. A row is the smallest of those cards, so it takes the same
-    /// two values rather than a filled block of the accent, which read as a
-    /// selection loud enough to compete with the one beside it.
+    /// two values.
     private static let surface = Color.secondary.opacity(0.08)
 
     static let cornerRadius: CGFloat = 6
@@ -1214,24 +1214,31 @@ private struct FileExplorerRow: View {
     /// together.
     static let rowGap: CGFloat = 2
 
-    /// A neutral fill: the pointer's row, or the open file's.
+    /// The ring the selection and the open name field are both drawn with.
+    private var ringColor: Color { accent.opacity(0.55) }
+
+    /// What the row is painted with: the sidebar's neutral surface under the
+    /// pointer, a tint of the accent under the open file, nothing otherwise.
     ///
-    /// There used to be three fills at three strengths — the clicked row, the
-    /// open file, and the terminal's directory — and two of them could land on
-    /// different rows at once. Reading that took working out which shade meant
-    /// what, which is a puzzle nobody asked for in a file list.
+    /// The open file's tint used to be `0.45`, a block of colour loud enough
+    /// that a name field beside it read as a second selection. It only has to
+    /// beat the neutral surface, not the ring.
     private var fill: Color {
-        emphasis.isFilled ? Self.surface : .clear
+        switch emphasis.fill {
+        case .open: accent.opacity(0.18)
+        case .hover: Self.surface
+        case .none: .clear
+        }
     }
 
-    /// The accent ring: the selection, or the open file.
+    /// The selection, as a ring rather than a fill.
     ///
     /// Selection cannot simply be dropped — Return renames it, Delete moves it
     /// to the trash, and a new file lands beside it, so a tree with no
     /// selection is a tree where those three commands have nothing to act on.
     /// A ring is how it says so without a block of colour.
     private var ring: Color {
-        emphasis.isRinged ? accent.opacity(0.55) : .clear
+        emphasis.showsSelectionRing ? ringColor : .clear
     }
 
     private var emphasis: FileExplorerRowEmphasis {

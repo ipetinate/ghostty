@@ -309,24 +309,20 @@ struct GitChangeRow: View {
 
     private var accent: Color { palette.accent ?? .accentColor }
 
-    /// The same marks the Files tree paints, from the same rule. This list has
+    /// The same fills the Files tree paints, from the same rule. This list has
     /// no selection and no name field over it, so the pointer and the open file
     /// are the only two states it can be in.
-    private var emphasis: FileExplorerRowEmphasis {
-        .resolve(
+    private var rowFill: Color {
+        switch FileExplorerRowEmphasis.resolve(
             isOpenInEditor: isOpenInEditor,
             isSelected: false,
             isHovered: isHovered,
             isNaming: false
-        )
-    }
-
-    private var rowFill: Color {
-        emphasis.isFilled ? Color.secondary.opacity(0.08) : .clear
-    }
-
-    private var rowRing: Color {
-        emphasis.isRinged ? accent.opacity(0.55) : .clear
+        ).fill {
+        case .open: accent.opacity(0.18)
+        case .hover: Color.secondary.opacity(0.08)
+        case .none: .clear
+        }
     }
 
     var body: some View {
@@ -384,10 +380,6 @@ struct GitChangeRow: View {
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(rowFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(rowRing, lineWidth: 1)
         )
         .onHover { isHovered = $0 }
         .contextMenu { menu }

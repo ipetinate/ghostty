@@ -296,9 +296,9 @@ struct SidebarView: View {
                 .animation(listAnimation, value: content.sections.map(\.id))
                 .animation(listAnimation, value: store.tabOrder)
                 .animation(listAnimation, value: tabManager.models.map(\.id))
-                .background(alignment: .top) { OverlayScrollers() }
+                .background(alignment: .top) { InvisibleScrollers() }
             }
-            .scrollIndicators(.automatic)
+            .scrollIndicators(.never)
             .onDrop(of: [.plainText], isTargeted: nil) { providers in
                 appendDroppedToUngrouped(providers)
             }

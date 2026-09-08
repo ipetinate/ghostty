@@ -44,6 +44,7 @@ struct ExtensionsSettingsView: View {
                         .padding(.vertical, 6)
                     headerRow
                         .padding(.vertical, 4)
+                        .background(alignment: .top) { OverlayScrollers() }
                     if store.index != nil, let error = store.lastRefreshError {
                         Text(verbatim: error)
                             .font(.caption)
@@ -55,6 +56,7 @@ struct ExtensionsSettingsView: View {
                 folderSection
             }
             .formStyle(.grouped)
+            .scrollIndicators(.hidden)
             .navigationTitle("Extensions")
             .onAppear {
                 load()

@@ -309,6 +309,8 @@ struct ExtensionPaneView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
+            .background(alignment: .top) { OverlayScrollers(weight: .content) }
         }
+        .scrollIndicators(.hidden)
     }
 }

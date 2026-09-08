@@ -64,7 +64,9 @@ struct AppIconPickerView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
             .padding(20)
+            .background(alignment: .top) { OverlayScrollers() }
         }
+        .scrollIndicators(.hidden)
     }
 
     /// The style control.

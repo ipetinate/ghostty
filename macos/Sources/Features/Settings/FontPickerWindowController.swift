@@ -168,16 +168,23 @@ struct FontPickerView: View {
                         }
                         Section("All Fonts") {
                             ForEach(otherFamilies, id: \.self) { family in
-                                Text(family).lineLimit(1).tag(family)
+                                Text(family)
+                                    .lineLimit(1)
+                                    .background(alignment: .top) { OverlayScrollers() }
+                                    .tag(family)
                             }
                         }
                     } else {
                         ForEach(otherFamilies, id: \.self) { family in
-                            Text(family).lineLimit(1).tag(family)
+                            Text(family)
+                                .lineLimit(1)
+                                .background(alignment: .top) { OverlayScrollers() }
+                                .tag(family)
                         }
                     }
                 }
                 .listStyle(.plain)
+                .scrollIndicators(.hidden)
             }
             .frame(width: 240)
 

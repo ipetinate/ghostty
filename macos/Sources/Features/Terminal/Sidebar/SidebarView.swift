@@ -2668,7 +2668,9 @@ private struct SidebarIconBrowser: View {
                         }
                     }
                     .padding(10)
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
+                .scrollIndicators(.hidden)
             }
 
             Divider()
@@ -2890,6 +2892,7 @@ private struct SidebarTabEditor: View {
                     }
 
                     SidebarColorRows(color: $color, colorHex: $colorHex)
+                        .background(alignment: .top) { OverlayScrollers() }
                 } footer: {
                     Text("Leave the name empty to keep the terminal's own title.")
                         .font(palette.captionFont)
@@ -2901,6 +2904,7 @@ private struct SidebarTabEditor: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollIndicators(.hidden)
 
             Divider()
 
@@ -3041,9 +3045,11 @@ private struct SidebarGroupEditor: View {
                     Text("Project groups automatically claim tabs whose working directory is inside the project root.")
                         .font(palette.captionFont)
                         .foregroundStyle(.secondary)
+                        .background(alignment: .top) { OverlayScrollers() }
                 }
             }
             .formStyle(.grouped)
+            .scrollIndicators(.hidden)
 
             Divider()
 

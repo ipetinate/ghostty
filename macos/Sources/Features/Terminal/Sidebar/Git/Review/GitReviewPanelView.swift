@@ -445,7 +445,7 @@ struct GitReviewPanelView: View {
     @ViewBuilder
     private func commitStrip(_ review: GitBranchReview) -> some View {
         if !review.commits.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 HStack(spacing: 6) {
                     ForEach(review.commits) { commit in
                         let opened = GitReviewScope.commit(
@@ -459,7 +459,9 @@ struct GitReviewPanelView: View {
                         )
                     }
                 }
+                .background(alignment: .leading) { InvisibleScrollers() }
             }
+            .scrollIndicators(.never)
         }
     }
 
@@ -536,7 +538,9 @@ struct GitReviewPanelView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .background(alignment: .top) { OverlayScrollers() }
         }
+        .scrollIndicators(.hidden)
     }
 
     // MARK: Pieces

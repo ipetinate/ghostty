@@ -40,7 +40,11 @@ struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
                     .padding(.all)
                     .frame(minHeight: geo.size.height)
                     .background(Color(.controlBackgroundColor))
+                    .background(alignment: .top) {
+                        OverlayScrollers(weight: .content)
+                    }
                 }
+                .scrollIndicators(.hidden)
             }
 
             HStack {

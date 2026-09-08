@@ -144,7 +144,7 @@ struct BranchPicker: View {
             )
             .background(alignment: .top) { OverlayScrollers() }
         }
-        .scrollIndicators(.automatic)
+        .scrollIndicators(.hidden)
         .onPreferenceChange(BranchListHeightKey.self) { height in
             contentHeight = height
         }

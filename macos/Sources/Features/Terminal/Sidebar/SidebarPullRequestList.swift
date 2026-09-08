@@ -103,8 +103,9 @@ struct GroupPRListView: View {
                             )
                         }
                     )
+                    .background(alignment: .top) { OverlayScrollers() }
             }
-            .scrollIndicators(.automatic)
+            .scrollIndicators(.hidden)
             .onPreferenceChange(PRListHeightKey.self) { height in
                 contentHeight = height
             }

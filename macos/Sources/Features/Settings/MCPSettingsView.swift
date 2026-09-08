@@ -124,6 +124,7 @@ struct MCPSettingsView: View {
             grantsSection
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle("MCP")
         .onAppear(perform: refresh)
         .onReceive(
@@ -153,6 +154,7 @@ struct MCPSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .background(alignment: .top) { OverlayScrollers() }
 
             if let socket {
                 socketRow(socket)

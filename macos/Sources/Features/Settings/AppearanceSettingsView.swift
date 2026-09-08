@@ -1,9 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Theme management: a curated set of well-known themes split into dark
-/// and light sections, import of external theme files, and an inline
-/// theme creator at the bottom of the screen.
+/// Theme management: every theme Phantom can reach, split into a dark and
+/// a light section, plus import of external theme files and an inline theme
+/// creator at the bottom of the screen.
 struct AppearanceSettingsView: View {
     let ghostty: Ghostty.App
     @ObservedObject var store: GuiConfigStore
@@ -13,8 +13,15 @@ struct AppearanceSettingsView: View {
     @State private var search = ""
     @State private var expandedSections: Set<String> = []
 
-    /// Famous themes shown by default; searching looks through the whole
-    /// catalog. Names match the bundled theme files exactly.
+    /// How many cards a collapsed section shows before "Show All".
+    private static let collapsedCount = 8
+
+    /// Which of the bundled themes are shown before the reader searches.
+    ///
+    /// The bundle carries several hundred, far more than anyone browses, so
+    /// the pane offers these and finds the rest by search or in Browse All.
+    /// It applies to the bundled set and to nothing else: a theme the reader
+    /// wrote or installed is always shown, whatever it is called.
     private static let curated: Set<String> = [
         "Dracula", "Dracula+",
         "TokyoNight", "TokyoNight Storm", "TokyoNight Moon", "TokyoNight Day",
@@ -44,38 +51,31 @@ struct AppearanceSettingsView: View {
     }
 
     private struct ThemeGroups {
-        var user: [TerminalTheme] = []
-        var contributed: [TerminalTheme] = []
         var dark: [TerminalTheme] = []
         var light: [TerminalTheme] = []
     }
 
+    /// Everything the pane offers before it is split in two. Search reaches
+    /// the whole catalog; the resting state trims only the bundled set.
+    private var visibleThemes: [TerminalTheme] {
+        guard search.isEmpty else {
+            return catalog.themes.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        }
+        return catalog.themes.filter {
+            $0.source != .builtin || Self.curated.contains($0.name)
+        }
+    }
+
+    /// Themes are grouped by what they look like, not by where they came
+    /// from: a reader after a dark theme wants every dark theme, and does
+    /// not know or care which of them arrived through the store.
     private var groups: ThemeGroups {
         var result = ThemeGroups()
-
-        let visible: [TerminalTheme]
-        if search.isEmpty {
-            visible = catalog.themes.filter {
-                $0.source != .builtin || Self.curated.contains($0.name)
-            }
-        } else {
-            visible = catalog.themes.filter {
-                $0.name.localizedCaseInsensitiveContains(search)
-            }
-        }
-
-        for theme in visible {
-            switch theme.source {
-            case .user:
-                result.user.append(theme)
-            case .contributed:
-                result.contributed.append(theme)
-            case .builtin:
-                if theme.background?.isLightColor == true {
-                    result.light.append(theme)
-                } else {
-                    result.dark.append(theme)
-                }
+        for theme in visibleThemes {
+            if theme.isLight {
+                result.light.append(theme)
+            } else {
+                result.dark.append(theme)
             }
         }
         return result
@@ -130,10 +130,10 @@ struct AppearanceSettingsView: View {
         }
     }
 
-    /// Dracula is the out-of-the-box theme until the user picks another.
+    /// The default theme applies until the user picks another.
     private func applyDefaultThemeIfNeeded() {
         guard currentTheme.isEmpty else { return }
-        store.set("theme", "Dracula")
+        store.set("theme", ThemeCatalog.defaultThemeName)
         store.apply(ghostty: ghostty)
     }
 
@@ -157,13 +157,13 @@ struct AppearanceSettingsView: View {
         .padding(10)
     }
 
-    /// Everything there is to browse: the theme in use and the user's own on
-    /// the first row, then the curated dark and light sets.
+    /// Everything there is to browse: the theme in use, then the dark and
+    /// the light set.
     private var themeGrids: some View {
         let groups = groups
 
         return VStack(alignment: .leading, spacing: 18) {
-            currentAndCustomThemes
+            currentThemeRow
 
             if !groups.dark.isEmpty {
                 themeSection("Dark", groups.dark)
@@ -175,31 +175,16 @@ struct AppearanceSettingsView: View {
     }
 
     /// The theme in use gets its own card, so what is active is visible
-    /// without hunting for the checkmark in a grid. The user's own themes
-    /// sit beside it and take the rest of the row.
+    /// without hunting for the checkmark in a grid.
     @ViewBuilder
-    private var currentAndCustomThemes: some View {
-        let groups = groups
-
-        HStack(alignment: .top, spacing: 18) {
-            if let current = catalog.themes.first(where: store.isCurrentTheme) {
-                VStack(alignment: .leading, spacing: 8) {
-                    sectionTitle("Current Theme")
-                    ThemeCard(theme: current, isSelected: true) {}
-                        .frame(width: 150)
-                }
-                .fixedSize(horizontal: true, vertical: false)
+    private var currentThemeRow: some View {
+        if let current = catalog.themes.first(where: store.isCurrentTheme) {
+            VStack(alignment: .leading, spacing: 8) {
+                sectionTitle("Current Theme")
+                ThemeCard(theme: current, isSelected: true) {}
+                    .frame(width: 150)
             }
-
-            if !groups.user.isEmpty {
-                themeSection("Custom Themes", groups.user)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if !groups.contributed.isEmpty {
-                themeSection("Extension Themes", groups.contributed)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -210,10 +195,10 @@ struct AppearanceSettingsView: View {
             .textCase(.uppercase)
     }
 
-    /// Sections collapse to their first row; searching expands results.
+    /// Sections collapse to their first rows; searching expands results.
     private func themeSection(_ title: String, _ themes: [TerminalTheme]) -> some View {
         let isExpanded = expandedSections.contains(title) || !search.isEmpty
-        let visible = isExpanded ? themes : Array(themes.prefix(3))
+        let visible = isExpanded ? themes : Array(themes.prefix(Self.collapsedCount))
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -221,7 +206,7 @@ struct AppearanceSettingsView: View {
 
                 Spacer()
 
-                if themes.count > 3 && search.isEmpty {
+                if themes.count > Self.collapsedCount && search.isEmpty {
                     Button {
                         if isExpanded {
                             expandedSections.remove(title)
@@ -264,7 +249,7 @@ struct AppearanceSettingsView: View {
         guard theme.source == .user else { return }
         try? FileManager.default.removeItem(at: theme.url)
         if currentTheme == theme.name {
-            store.set("theme", "Dracula")
+            store.set("theme", ThemeCatalog.defaultThemeName)
             store.apply(ghostty: ghostty)
         }
         catalog.reload()
@@ -749,7 +734,7 @@ enum SidebarWidthOverride {
 
 /// One theme in the grid: a miniature Phantom window — sidebar strip,
 /// prompt line and text skeleton, all in the theme's real colors — with
-/// the name centered underneath.
+/// the name centered underneath and where it came from under that.
 private struct ThemeCard: View {
     let theme: TerminalTheme
     let isSelected: Bool
@@ -771,21 +756,12 @@ private struct ThemeCard: View {
             VStack(spacing: 7) {
                 miniWindow
 
-                HStack(spacing: 4) {
+                VStack(spacing: 1) {
                     Text(theme.name)
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
 
-                    if theme.source == .user {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                    } else if case .contributed(let extensionName) = theme.source {
-                        Image(systemName: "puzzlepiece")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                            .help("From the extension \(extensionName)")
-                    }
+                    provenance
                 }
                 .frame(maxWidth: .infinity)
                 .overlay(alignment: .trailing) {
@@ -812,6 +788,25 @@ private struct ThemeCard: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+    }
+
+    /// A quiet second line saying where the theme came from, so origin is
+    /// legible on the card and never has to be the way the grid is split.
+    private var provenance: some View {
+        Text(theme.source.label)
+            .font(.system(size: 9))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .help(helpText)
+    }
+
+    private var helpText: String {
+        switch theme.source {
+        case .builtin: return "Ships with Phantom"
+        case .user: return "Yours, from \(theme.url.deletingLastPathComponent().path)"
+        case .contributed(let extensionName): return "From the extension \(extensionName)"
+        }
     }
 
     private var miniWindow: some View {
@@ -1339,33 +1334,21 @@ private struct AllThemesView: View {
         }
     }
 
+    /// Split the same way the Appearance pane splits: by what the theme
+    /// looks like, with its origin printed on the card.
     private var sections: [(title: String, themes: [TerminalTheme])] {
-        var user: [TerminalTheme] = []
-        var contributed: [TerminalTheme] = []
         var dark: [TerminalTheme] = []
         var light: [TerminalTheme] = []
 
         for theme in filtered {
-            switch theme.source {
-            case .user:
-                user.append(theme)
-            case .contributed:
-                contributed.append(theme)
-            case .builtin:
-                if theme.background?.isLightColor == true {
-                    light.append(theme)
-                } else {
-                    dark.append(theme)
-                }
+            if theme.isLight {
+                light.append(theme)
+            } else {
+                dark.append(theme)
             }
         }
 
-        return [
-            ("Custom Themes", user),
-            ("Extension Themes", contributed),
-            ("Dark", dark),
-            ("Light", light),
-        ].filter { !$0.1.isEmpty }
+        return [("Dark", dark), ("Light", light)].filter { !$0.1.isEmpty }
     }
 
     var body: some View {

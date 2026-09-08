@@ -108,6 +108,36 @@ enum ExtensionCatalogFilter {
         )
     }
 
+    // MARK: Empty
+
+    /// What an empty listing says, which is not one sentence.
+    ///
+    /// It read "No extension matches in Agents." whether or not a search was
+    /// running, so opening a tab the registry publishes nothing under told
+    /// the reader their search had failed when they had typed nothing. The
+    /// two facts are different, and only one of them is about the reader:
+    /// an empty tab says what the registry carries, and an empty search says
+    /// the query is too narrow.
+    ///
+    /// A tab, not an installation. The counts beside the tabs come from the
+    /// registry index, so `Agents 0` means nothing of that kind is published
+    /// — an extension of that kind could not be installed either, but the
+    /// sentence would be claiming more than the count knows.
+    ///
+    /// Both stores read this so that the sentence cannot drift between the
+    /// settings pane and the sidebar panel, which is how it came to be
+    /// written twice.
+    static func emptyMessage(kind: Kind, query: String) -> String {
+        guard !terms(in: query).isEmpty else {
+            return kind == .all
+                ? "The registry has no extensions yet."
+                : "The registry has nothing under " + kind.title + " yet."
+        }
+        return kind == .all
+            ? "No extension matches this search."
+            : "No extension under " + kind.title + " matches this search."
+    }
+
     // MARK: Query
 
     static let folding: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]

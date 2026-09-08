@@ -66,13 +66,12 @@ struct CodeTagCloseTests {
     }
 
     /// The row the whole table exists for: `.ts` and `.tsx` are one
-    /// `CodeLanguage` and opposites here.
+    /// language and opposites here.
     @Test func typeScriptResolvesToNothing() {
         for name in ["api.ts", "api.mts", "api.cts"] {
             #expect(CodeTagDialect.resolve(fileName: name) == CodeTagDialect.none, "\(name)")
-            #expect(CodeLanguage.resolve(fileName: name) == .javascript, "\(name)")
         }
-        #expect(CodeLanguage.resolve(fileName: "App.tsx") == .javascript)
+        #expect(CodeTagDialect.resolve(fileName: "App.tsx") == .jsx)
     }
 
     @Test func singleFileComponentsResolveToSFC() {
@@ -92,10 +91,14 @@ struct CodeTagCloseTests {
         #expect(CodeTagDialect.resolve(fileName: "Api.TS") == CodeTagDialect.none)
     }
 
+    private static let languages: [String?] = [
+        nil, "javascript", "typescript", "swift", "python", "html", "rust", "go", "elixir",
+    ]
+
     /// The pairs no language disagrees about.
     @Test func everyLanguageClosesBracketsAndStrings() {
-        for language in CodeLanguage.allCases {
-            let pairs = CodeAutoClosePairs.resolve(language)
+        for language in Self.languages {
+            let pairs = CodeAutoClosePairs.resolve(languageID: language)
             #expect(pairs.closer(for: "(") == ")", "\(language)")
             #expect(pairs.closer(for: "[") == "]", "\(language)")
             #expect(pairs.closer(for: "{") == "}", "\(language)")
@@ -108,14 +111,14 @@ struct CodeTagCloseTests {
     /// past the touches-a-word guard: at the instant the `'` lands there is
     /// no letter on either side of it yet.
     @Test func rustDoesNotCloseTheSingleQuote() {
-        let rust = CodeAutoClosePairs.resolve(.rust)
+        let rust = CodeAutoClosePairs.resolve(languageID: "rust")
         #expect(rust.closer(for: "'") == nil)
         #expect(rust.isQuote("'") == false)
         #expect(rust.isCloser("'") == false)
     }
 
     @Test func rustStillClosesEverythingElse() {
-        let rust = CodeAutoClosePairs.resolve(.rust)
+        let rust = CodeAutoClosePairs.resolve(languageID: "rust")
         #expect(rust.closer(for: "(") == ")")
         #expect(rust.isQuote("\"") == true)
         #expect(rust.isQuote("`") == true)
@@ -123,8 +126,8 @@ struct CodeTagCloseTests {
     }
 
     @Test func otherLanguagesKeepTheSingleQuote() {
-        for language in [CodeLanguage.javascript, .swift, .python, .html] {
-            let pairs = CodeAutoClosePairs.resolve(language)
+        for language in Self.languages where language != "rust" {
+            let pairs = CodeAutoClosePairs.resolve(languageID: language)
             #expect(pairs.closer(for: "'") == "'", "\(language)")
             #expect(pairs.isQuote("'") == true, "\(language)")
         }
@@ -133,8 +136,8 @@ struct CodeTagCloseTests {
     /// Comparison outnumbers markup even in a `.tsx` file, so `<` opens
     /// nothing anywhere. Tags are decided at `>` and `</`, with context.
     @Test func angleBracketsAreNotAPairInAnyLanguage() {
-        for language in CodeLanguage.allCases {
-            let pairs = CodeAutoClosePairs.resolve(language)
+        for language in Self.languages {
+            let pairs = CodeAutoClosePairs.resolve(languageID: language)
             #expect(pairs.closer(for: "<") == nil, "\(language)")
             #expect(pairs.isCloser(">") == false, "\(language)")
         }

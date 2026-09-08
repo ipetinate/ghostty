@@ -9,9 +9,10 @@ import Foundation
 /// a publisher long before anything verifies them, because a format that
 /// gains identity later cannot be retrofitted onto files already published.
 /// `contributes` is the same bet: v1 reads `contributes.languages`,
-/// `formatters`, `themes`, `iconThemes` and `agents`, and every other key is counted
-/// and ignored rather than rejected, so a file written for a later build
-/// still installs the half this one understands.
+/// `servers`, `formatters`, `themes`, `iconThemes`, `grammars` and `agents`,
+/// and every other key is counted and ignored rather than rejected, so a
+/// file written for a later build still installs the half this one
+/// understands.
 ///
 /// Parsing is lenient in the shape of `IconTheme`, and for the same reason:
 /// these are files we don't control. A missing key, a string where an array
@@ -82,9 +83,14 @@ struct LanguageManifest: Equatable, Sendable {
     let publisher: String
     let eligibility: ServerEligibility
     let languages: [LanguageContribution]
+
+    /// Servers that attach alongside a language's own, rather than being
+    /// one. See `CompanionServerContribution`.
+    let servers: [CompanionServerContribution]
     let formatters: [FormatterContribution]
     let themes: [ThemeContribution]
     let iconThemes: [IconThemeContribution]
+    let grammars: [GrammarContribution]
     let agents: [AgentDescriptor]
 
     let agentInstallPlans: [String: ExtensionInstallPlan]
@@ -132,8 +138,8 @@ struct LanguageManifest: Equatable, Sendable {
     /// parses cleanly and lands here, the same way a font-based icon theme
     /// parses cleanly and reports itself unsupported.
     var isUsable: Bool {
-        !languages.isEmpty || !formatters.isEmpty || !themes.isEmpty || !iconThemes.isEmpty
-            || !agents.isEmpty
+        !languages.isEmpty || !servers.isEmpty || !formatters.isEmpty || !themes.isEmpty
+            || !iconThemes.isEmpty || !grammars.isEmpty || !agents.isEmpty
     }
 
     /// A short reason to show beside an entry that isn't fully in force, or
@@ -187,7 +193,7 @@ struct LanguageManifest: Equatable, Sendable {
         "description", "homepage", "phantom",
     ]
     private static let knownContributesKeys: Set<String> = [
-        "languages", "formatters", "themes", "iconThemes", "agents",
+        "languages", "servers", "formatters", "themes", "iconThemes", "grammars", "agents",
     ]
 
     /// Builds the value from an already-decoded object and a digest taken
@@ -224,17 +230,21 @@ struct LanguageManifest: Equatable, Sendable {
                 LanguageContribution.parse(json: $0, root: root, eligibility: eligibility)
             }
 
+        let servers: [CompanionServerContribution]
         let formatters: [FormatterContribution]
         let agents: [AgentDescriptor]
         let agentInstallPlans: [String: ExtensionInstallPlan]
         switch eligibility {
         case .eligible:
+            servers = objects(contributes["servers"], limit: CompanionServerContribution.maxServers)
+                .compactMap(CompanionServerContribution.parse(json:))
             formatters = objects(contributes["formatters"], limit: FormatterContribution.maxFormatters)
                 .compactMap(FormatterContribution.parse(json:))
             let rawAgents = objects(contributes["agents"], limit: AgentContribution.maxAgents)
             agents = rawAgents.compactMap { AgentContribution.parse(json: $0, root: root) }
             agentInstallPlans = installPlans(in: rawAgents)
         case .needsNewerApp, .unidentified:
+            servers = []
             formatters = []
             agents = []
             agentInstallPlans = [:]
@@ -243,6 +253,8 @@ struct LanguageManifest: Equatable, Sendable {
             .compactMap { ThemeContribution.parse(json: $0, root: root) }
         let iconThemes = objects(contributes["iconThemes"], limit: IconThemeContribution.maxIconThemes)
             .compactMap { IconThemeContribution.parse(json: $0, root: root) }
+        let grammars = objects(contributes["grammars"], limit: GrammarContribution.maxGrammars)
+            .compactMap { GrammarContribution.parse(json: $0, root: root) }
 
         return LanguageManifest(
             id: id,
@@ -251,9 +263,11 @@ struct LanguageManifest: Equatable, Sendable {
             publisher: displayString(json["publisher"]) ?? "",
             eligibility: eligibility,
             languages: dedupedByLanguageID(languages),
+            servers: deduped(servers, by: \.command),
             formatters: deduped(formatters, by: \.id),
             themes: deduped(themes, by: \.name),
             iconThemes: deduped(iconThemes, by: \.name),
+            grammars: deduped(grammars, by: \.scopeName),
             agents: deduped(agents, by: \.id),
             agentInstallPlans: agentInstallPlans,
             unrecognizedFields: unrecognized.sorted(),
@@ -278,7 +292,7 @@ struct LanguageManifest: Equatable, Sendable {
 
     /// One extension contributing the same `languageId` twice is a mistake
     /// in the file, and the deterministic reading is that the first entry
-    /// wins — the same rule `LSPServerRegistry` applies to its own table.
+    /// wins.
     private static func dedupedByLanguageID(
         _ languages: [LanguageContribution]
     ) -> [LanguageContribution] {
@@ -418,16 +432,14 @@ struct LanguageContribution: Equatable, Sendable {
     /// not decide anything — `mix.lock`, `go.mod`.
     let fileNames: [String]
 
-    /// Identifier-shaped words only. See `LanguageContribution.keywords(from:)`.
-    let keywords: [String]
+    /// Globs matched against a file's name, compiled at parse, for the
+    /// languages whose set of names is open — `.env.*`, `.env.*.local`. See
+    /// `GlobPattern` for the dialect.
+    let filePatterns: [GlobPattern]
 
     let lineComment: String?
-    let blockComment: LanguageSyntax.BlockComment?
-    let patterns: SyntaxContribution
+    let blockComment: BlockComment?
     let category: LSPServerCategory
-
-    /// The compiled-in language this one is lexed like.
-    let base: CodeLanguage
 
     /// Artwork for the settings row, already proven to be inside the
     /// extension's own directory, or nil.
@@ -436,26 +448,22 @@ struct LanguageContribution: Equatable, Sendable {
     let server: LanguageServerContribution?
     let serverRejection: ServerRejection?
 
-    /// The value the engine gets. The manifest itself never crosses that
-    /// boundary; this does.
-    var syntax: LanguageSyntax {
-        .contributed(
-            id: languageID,
-            base: base,
-            keywords: keywords,
-            lineComment: lineComment,
-            blockComment: blockComment,
-            patterns: patterns
-        )
-    }
-
     /// Every claim this contribution makes on a file, as opaque tokens. The
     /// catalog resolves conflicts on these and nothing else, so extensions,
     /// file names and the language id itself are compared the same way.
+    ///
+    /// A pattern is a token like the rest, which settles two extensions that
+    /// declare the *same* glob. Two that declare **different** globs both
+    /// matching one file — `.env.*` and `*.local` — are not a token
+    /// collision and cannot be made into one: whether two glob languages
+    /// intersect is not a question about strings. Those are settled at
+    /// lookup instead, by the rank order `contributed` is already sorted in,
+    /// so the reader's promotion decides there exactly as it decides here.
     var claims: [String] {
         ["lang:" + languageID]
             + fileExtensions.map { "ext:" + $0 }
             + fileNames.map { "name:" + $0 }
+            + filePatterns.map { "pattern:" + $0.source }
     }
 
     // MARK: Parsing
@@ -469,6 +477,7 @@ struct LanguageContribution: Equatable, Sendable {
 
         let fileExtensions = self.fileExtensions(from: json["extensions"])
         let fileNames = self.fileNames(from: json["fileNames"])
+        let filePatterns = self.filePatterns(from: json["fileNamePatterns"])
         let lineComment = commentMarker(json["lineComment"])
         let blockComment = self.blockComment(json["blockComment"])
 
@@ -488,17 +497,11 @@ struct LanguageContribution: Equatable, Sendable {
             displayName: LanguageManifest.displayString(json["name"]) ?? languageID,
             fileExtensions: fileExtensions,
             fileNames: fileNames,
-            keywords: keywords(from: json["keywords"]),
+            filePatterns: filePatterns,
             lineComment: lineComment,
             blockComment: blockComment,
-            patterns: SyntaxContribution.parse(json: json["syntax"]),
             category: LSPServerCategory(rawValue: LanguageManifest.string(json["category"]) ?? "")
                 ?? .script,
-            base: base(
-                fileExtensions: fileExtensions,
-                lineComment: lineComment,
-                blockComment: blockComment
-            ),
             iconURL: iconURL(json["icon"], root: root),
             server: server,
             serverRejection: rejection
@@ -523,9 +526,9 @@ struct LanguageContribution: Equatable, Sendable {
     /// that element rather than the list.
     ///
     /// Dots inside an extension are refused. The resolver matches the
-    /// last-dot extension exactly as `LSPServerRegistry` does, so a
-    /// multi-part extension could never match anything — and allowing dots
-    /// would also allow `..`, which has no business in a lookup key.
+    /// last-dot extension, so a multi-part extension could never match
+    /// anything — and allowing dots would also allow `..`, which has no
+    /// business in a lookup key.
     static func fileExtensions(from value: Any?) -> [String] {
         let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
         var seen: Set<String> = []
@@ -556,32 +559,30 @@ struct LanguageContribution: Equatable, Sendable {
         .map { $0 }
     }
 
-    /// The most keywords a language gets to add.
+    /// Globs, compiled by `GlobPattern.fileNamePattern`, capped at
+    /// `GlobPattern.maxPatternsPerLanguage` rather than at `maxFileTypes`:
+    /// each one is work done per file the reader opens, where a file name is
+    /// a dictionary lookup.
+    ///
+    /// Compiled here rather than at each lookup so a pattern is parsed once
+    /// per install and not once per file opened, and so a pattern the dialect
+    /// refuses costs the manifest that entry at the same moment every other
+    /// bad field does.
+    static func filePatterns(from value: Any?) -> [GlobPattern] {
+        let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
+        var seen: Set<String> = []
+        return raw.compactMap { candidate -> GlobPattern? in
+            guard let pattern = GlobPattern.fileNamePattern(candidate) else { return nil }
+            return seen.insert(pattern.source).inserted ? pattern : nil
+        }
+        .prefix(GlobPattern.maxPatternsPerLanguage)
+        .map { $0 }
+    }
+
     ///
     /// They are joined into one regex alternation that the highlighter runs
     /// over the viewport on every keystroke, so the list is a cost paid per
     /// character typed. The largest list this build ships is under eighty.
-    static let maxKeywords = 1024
-
-    /// Keywords, keeping only the ones that are identifier-shaped.
-    ///
-    /// The first of two independent defences against a keyword that is
-    /// really a regex — the second is `SyntaxRules.words(escaping:)`. What
-    /// makes this filter cheap to accept is that it discards nothing
-    /// useful: the pattern is `\b(?:…)\b`, and a "keyword" with no word
-    /// characters at its edges could never match inside those boundaries
-    /// anyway. So `->>` is dropped because it would never have painted
-    /// anything, not only because `|` and `(` are dangerous.
-    static func keywords(from value: Any?) -> [String] {
-        let raw = (value as? [Any])?.compactMap { $0 as? String } ?? []
-        var seen: Set<String> = []
-        return raw.compactMap { candidate -> String? in
-            guard isIdentifierShaped(candidate) else { return nil }
-            return seen.insert(candidate).inserted ? candidate : nil
-        }
-        .prefix(maxKeywords)
-        .map { $0 }
-    }
 
     static func isIdentifierShaped(_ candidate: String) -> Bool {
         guard !candidate.isEmpty, candidate.count <= 64 else { return false }
@@ -611,7 +612,7 @@ struct LanguageContribution: Equatable, Sendable {
         return raw
     }
 
-    static func blockComment(_ value: Any?) -> LanguageSyntax.BlockComment? {
+    static func blockComment(_ value: Any?) -> BlockComment? {
         let markers: (open: Any?, close: Any?)
         if let pair = value as? [Any], pair.count == 2 {
             markers = (pair[0], pair[1])
@@ -623,7 +624,7 @@ struct LanguageContribution: Equatable, Sendable {
         guard let open = commentMarker(markers.open), let close = commentMarker(markers.close) else {
             return nil
         }
-        return LanguageSyntax.BlockComment(open: open, close: close)
+        return BlockComment(open: open, close: close)
     }
 
     /// An icon path, resolved against the extension's own directory and
@@ -669,40 +670,6 @@ struct LanguageContribution: Equatable, Sendable {
 
     // MARK: Base language
 
-    /// The compiled-in language a contribution is lexed like.
-    ///
-    /// Tried in the order the signals are trustworthy. First, whatever this
-    /// build already resolves one of the claimed extensions to — right for
-    /// the common case of a contribution that adds a *server* for a
-    /// language the highlighter can already read. Then the comment markers,
-    /// which are the only other honest statement a manifest makes about how
-    /// the language is written; they decide the shape of strings and
-    /// numbers, which is all a base is really for once the keywords and the
-    /// comment pattern have been replaced. Failing both, `.plain`: keywords
-    /// and comments, nothing else. Dull, never wrong.
-    ///
-    /// Never `.vue`: a single-file component is a container the highlighter
-    /// splits into three other languages, and a contribution cannot be one.
-    static func base(
-        fileExtensions: [String],
-        lineComment: String?,
-        blockComment: LanguageSyntax.BlockComment?
-    ) -> CodeLanguage {
-        for candidate in fileExtensions {
-            let resolved = CodeLanguage.resolve(fileName: "f." + candidate)
-            guard resolved != .plain else { continue }
-            return resolved == .vue ? .html : resolved
-        }
-
-        switch (lineComment, blockComment?.open) {
-        case ("//", _): return .go
-        case ("#", _): return .python
-        case ("--", _): return .sql
-        case (_, "<!--"): return .html
-        case (_, "/*"): return .go
-        default: return .plain
-        }
-    }
 }
 
 /// The `server` half of a language contribution: how to start it, and what
@@ -739,6 +706,14 @@ struct LanguageServerContribution: Equatable, Sendable {
     /// second decoder that could disagree with it.
     let initializationOptionsJSON: String?
 
+    /// The glue this server needs that no JSON literal can express, because
+    /// it has to read the project first. See `LSPInitializationOptionsKind`.
+    let resolver: LSPInitializationOptionsKind
+
+    /// The newest Java feature version this server runs on, when it runs on
+    /// a JVM at all. See `LSPServerDefinition.maximumJavaFeatureVersion`.
+    let maximumJavaFeatureVersion: Int?
+
     /// There is deliberately **no `env`**.
     ///
     /// A manifest that could set environment variables could set
@@ -760,21 +735,70 @@ struct LanguageServerContribution: Equatable, Sendable {
             return (nil, .unsafeCommand(rawCommand))
         }
 
-        let arguments = (json["args"] as? [Any])?
+        let contribution = LanguageServerContribution(
+            command: rawCommand,
+            arguments: arguments(from: json["args"]),
+            installHint: installHint(json["installHint"]),
+            installPlan: ExtensionInstallPlan.parse(json["install"]),
+            documentationURL: documentationURL(json["documentationURL"]),
+            initializationOptionsJSON: initializationOptionsJSON(json["initializationOptions"]),
+            resolver: resolver(json["resolver"]),
+            maximumJavaFeatureVersion: maximumJavaFeatureVersion(json["maximumJavaFeatureVersion"])
+        )
+        return (contribution, nil)
+    }
+
+    /// Launch arguments, one bad element costing that element rather than
+    /// the list.
+    ///
+    /// `${HOME}` is left in place. It is expanded at launch, in
+    /// `LSPProcess`, which is the only place that knows whose home to
+    /// expand it to — see `LSPProcess.expandingHome(_:)`.
+    static func arguments(from value: Any?) -> [String] {
+        (value as? [Any])?
             .compactMap { $0 as? String }
             .filter { !$0.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar) }
             .prefix(maxArguments)
             .map { $0 } ?? []
+    }
 
-        let contribution = LanguageServerContribution(
-            command: rawCommand,
-            arguments: arguments,
-            installHint: installHint(json["installHint"]),
-            installPlan: ExtensionInstallPlan.parse(json["install"]),
-            documentationURL: documentationURL(json["documentationURL"]),
-            initializationOptionsJSON: initializationOptionsJSON(json["initializationOptions"])
-        )
-        return (contribution, nil)
+    /// A named capability the binary implements, out of the manifest's
+    /// `resolver` block. Anything this build does not implement reads as
+    /// `.none`, the same way an unknown `contributes` key does: a server
+    /// declared against a later build still starts, without the glue.
+    static func resolver(_ value: Any?) -> LSPInitializationOptionsKind {
+        guard let json = value as? [String: Any],
+              let kind = LanguageManifest.string(json["kind"])
+        else { return .none }
+
+        switch kind {
+        case "typescriptSDKArgument":
+            return .typeScriptSDKArgument
+        case "typescriptPluginHost":
+            guard let plugin = LanguageManifest.string(json["plugin"]),
+                  TypeScriptToolchain.isPackageName(plugin)
+            else { return .none }
+            let languages = (json["languages"] as? [Any] ?? [])
+                .compactMap(LanguageContribution.validLanguageID)
+                .prefix(CompanionServerContribution.maxLanguageIDs)
+                .map { $0 }
+            guard !languages.isEmpty else { return .none }
+            return .typeScriptPluginHost(plugin: plugin, languages: languages)
+        default:
+            return .none
+        }
+    }
+
+    /// A JVM feature version ceiling, or nil.
+    ///
+    /// The same `NSNumber` care `LanguageManifest.integerSchemaVersion`
+    /// takes, and for the same trap: JSON `true` bridges to `Int` as 1.
+    static func maximumJavaFeatureVersion(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber else { return nil }
+        guard CFGetTypeID(number as CFTypeRef) != CFBooleanGetTypeID() else { return nil }
+        guard let version = Int(exactly: number.doubleValue), (1...999).contains(version)
+        else { return nil }
+        return version
     }
 
     /// Whether a manifest-supplied command may be launched at all.

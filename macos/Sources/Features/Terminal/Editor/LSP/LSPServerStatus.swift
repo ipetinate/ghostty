@@ -34,17 +34,30 @@ enum LSPServerStatus: Equatable, Sendable {
     /// `LSPCenter.hasCapability(_:forPath:)`.
     case running
 
-    /// The binary is there and the server was not started, because it comes
-    /// from an extension whose launch the reader has not approved — either
-    /// refused outright, or refused by a rule no answer overrides. See
-    /// `LanguageTrust.Verdict`.
+    /// The binary is there and the server was not started, because the gate
+    /// said no. See `LanguageTrust.Verdict`.
     ///
     /// A state of its own rather than a `failedToStart(reason:)` with a
     /// sentence in it, because nothing failed: this is the gate working. The
     /// distinction is what lets a banner offer the way back — the decision
     /// lives in Settings — instead of inviting a reader to debug a server
     /// that is behaving correctly by not existing.
-    case notApproved
+    ///
+    /// **It carries which no it was.** The two are not the same sentence: a
+    /// refusal is the reader's and Settings takes it back, while a blocked
+    /// command is a rule no answer overrides, and telling somebody to change
+    /// a setting they never touched sends them to a switch that is already
+    /// on.
+    case notApproved(Refusal)
+
+    enum Refusal: Equatable, Sendable {
+        /// Turned off for this extension in Settings.
+        case byReader
+
+        /// A command that needs a shell, or one that resolved inside the
+        /// workspace the reader opened.
+        case byRule
+    }
 
     /// The process never reached `running` — it failed to launch, or
     /// `initialize` threw. Distinct from `crashed`: this server never did
@@ -75,7 +88,9 @@ enum LSPServerStatus: Equatable, Sendable {
     var summary: String {
         switch self {
         case .notInstalled: return "isn't installed"
-        case .notApproved: return "isn't approved to run — you can change that in Settings"
+        case .notApproved(.byReader): return "is refused in Settings, so it did not start"
+        case .notApproved(.byRule):
+            return "is not allowed to run: the command needs a shell, or it resolved inside this workspace"
         case .starting: return "is starting"
         case .running: return "is running"
         case .failedToStart(let reason): return "didn't start: \(reason)"

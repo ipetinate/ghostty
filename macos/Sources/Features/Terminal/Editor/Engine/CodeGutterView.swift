@@ -20,8 +20,11 @@ import AppKit
 /// sits in is reserved on every file whether or not anything is in it, because
 /// this view's width is where the text starts.
 final class CodeGutterView: NSView {
+    /// Redrawn only for a theme that actually differs. A caret move lays the
+    /// pane out again and reassigns this with the same value, and a redraw of
+    /// this view walks the laid-out fragments.
     var theme: CodeTheme {
-        didSet { needsDisplay = true }
+        didSet { if theme != oldValue { needsDisplay = true } }
     }
 
     var font: NSFont {
@@ -116,7 +119,7 @@ final class CodeGutterView: NSView {
     /// it is derived from the theme, so a light theme gets the darker pair
     /// without this view knowing how that works.
     var diffPalette: GitDiffPalette? {
-        didSet { needsDisplay = true }
+        didSet { if diffPalette != oldValue { needsDisplay = true } }
     }
 
     func setDiffMarks(_ marks: [Int: DiffMark]) {

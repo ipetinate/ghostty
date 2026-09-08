@@ -64,10 +64,37 @@ struct ExtensionKindTabs: View {
                 }
             }
             .padding(.vertical, 1)
+            /// The `.scrollIndicators` modifier alone left a permanent grey band
+            /// under the row, wider than the tabs are tall: with scroll bars
+            /// set to always show, AppKit gives the scroll view a *legacy*
+            /// scroller, which takes a strip of layout for itself and pays no
+            /// attention to what SwiftUI asked for. The same pair the editor's
+            /// tab strip uses settles it — no knob at all, and a plain wheel
+            /// still reaches a tab past the right edge.
+            .background(alignment: .leading) {
+                InvisibleScrollers()
+                WheelScrollsHorizontally()
+            }
         }
-        .scrollIndicators(.hidden)
+        /// Never rather than hidden: hidden still had SwiftUI reserve the 17
+        /// points a legacy indicator takes, and a viewport taller than the row
+        /// is what let AppKit park the tabs out of their band. See
+        /// `EditorTabBar`, where the same wheel left the same gap.
+        .scrollIndicators(.never)
     }
 
+    /// **A tab with a count of zero is drawn like every other tab.**
+    ///
+    /// It used to be dimmed to 0.45 — the opacity macOS draws a disabled
+    /// control at — while still taking a click, selecting, and answering.
+    /// A control that looks disabled must not be the one that answers, and
+    /// of the two ways out this is the right one: an empty tab has something
+    /// true to say, which is what the registry publishes under that kind, so
+    /// refusing the click would leave the reader with a dead end and no
+    /// sentence. Disabling would also flicker — any search can empty any
+    /// tab, so the tabs would enable and disable as the reader types.
+    ///
+    /// The count is the signal, and it is already printed beside the title.
     private func tab(_ kind: ExtensionCatalogFilter.Kind) -> some View {
         let count = counts[kind] ?? 0
         let isSelected = selection == kind
@@ -76,7 +103,6 @@ struct ExtensionKindTabs: View {
             selection = kind
         } label: {
             label(kind, count: count, isSelected: isSelected)
-                .opacity(count == 0 && !isSelected ? 0.45 : 1)
         }
         .buttonStyle(.plain)
         .help(tooltip(kind, count: count))

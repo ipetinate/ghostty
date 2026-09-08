@@ -26,7 +26,17 @@ enum LanguageTrustStore {
 
     /// Bumped when `LanguageTrustRecord` changes shape in a way that alters
     /// what an approval covers.
-    static let currentRecordVersion = 1
+    static let currentRecordVersion = 2
+
+    /// The oldest approval this build will honour.
+    ///
+    /// Raised to 2 in 0.17.0, and the reason is what an approval now
+    /// includes rather than a change to the record's shape: a manifest's own
+    /// `initializationOptions` are sent at `initialize` from this build on,
+    /// and they were ignored before it. An option decides which code some
+    /// servers load, so a decision taken while they were ignored is not a
+    /// decision about them. Every pre-0.17 approval is asked once more.
+    static let minimumRecordVersion = 2
 
     static var all: [String: LanguageTrustRecord] {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey),
@@ -41,13 +51,26 @@ enum LanguageTrustStore {
     /// The decision for an extension, or nil when there is none this build
     /// can read.
     ///
-    /// A record from a future version reads as **absent**, which means the
+    /// A record from a future version, or from a build whose approvals
+    /// covered less than this one's, reads as **absent**, which means the
     /// user is asked again. Absent never means allowed.
     static func record(for extensionID: String) -> LanguageTrustRecord? {
         guard let record = all[extensionID] else { return nil }
-        guard record.recordVersion <= currentRecordVersion else { return nil }
+        guard (minimumRecordVersion...currentRecordVersion).contains(record.recordVersion)
+        else { return nil }
         return record
     }
+
+    /// Posted whenever a decision is written or dropped.
+    ///
+    /// The record lives in `UserDefaults` and this type publishes nothing —
+    /// a security record has no business driving a view's lifecycle. But a
+    /// view that *draws* the record has to hear that it changed: approving
+    /// PHP from the prompt the editor raises left the Settings row for the
+    /// same extension still reading "Not Approved", beside a server section
+    /// that had already gone green, because nothing told the form to look
+    /// again.
+    static let didChangeNotification = Notification.Name("PhantomLanguageTrustDidChange")
 
     static func set(_ record: LanguageTrustRecord, for extensionID: String) {
         guard !extensionID.isEmpty else { return }
@@ -55,6 +78,7 @@ enum LanguageTrustStore {
         current[extensionID] = record
         guard let data = try? JSONEncoder().encode(current) else { return }
         UserDefaults.standard.set(data, forKey: defaultsKey)
+        announce()
     }
 
     /// Drops a decision, which is the only way back from a refusal — and it
@@ -65,23 +89,35 @@ enum LanguageTrustStore {
         guard current.removeValue(forKey: extensionID) != nil else { return }
         guard let data = try? JSONEncoder().encode(current) else { return }
         UserDefaults.standard.set(data, forKey: defaultsKey)
+        announce()
     }
 
-    /// Records an answer to a prompt.
-    static func remember(
-        _ decision: LanguageTrustRecord.Decision,
-        for subject: LanguageTrust.Subject
-    ) {
-        guard case .manifest(let provenance) = subject.origin else { return }
+    private static func announce() {
+        NotificationCenter.default.post(name: didChangeNotification, object: nil)
+    }
+
+    /// Records a refusal taken in Settings.
+    ///
+    /// There is no launch to describe here — no command has been located and
+    /// none is about to run — because what the reader is refusing is the
+    /// extension, not one program of it. The fields a launch would fill are
+    /// left empty rather than guessed at: nothing compares them, and a
+    /// plausible-looking path nobody wrote would be a lie in the record.
+    static func refuse(extensionID: String, digest: String, manifestPath: String) {
         set(
-            LanguageTrust.record(
-                for: subject,
-                decision: decision,
-                extending: record(for: provenance.extensionID)
+            LanguageTrustRecord(
+                recordVersion: currentRecordVersion,
+                digest: digest,
+                command: "",
+                resolvedPath: "",
+                manifestPath: manifestPath,
+                decision: .refused,
+                decidedAt: Date()
             ),
-            for: provenance.extensionID
+            for: extensionID
         )
     }
+
 }
 
 /// Which contributed languages the user has chosen to put ahead of the

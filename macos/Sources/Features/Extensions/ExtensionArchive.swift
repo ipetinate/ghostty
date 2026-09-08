@@ -41,8 +41,18 @@ enum ExtensionArchive {
     }
 
     static func hasManifestAtRoot(_ entries: [String]) -> Bool {
+        hasAtRoot(entries, names: [manifestFileName])
+    }
+
+    /// Whether a preview archive carries a document, which is the only thing
+    /// it exists to carry — the renderer has nothing to draw without one.
+    static func hasDocumentAtRoot(_ entries: [String]) -> Bool {
+        hasAtRoot(entries, names: ExtensionCard.documentFileNames)
+    }
+
+    private static func hasAtRoot(_ entries: [String], names: [String]) -> Bool {
         entries.contains { entry in
-            entry == manifestFileName || entry == "./" + manifestFileName
+            names.contains { entry == $0 || entry == "./" + $0 }
         }
     }
 

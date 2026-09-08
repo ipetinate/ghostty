@@ -230,12 +230,20 @@ struct KeyboardShortcutsSettingsView: View {
             && config.isEmpty
     }
 
+    static let searchLabel = "Search commands"
+
+    /// One field with one placeholder, the same shape the Extensions pane
+    /// wears — see `ExtensionsSettingsView.searchField` for the whole
+    /// reasoning. A grouped `Form` draws a labelled control as label on the
+    /// left and control on the right, so this row read as a bold `Search`
+    /// facing a grey `Search commands` with no field around either.
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search", text: $search, prompt: Text("Search commands"))
+            TextField(Self.searchLabel, text: $search, prompt: Text(Self.searchLabel))
                 .textFieldStyle(.plain)
+                .labelsHidden()
             if !search.isEmpty {
                 Button {
                     search = ""

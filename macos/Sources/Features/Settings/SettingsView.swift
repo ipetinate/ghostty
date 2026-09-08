@@ -15,7 +15,6 @@ struct SettingsRootView: View {
         case sidebar
         case files
         case keyboardShortcuts
-        case languageServers
         case extensions
         case agents
         case mcp
@@ -31,7 +30,6 @@ struct SettingsRootView: View {
             case .sidebar: return "Sidebar"
             case .files: return "Editor"
             case .keyboardShortcuts: return "Keyboard Shortcuts"
-            case .languageServers: return "Languages"
             case .extensions: return "Extensions"
             case .agents: return "Agents"
             case .mcp: return "MCP"
@@ -42,6 +40,14 @@ struct SettingsRootView: View {
         /// SF Symbol, or nil for a pane that ships its own artwork — the
         /// same shape `SidebarPane.symbol` uses, and for the same reason: the
         /// worktrees mark is this app's own drawing, not one of Apple's.
+        ///
+        /// Extensions is the grid, matching `SidebarPane.extensions.symbol`,
+        /// the store's All tab and its cards. It was `puzzlepiece` here alone
+        /// while every other place had moved to the grid, so the same thing
+        /// carried two marks in one app. `SettingsSectionIconTests` holds the
+        /// two names equal, rather than this reading the pane's — a pane may
+        /// answer nil for artwork of its own, and nil here means the worktree
+        /// drawing.
         var icon: String? {
             switch self {
             case .worktrees: return nil
@@ -51,8 +57,7 @@ struct SettingsRootView: View {
             case .sidebar: return "sidebar.left"
             case .files: return "doc.text"
             case .keyboardShortcuts: return "keyboard"
-            case .languageServers: return "chevron.left.forwardslash.chevron.right"
-            case .extensions: return "puzzlepiece"
+            case .extensions: return "square.grid.2x2"
             case .agents: return "sparkles"
             case .mcp: return "point.3.connected.trianglepath.dotted"
             }
@@ -84,6 +89,7 @@ struct SettingsRootView: View {
             // Shortc…" — a settings list that hides what it is offering
             // before you have touched anything.
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+            .settingsSidebarAlwaysVisible()
         } detail: {
             switch selection {
             case .general:
@@ -98,8 +104,6 @@ struct SettingsRootView: View {
                 FilesSettingsView()
             case .keyboardShortcuts:
                 KeyboardShortcutsSettingsView()
-            case .languageServers:
-                LanguageServersSettingsView()
             case .extensions:
                 ExtensionsSettingsView()
             case .agents:
@@ -207,6 +211,24 @@ struct GeneralSettingsView: View {
 
 /// Where the sidebar's parts are, and which of them show.
 ///
+private extension View {
+    /// Drops the sidebar toggle the split view installs by itself.
+    ///
+    /// A settings sidebar is the navigation, not a panel: there is nothing to
+    /// read in the detail column that wants the width, and the section name
+    /// the title shows comes from the row the toggle would hide. Under macOS
+    /// 26 that button also moved to the *trailing* edge of the titlebar the
+    /// moment the sidebar was collapsed, which is how it was noticed.
+    @ViewBuilder
+    func settingsSidebarAlwaysVisible() -> some View {
+        if #available(macOS 14.0, *) {
+            toolbar(removing: .sidebarToggle)
+        } else {
+            self
+        }
+    }
+}
+
 /// Grouped by **surface** — toolbar, terminal rows, group headers — because
 /// that is how a reader arrives: they are looking at a row and want something
 /// off it. Before this the agent buttons lived in another pane entirely, so

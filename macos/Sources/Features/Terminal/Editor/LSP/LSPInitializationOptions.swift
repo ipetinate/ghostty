@@ -1,67 +1,91 @@
 import Foundation
 
-/// How to resolve `initializationOptions` for a language, when a user
-/// override doesn't already supply one.
+/// A named capability this build implements for a server that asked for it,
+/// when a user override doesn't already supply `initializationOptions`.
+///
+/// Everything a server needs that is *data* travels as literal JSON in its
+/// manifest. These two are what is left: glue that has to read the project
+/// on disk before it knows what to send, which no literal can express. A
+/// manifest asks for one by name, in its server block:
+///
+/// ```jsonc
+/// "resolver": { "kind": "typescriptSDKArgument" }
+/// "resolver": { "kind": "typescriptPluginHost",
+///               "plugin": "@vue/typescript-plugin", "languages": ["vue"] }
+/// ```
 ///
 /// `LSPServerDefinition` stays a plain, `Hashable` value — a closure there
-/// would give every definition its own identity and break the equality
-/// `LSPServerRegistry.distinctServers`'s dedup relies on. A tag plus a
-/// resolver that switches on it keeps the data pure and the resolution
-/// (which touches the filesystem, and for one case a subprocess) in one
-/// place that can be tested on its own.
+/// would give every definition its own identity. A tag plus a resolver that
+/// switches on it keeps the data pure and the resolution (which touches the
+/// filesystem, and for one case a subprocess) in one place that can be
+/// tested on its own.
 enum LSPInitializationOptionsKind: Hashable, Sendable {
     case none
 
-    /// Volar has no way to find TypeScript itself the way an editor that
-    /// already indexed the project would — without this, it stays silent
-    /// on every `.vue` file's `<script>` block rather than reporting an
-    /// error.
-    case vueTypeScriptSDK
+    /// The server drives TypeScript but cannot find it the way an editor
+    /// that already indexed the project would. Phantom resolves the
+    /// project's TypeScript library directory and appends `--tsdk=<dir>` to
+    /// the arguments — spelled `typescriptSDKArgument` in a manifest.
+    case typeScriptSDKArgument
 
-    /// The formatter the `vscode-langservers-extracted` servers keep switched
-    /// off until a client asks for it.
+    /// The server *is* tsserver, and the thing that teaches it a language it
+    /// does not otherwise know is a TypeScript plugin. Phantom resolves the
+    /// project's `tsserver.js` and the named plugin's directory, and builds
+    /// the `initializationOptions` that load one into the other — spelled
+    /// `typescriptPluginHost` in a manifest.
     ///
-    /// JSON, HTML and CSS all ship a formatter and all answer `initialize`
-    /// with `documentFormattingProvider: false` without this — measured, by
-    /// starting each of the three and reading the capability back. VS Code
-    /// sends it because its own settings hold `json.format.enable`; a client
-    /// that sends nothing gets a server that can format and says it cannot.
-    case provideFormatter
+    /// `languages` becomes tsserver's `modeIds`, which is what registers the
+    /// server for those ids at all. Without it the server refuses the
+    /// document outright (`Unexpected resource …`).
+    case typeScriptPluginHost(plugin: String, languages: [String])
+}
 
-    /// `typescript-language-server` serving the `<script>` half of a `.vue`.
+/// Which of the three sources supplies one launch's `initializationOptions`.
+///
+/// The decision on its own, before any of the three has been read: an
+/// override is text in `UserDefaults`, a resolver is a walk of the project's
+/// `node_modules` and sometimes an `npm` subprocess, and a manifest's literal
+/// is text off disk. Separating the choice from the work is what lets the
+/// choice be read — and asserted — without any of it.
+///
+/// See `LSPCenter.initializationOptionsSource(for:override:)` for the order
+/// and why it is that order.
+enum LSPInitializationOptionsSource: Equatable {
+    /// The reader's own override, as the raw JSON text they typed.
+    case override(String)
+
+    /// A value this app works out from the project, named by the manifest.
     ///
-    /// Two options, and neither is optional. `tsserver.path` is required or
-    /// `initialize` answers "Could not find a valid TypeScript installation"
-    /// and the process exits. `plugins` is what loads
-    /// `@vue/typescript-plugin`, and its `languages` array becomes tsserver's
-    /// `modeIds` — which is the thing that registers the server for `vue` at
-    /// all. Without it the server refuses the document outright
-    /// (`Unexpected resource …/x.vue`); with it, measured, the same file
-    /// completes from inside `<script setup>`.
-    case vueTypeScriptPlugin
+    /// The kind travels whole rather than narrowed to the two that resolve
+    /// to something, so a launch reads exactly what the definition holds.
+    /// `LSPCenter.initializationOptionsSource(for:override:)` never answers
+    /// `.resolver(.none)` — a manifest that named no resolver is `manifest`
+    /// or `none` — and a launch handed one sends nothing, the same as `none`.
+    case resolver(LSPInitializationOptionsKind)
+
+    /// The JSON the manifest wrote out literally.
+    case manifest(String)
+
+    /// Nothing to send, which is the answer for most servers.
+    case none
 }
 
 enum LSPInitializationOptions {
-    /// What turns the formatter on in the three `vscode-langservers-extracted`
-    /// servers. One flag, spelled once, because the three read the same name.
-    static let provideFormatterValue: LSPValue = ["provideFormatter": .bool(true)]
-
-    /// The concrete alternative to the silence this whole feature exists to
-    /// replace: shown when neither a project-local nor a global TypeScript
-    /// can be found.
+    /// The concrete alternative to silence: shown when neither a
+    /// project-local nor a global TypeScript can be found.
     static let missingTypeScriptMessage = """
-    Volar needs TypeScript to check .vue files, and none was found in this \
+    This language server needs TypeScript, and none was found in this \
     project or globally. Install it with "npm i -D typescript" in the \
     project, or "npm i -g typescript".
     """
 
-    /// Where Volar should look for TypeScript: the project's own copy
+    /// Where a server should look for TypeScript: the project's own copy
     /// first, so a workspace pinning a version is checked against that
     /// version rather than whatever else happens to be on the machine.
     ///
     /// The global lookup shells out to `npm`, so this belongs off the main
     /// actor — see the call in `LSPCenter.server(for:)`.
-    static func vueTypeScriptSDK(
+    static func typeScriptSDK(
         root: String,
         searchPath: String,
         fileManager: FileManager = .default
@@ -89,8 +113,8 @@ enum LSPInitializationOptions {
         return fileManager.fileExists(atPath: candidate) ? candidate : nil
     }
 
-    /// The file every Vue server loads out of a `tsdk`, whichever way it was
-    /// told where the directory is.
+    /// The file a server loads out of a `tsdk`, whichever way it was told
+    /// where the directory is.
     static let tsdkEntryPoint = "typescript.js"
 
     /// The reason a directory that exists is still not a usable `tsdk`.
@@ -102,25 +126,24 @@ enum LSPInitializationOptions {
     static let unloadableTypeScriptMessage = """
     The TypeScript found for this project has no library for a language \
     server to load — TypeScript 7 is the native rewrite and ships none. \
-    Install one the Vue server can use with "npm i -D typescript@6" in the \
+    Install one this server can use with "npm i -D typescript@6" in the \
     project.
     """
 
-    /// The `tsdk` a Vue server can actually load, or the reason there is
-    /// none.
+    /// The `tsdk` a server can actually load, or the reason there is none.
     ///
     /// The extra check exists because the path became a **launch argument**.
     /// A directory that is there but empty of `typescript.js` used to make
-    /// the server report its own failure during `initialize`; version 3
-    /// resolves the file while it is still starting, so the same directory
-    /// now kills the process before it says anything at all. Answering here
-    /// keeps the sentence the reader needs.
-    static func vueLoadableTypeScriptSDK(
+    /// the server report its own failure during `initialize`; a server that
+    /// resolves the file while it is still starting is killed by the same
+    /// directory before it says anything at all. Answering here keeps the
+    /// sentence the reader needs.
+    static func loadableTypeScriptSDK(
         root: String,
         searchPath: String,
         fileManager: FileManager = .default
     ) -> LSPOutcome<String> {
-        switch vueTypeScriptSDK(root: root, searchPath: searchPath, fileManager: fileManager) {
+        switch typeScriptSDK(root: root, searchPath: searchPath, fileManager: fileManager) {
         case .failure(let reason):
             return .failure(reason)
         case .success(let tsdk):
@@ -133,12 +156,12 @@ enum LSPInitializationOptions {
     }
 
     /// The value to send as `initializationOptions`, for a resolved `tsdk`.
-    static func vueValue(tsdk: String) -> LSPValue {
+    static func sdkValue(tsdk: String) -> LSPValue {
         ["typescript": ["tsdk": .string(tsdk)]]
     }
 
-    /// The same `tsdk`, on the command line, because version 3 of the Vue
-    /// server reads it **only** from there.
+    /// The same `tsdk`, on the command line, because some servers read it
+    /// **only** from there.
     ///
     /// Measured against `@vue/language-server` 3.3.10 and 3.3.11: its entry
     /// point scans `process.argv` for `--tsdk=`, and falls back to
@@ -151,14 +174,15 @@ enum LSPInitializationOptions {
     /// to. Sending `initializationOptions.typescript.tsdk`, which version 2
     /// read, changes nothing there — version 3 never looks at it.
     ///
-    /// Both are sent. The option is what version 2 reads and the argument is
-    /// what version 3 reads, and a machine can have either installed.
-    static func vueTSDKArgument(tsdk: String) -> String {
+    /// Both are sent. The option is what the older server reads and the
+    /// argument is what the newer one reads, and a machine can have either
+    /// installed.
+    static func tsdkArgument(tsdk: String) -> String {
         "--tsdk=\(tsdk)"
     }
 
-    /// Shown when a `.vue` is opened in a project whose TypeScript cannot
-    /// serve its `<script>` block.
+    /// Shown when a document is opened in a project whose TypeScript cannot
+    /// host the plugin its server needs.
     ///
     /// It names the version it found, because the advice depends on it and
     /// the two cases pull in opposite directions: with no TypeScript at all
@@ -168,39 +192,53 @@ enum LSPInitializationOptions {
     /// It also says Phantom **will not try**. That is the part a shorter
     /// message loses: silence and refusal look identical on screen, and a
     /// reader who thinks it was attempted goes looking for the failure.
-    static func missingVueTypeScriptMessage(foundVersion: String?) -> String {
+    static func missingPluginHostMessage(plugin: String, foundVersion: String?) -> String {
         let found = foundVersion.map {
             "This project has TypeScript \($0), which ships no tsserver for the plugin to load."
         } ?? "This project has no TypeScript of its own."
 
         return """
-        \(found) Vue's <script> block needs TypeScript 6.x here, and Phantom \
-        will not start a server for it until there is one — the template and \
-        styles keep working. Install it with "npm i -D typescript@6 \
-        @vue/typescript-plugin" in the project.
+        \(found) \(plugin) needs TypeScript 6.x here, and Phantom will not \
+        start a server for it until there is one. Install it with \
+        "npm i -D typescript@6 \(plugin)" in the project.
         """
     }
 
-    /// `initializationOptions` for the TypeScript half of a `.vue`.
+    /// Shown when the project has a tsserver but not the plugin itself.
+    static func missingPluginMessage(plugin: String) -> String {
+        """
+        This server loads \(plugin), and it is not installed in this \
+        project. Install it with "npm i -D \(plugin)".
+        """
+    }
+
+    /// `initializationOptions` for a tsserver hosting one plugin.
     ///
     /// `location` is absolute because the plugin resolves it through
     /// `URI.file(...)`, which has nothing to resolve a relative path against
     /// but the server's working directory.
-    static func vuePluginValue(tsserverPath: String, pluginLocation: String) -> LSPValue {
+    static func pluginHostValue(
+        tsserverPath: String,
+        pluginLocation: String,
+        plugin: String,
+        languages: [String]
+    ) -> LSPValue {
         [
             "tsserver": ["path": .string(tsserverPath)],
             "plugins": [
                 [
-                    "name": .string("@vue/typescript-plugin"),
+                    "name": .string(plugin),
                     "location": .string(pluginLocation),
-                    "languages": [.string("vue")],
+                    "languages": .array(languages.map { .string($0) }),
                 ],
             ],
         ]
     }
 
     /// The plugin options for a workspace, or the reason there are none.
-    static func vueTypeScriptPlugin(
+    static func typeScriptPluginHost(
+        plugin: String,
+        languages: [String],
         root: String,
         searchPath: String = "",
         fileManager: FileManager = .default
@@ -209,24 +247,26 @@ enum LSPInitializationOptions {
             root: root,
             fileManager: fileManager
         ) else {
-            return .failure(missingVueTypeScriptMessage(
+            return .failure(missingPluginHostMessage(
+                plugin: plugin,
                 foundVersion: TypeScriptToolchain.localVersion(root: root, fileManager: fileManager)
             ))
         }
 
-        guard let location = TypeScriptToolchain.vuePluginLocation(
+        guard let location = TypeScriptToolchain.pluginLocation(
+            plugin,
             root: root,
             searchPath: searchPath,
             fileManager: fileManager
         ) else {
-            return .failure("""
-            Vue's <script> block needs @vue/typescript-plugin, and it is not \
-            installed in this project. Install it with \
-            "npm i -D @vue/typescript-plugin" — the template and styles keep \
-            working without it.
-            """)
+            return .failure(missingPluginMessage(plugin: plugin))
         }
 
-        return .success(vuePluginValue(tsserverPath: tsserverPath, pluginLocation: location))
+        return .success(pluginHostValue(
+            tsserverPath: tsserverPath,
+            pluginLocation: location,
+            plugin: plugin,
+            languages: languages
+        ))
     }
 }

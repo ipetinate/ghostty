@@ -19,7 +19,7 @@ enum ExtensionDocumentTabs {
     static func openInSettings(id: String) {
         SettingsNavigation.shared.target = SettingsNavigation.Target(
             section: .extensions,
-            row: SettingsNavigation.contributedRow(id)
+            row: SettingsNavigation.extensionRow(id)
         )
         _ = NSApp.sendAction(#selector(AppDelegate.openConfig(_:)), to: nil, from: nil)
     }

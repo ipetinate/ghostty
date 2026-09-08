@@ -16,7 +16,7 @@ final class CodeMinimapView: NSView {
     }
 
     var theme: CodeTheme {
-        didSet { needsDisplay = true }
+        didSet { if theme != oldValue { needsDisplay = true } }
     }
 
     /// Top-left origin, like the text view it sits beside.
@@ -115,7 +115,7 @@ final class CodeMinimapView: NSView {
     ///
     /// Pure and `static` so the reduction — which is the only part with a
     /// decision in it — can be tested without a view.
-    static func rows(for text: String, tokens: [SyntaxHighlighter.Token]) -> [Row] {
+    static func rows(for text: String, tokens: [GrammarHighlighter.Token]) -> [Row] {
         let ns = text as NSString
         var byLocation: [Int: TokenKind] = [:]
         for token in tokens {

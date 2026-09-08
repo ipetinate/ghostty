@@ -31,36 +31,36 @@ final class SettingsNavigation: ObservableObject {
 
     private init() {}
 
-    /// The Languages pane's row for a server definition, or nil when
-    /// nothing in that list stands for it.
+    /// The Extensions pane's row for a server definition, or nil when no
+    /// installed extension contributed it.
     ///
-    /// The caller holds neither id, and there are two kinds. A compiled-in
-    /// server is listed under the command the registry names, which a user
-    /// override may have repointed away from the one that actually ran — so
-    /// the match is made on the effective command and the base command is
-    /// what comes back. A contributed language is listed under its
-    /// extension identity instead.
-    static func languageRow(for definition: LSPServerDefinition) -> String? {
-        if case .manifest(let provenance) = definition.origin {
-            let contributed = LanguageResolver.shared.catalog.contributed.first {
-                $0.provenance == provenance && $0.language.languageID == definition.languageID
-            }
-            return contributed.map { contributedRow($0.id) }
-        }
-
-        let base = LSPServerRegistry.distinctServers.first {
-            LSPCenter.effectiveDefinition($0).command == definition.command
-        } ?? LSPServerRegistry.server(forLanguage: definition.languageID)
-        return base.map { serverRow($0.command) }
+    /// Every server this app can start now comes from a manifest, so the
+    /// question "where is this server configured" is answered by naming the
+    /// extension that shipped it — the pane holds one form per extension
+    /// and every one of its servers is a section inside that form. A
+    /// definition that carries no manifest provenance has no such home and
+    /// gets nil, which lands the caller on the pane itself.
+    static func extensionRow(for definition: LSPServerDefinition) -> String? {
+        guard case .manifest(let provenance) = definition.origin else { return nil }
+        return extensionRow(provenance.extensionID)
     }
 
-    /// How ``LanguageServersSettingsView`` spells its row ids. Here so the
-    /// caller naming a row and the list drawing it read one definition
-    /// rather than two that agree today.
+    /// How ``ExtensionsSettingsView`` spells its row ids. Here so the caller
+    /// naming a row and the list drawing it read one definition rather than
+    /// two that agree today.
     ///
     /// `nonisolated` because the list's own row type is a plain value that
     /// asks for its id outside any actor.
-    nonisolated static func serverRow(_ command: String) -> String { "server:" + command }
+    nonisolated static func extensionRow(_ extensionID: String) -> String {
+        rowPrefix + extensionID
+    }
 
-    nonisolated static func contributedRow(_ id: String) -> String { "ext:" + id }
+    /// The inverse, for the pane resolving a request back to an extension.
+    nonisolated static func extensionID(fromRow row: String) -> String? {
+        guard row.hasPrefix(rowPrefix) else { return nil }
+        let id = String(row.dropFirst(rowPrefix.count))
+        return id.isEmpty ? nil : id
+    }
+
+    private static let rowPrefix = "ext:"
 }

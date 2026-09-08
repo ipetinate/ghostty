@@ -127,11 +127,10 @@ final class LSPProcess: @unchecked Sendable {
     private static let eventBufferLimit = 512
 
     /// - Parameter extraArguments: Appended to the definition's own
-    ///   arguments. For the one argument that cannot live in the
-    ///   definition: `@vue/language-server` takes the path to TypeScript on
-    ///   its command line, and that path is a fact about the workspace
-    ///   being opened rather than about the server. See
-    ///   `LSPInitializationOptions.vueTSDKArgument(tsdk:)`.
+    ///   arguments. For the arguments that cannot live in the definition:
+    ///   a server reading its TypeScript from `--tsdk` takes a path that is
+    ///   a fact about the workspace being opened rather than about the
+    ///   server. See `LSPInitializationOptions.tsdkArgument(tsdk:)`.
     /// - Parameter environmentProvider: Injected so the transport can be
     ///   exercised without spawning a login shell, and so this file keeps
     ///   no hard dependency on the app. The default hands the server the
@@ -382,6 +381,22 @@ final class LSPProcess: @unchecked Sendable {
         }
     }
 
+    /// The one substitution a launch argument may carry.
+    ///
+    /// Expanded here rather than at the parse, because the manifest is a
+    /// file that may be shared between machines and `${HOME}` is the one
+    /// thing in it whose value is a property of who is running. It is what
+    /// lets an extension declare `-data ${HOME}/.cache/jdtls-workspace` — a
+    /// server that needs a writable directory of its own, and cannot be
+    /// given one inside a project.
+    ///
+    /// **Nothing else expands.** A general environment substitution would
+    /// let a manifest read whatever this app was launched with, and the
+    /// arguments already reach a `Process` rather than a shell.
+    static func expandingHome(_ argument: String) -> String {
+        argument.replacingOccurrences(of: "${HOME}", with: NSHomeDirectory())
+    }
+
     private func launch(environment: [String: String], workingDirectory: String) throws {
         let searchPath = environment["PATH"] ?? ""
         guard let executable = Self.locate(definition.command, searchPath: searchPath) else {
@@ -393,7 +408,7 @@ final class LSPProcess: @unchecked Sendable {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = definition.arguments + extraArguments
+        process.arguments = (definition.arguments + extraArguments).map(Self.expandingHome)
         process.environment = environment
         process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
 

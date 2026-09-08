@@ -23,8 +23,13 @@ struct ExtensionPaneView: View {
     private var card: ExtensionCard? { entry?.card }
 
     private var previewKey: String {
-        [id, entry?.version ?? "", installed?.version ?? "", store.index == nil ? "no-index" : "index"]
-            .joined(separator: "|")
+        [
+            id,
+            entry?.version ?? "",
+            installed?.version ?? "",
+            store.index == nil ? "no-index" : "index",
+            String(store.reloads),
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -104,7 +109,9 @@ struct ExtensionPaneView: View {
                         .font(.title2.weight(.semibold))
                         .lineLimit(2)
                     if !versionText.isEmpty {
-                        ExtensionTagView(text: versionText)
+                        ExtensionTagView(
+                            text: versionText,
+                            systemImage: ExtensionVersionTagView.symbol)
                     }
                     if let entry {
                         ExtensionStateBadge(state: store.state(for: entry))
@@ -181,16 +188,37 @@ struct ExtensionPaneView: View {
     @ViewBuilder private var actionControl: some View {
         if let activity = store.activity[id] {
             ExtensionActivityView(activity: activity)
-        } else if let entry {
-            ExtensionActionButton(
-                state: store.state(for: entry),
-                onInstall: { Task { await store.install(entry) } },
-                onRemove: { Task { await store.remove(id: id) } }
-            )
-        } else if installed != nil {
-            Button("Uninstall") {
-                Task { await store.remove(id: id) }
+        } else {
+            HStack(spacing: 8) {
+                settingsLink
+                if let entry {
+                    ExtensionActionButton(
+                        state: store.state(for: entry),
+                        onInstall: { Task { await store.install(entry) } },
+                        onRemove: { Task { await store.remove(id: id) } }
+                    )
+                } else if installed != nil {
+                    Button("Uninstall") {
+                        Task { await store.remove(id: id) }
+                    }
+                }
             }
+        }
+    }
+
+    /// The way out of the store and into the settings for this extension.
+    ///
+    /// The store installs, removes and opens; what a server runs and with
+    /// which arguments is configured in Settings, and this card is where a
+    /// reader who has just installed something is standing when they want
+    /// that. Offered only once it is installed, because the form behind it
+    /// is about a thing on this machine.
+    @ViewBuilder private var settingsLink: some View {
+        if installed != nil {
+            Button("Settings") {
+                ExtensionDocumentTabs.openInSettings(id: id)
+            }
+            .help("Configure this extension in Settings")
         }
     }
 

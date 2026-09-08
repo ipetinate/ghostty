@@ -161,13 +161,17 @@ struct GitDiffDocument: Equatable {
     /// - Parameter source: the whole version of each side, for the files
     ///   ``GitDiffHighlight/needsWholeFile(_:)`` names. Absent for every
     ///   other diff, which the hunks describe well enough to lex.
-    init(file: GitFileDiff, source: GitDiffSource = .none) {
+    init(
+        file: GitFileDiff,
+        source: GitDiffSource = .none,
+        snapshot: LanguageResolver.Snapshot = LanguageResolver.snapshot
+    ) {
         self.file = file
         let rows = GitDiffAlignment.rows(for: file)
         self.rows = rows
         self.widestLeft = Self.widest(of: rows, \.left)
         self.widestRight = Self.widest(of: rows, \.right)
-        self.highlight = GitDiffHighlight.make(for: rows, file: file, source: source)
+        self.highlight = GitDiffHighlight.make(for: rows, file: file, source: source, snapshot: snapshot)
     }
 
     private static func widest(

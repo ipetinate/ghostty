@@ -6,67 +6,30 @@ import Testing
 /// settings do to it, and — the part that can lose work — how a finished run is
 /// read.
 struct ExternalFormatterTests {
-    // MARK: The table
+    // MARK: A formatter to have settings about
 
-    /// Every row has to be runnable. A blank command or an empty extension set
-    /// is a row that silently never fires, which is indistinguishable from the
-    /// gap it was added to close.
-    @Test func everyFormatterIsComplete() {
-        for formatter in ExternalFormatterRegistry.all {
-            #expect(!formatter.command.isEmpty, "\(formatter.id)")
-            #expect(!formatter.extensions.isEmpty, "\(formatter.id)")
-            #expect(!formatter.installHint.isEmpty, "\(formatter.id)")
-            #expect(!formatter.displayName.isEmpty, "\(formatter.id)")
-        }
-    }
-
-    @Test func idsAndExtensionsAreClaimedOnce() {
-        let ids = ExternalFormatterRegistry.all.map(\.id)
-        #expect(Set(ids).count == ids.count)
-
-        var seen: Set<String> = []
-        for formatter in ExternalFormatterRegistry.all {
-            for ext in formatter.extensions {
-                #expect(!seen.contains(ext), "\(ext) is claimed twice")
-                seen.insert(ext)
-            }
-        }
-    }
-
-    /// **The two tables must not overlap.** Prettier resolves a project, a
-    /// config and an ignore file; these are one process with no opinion about
-    /// any of that. A file both claimed would be formatted by whichever route
-    /// the editor happened to try first, which is not a decision anybody made.
-    @Test func nothingHereIsAlsoAPrettierFile() {
-        for formatter in ExternalFormatterRegistry.all {
-            for ext in formatter.extensions {
-                #expect(
-                    !PrettierProject.parserCanBeInferred(for: "sample.\(ext)"),
-                    "Prettier also claims .\(ext)")
-            }
-        }
-    }
-
-    @Test func aFileIsMatchedByItsExtensionWhateverItsCase() {
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "main.py")?.id == "python")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "MAIN.PY")?.id == "python")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "deploy.sh")?.id == "shellscript")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "init.lua")?.id == "lua")
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "pom.xml")?.id == "xml")
-    }
-
-    @Test func aFileNobodyClaimsGetsNoFormatter() {
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "main.rs") == nil)
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "Makefile") == nil)
-        #expect(ExternalFormatterRegistry.formatter(forFileNamed: "") == nil)
+    /// A formatter an extension contributed, built here because after 0.17.0
+    /// nothing else can build one: this build ships no table of tools. What
+    /// stays in the binary is everything below — the `$FILE` substitution, the
+    /// reader's own settings, and how a finished run is read.
+    private func ruff(arguments: [String] = ["format", ExternalFormatter.filePlaceholder, "-"])
+        -> ExternalFormatter {
+        ExternalFormatter(
+            id: "python",
+            languageName: "Python",
+            displayName: "Ruff",
+            command: "ruff",
+            arguments: arguments,
+            extensions: ["py"],
+            installHint: "brew install ruff",
+            note: nil)
     }
 
     /// The name is what these tools read their own configuration from — a
     /// `pyproject.toml` above the file, a `stylua.toml` — so a placeholder
     /// left unsubstituted means every project gets the tool's defaults.
-    @Test func thePlaceholderBecomesTheFilePath() throws {
-        let ruff = try #require(ExternalFormatterRegistry.byID["python"])
-        let arguments = ruff.arguments(for: "/repo/app/main.py")
+    @Test func thePlaceholderBecomesTheFilePath() {
+        let arguments = ruff().arguments(for: "/repo/app/main.py")
 
         #expect(arguments.contains("/repo/app/main.py"))
         #expect(!arguments.contains(ExternalFormatter.filePlaceholder))
@@ -76,31 +39,29 @@ struct ExternalFormatterTests {
     // MARK: The reader's settings
 
     @Test func aFormatterSwitchedOffDoesNotRun() {
-        let ruff = ExternalFormatterRegistry.byID["python"]!
         var setting = ExternalFormatterSetting()
         setting.isEnabled = false
 
-        #expect(ExternalFormatterStore.effective(ruff, setting: setting) == nil)
+        #expect(ExternalFormatterStore.effective(ruff(), setting: setting) == nil)
     }
 
     /// One field at a time, which is what makes "point it at the ruff in my
     /// virtualenv" a one-field edit rather than a retype of the arguments.
     @Test func aBlankFieldFallsThroughToTheDefault() throws {
-        let ruff = ExternalFormatterRegistry.byID["python"]!
+        let formatter = ruff()
         var setting = ExternalFormatterSetting()
         setting.command = "/venv/bin/ruff"
 
-        let effective = try #require(ExternalFormatterStore.effective(ruff, setting: setting))
+        let effective = try #require(ExternalFormatterStore.effective(formatter, setting: setting))
         #expect(effective.command == "/venv/bin/ruff")
-        #expect(effective.arguments == ruff.arguments)
+        #expect(effective.arguments == formatter.arguments)
     }
 
     @Test func typedArgumentsReplaceTheDefaultsWhole() throws {
-        let ruff = ExternalFormatterRegistry.byID["python"]!
         var setting = ExternalFormatterSetting()
         setting.arguments = "format  --line-length 100 -"
 
-        let effective = try #require(ExternalFormatterStore.effective(ruff, setting: setting))
+        let effective = try #require(ExternalFormatterStore.effective(ruff(), setting: setting))
         #expect(effective.arguments == ["format", "--line-length", "100", "-"])
     }
 
@@ -122,8 +83,7 @@ struct ExternalFormatterTests {
 
     /// **The one that deletes files.** A buffer halfway through a function is a
     /// parse error, and a parse error exits non-zero having printed nothing:
-    /// reading stdout first would answer "your file is now empty". Same order,
-    /// same reason, as `PrettierRunner.result`.
+    /// reading stdout first would answer "your file is now empty".
     @Test func aNonZeroExitWithNoOutputIsAFailureAndNotAnEmptyFile() {
         do {
             let result = try ExternalFormatterRunner.result(
@@ -186,6 +146,120 @@ struct ExternalFormatterTests {
         #expect(failure.reason == "StyLua isn't installed. brew install stylua")
     }
 
+    // MARK: What reaches the reader
+
+    /// The regression this section exists for: a save banner read *"The
+    /// operation couldn't be completed."* followed by the runtime's own tag
+    /// for the case, which is what `localizedDescription` answers for a bare
+    /// Swift enum. It told the reader nothing, and it told whoever read the
+    /// report less than nothing — the runtime orders the payload cases first,
+    /// so the number pointed at the wrong case.
+    @Test func everyFailureDescribesItselfRatherThanItsTag() {
+        let failures: [ExternalFormatterFailure] = [
+            .notFound(tool: "Tool", hint: "brew install tool"),
+            .launchFailed(tool: "Tool", reason: "No such file or directory"),
+            .timedOut(tool: "Tool", seconds: 10),
+            .failed(tool: "Tool", status: 2, message: "SyntaxError: Unexpected token (3:1)"),
+        ]
+
+        for failure in failures {
+            #expect(failure.localizedDescription == failure.reason)
+            #expect(!failure.localizedDescription.contains("ExternalFormatterFailure"))
+        }
+    }
+
+    /// A real parse error, pasted from a run. The sentence is the first line;
+    /// the rest is a code frame drawn in a monospaced column an alert does not
+    /// have.
+    @Test func aParseErrorsCodeFrameStaysOutOfTheBanner() {
+        let stderr = """
+            [error] /p/main.tsx: SyntaxError: Declaration or statement expected. (3:1)
+            [error]   1 | const a = 1
+            [error]   2 |
+            [error] > 3 | }
+            [error]     | ^
+            [error]   4 |
+            """
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr)
+                == "/p/main.tsx: SyntaxError: Declaration or statement expected. (3:1)"
+        )
+    }
+
+    /// A configuration naming a plugin that will not load, which is the case
+    /// that prints a stack trace — twenty frames of the tool's own bundle in
+    /// the run this was taken from, enough to push the sentence out of an
+    /// alert entirely.
+    @Test func aPluginsStackTraceStaysOutOfTheBanner() {
+        let stderr = """
+            [error] /p/main.ts: Error: Cannot find package 'plugin-nope' imported from /p/noop.js
+            [error]     at __node_internal_ (file:///p/node_modules/tool/index.mjs:14106:11)
+            [error]     at new NodeError (file:///p/node_modules/tool/index.mjs:14071:5)
+            [error]     at packageResolve (file:///p/node_modules/tool/index.mjs:15012:9)
+            """
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr)
+                == "/p/main.ts: Error: Cannot find package 'plugin-nope' imported from /p/noop.js"
+        )
+    }
+
+    /// Why the banner is not simply the first line. A malformed configuration
+    /// takes three to say anything: on its own, `Invalid configuration for
+    /// file` names no fault.
+    @Test func aConfigurationErrorKeepsTheLinesThatNameTheFault() {
+        let stderr = """
+            [error] Invalid configuration for file "/p/main.ts":
+            [error] YAML Error in /p/.toolrc:
+            [error] Flow map must end with a } at line 2, column 1:
+            [error]\u{20}
+            [error] { "semi": false
+            [error]\u{20}
+            [error] ^
+            [error]\u{20}
+            """
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr) == """
+                Invalid configuration for file "/p/main.ts":
+                YAML Error in /p/.toolrc:
+                Flow map must end with a } at line 2, column 1:
+                { "semi": false
+                """
+        )
+    }
+
+    /// The bound on an unmeasured shape — a plugin free to print an essay.
+    @Test func aBannerIsNotUnbounded() {
+        let stderr = (1...40).map { "[error] line \($0)" }.joined(separator: "\n")
+        let lines = ExternalFormatterFailure.banner(from: stderr).split(separator: "\n")
+
+        #expect(lines.count == 4)
+        #expect(lines.first == "line 1")
+    }
+
+    /// Trimming that removed everything would leave a banner saying nothing at
+    /// all, which is the failure this whole section is about. A wall of text
+    /// beats that.
+    @Test func aMessageThatIsNothingButScaffoldingSurvivesWhole() {
+        let stderr = "[error]   1 | const a = 1\n[error]     | ^\n"
+
+        #expect(
+            ExternalFormatterFailure.banner(from: stderr)
+                == "[error]   1 | const a = 1\n[error]     | ^"
+        )
+    }
+
+    /// The tool is still named in front of it, because "the formatter failed"
+    /// leaves the reader guessing which of the several ran.
+    @Test func theTrimmedBannerIsStillAttributed() {
+        let failure = ExternalFormatterFailure.failed(
+            tool: "Tool", status: 2, message: "[error] main.ts: Unexpected token (3:7)")
+
+        #expect(failure.reason == "Tool: main.ts: Unexpected token (3:7)")
+    }
+
     // MARK: Running one
 
     /// The buffer goes in on stdin and the formatted text comes back on
@@ -245,72 +319,5 @@ struct ExternalFormatterTests {
         try "#!/bin/sh\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         return url
-    }
-}
-
-/// The same runner against the tools themselves, on a machine that has them.
-///
-/// The suite above proves the rules with stubs, which is what makes it run
-/// anywhere. This one proves the arguments: a flag these tools do not take is
-/// an exit code and an empty buffer, and no stub can tell you that `ruff` wants
-/// `--stdin-filename` while `stylua` wants `--stdin-filepath`.
-///
-/// Each test is skipped where its tool is not installed, so this stays honest
-/// on a machine — or a CI runner — without them.
-struct InstalledFormatterTests {
-    private static func path(_ command: String) -> String? {
-        ExternalFormatterRunner.locate(command, searchPath: LoginEnvironment.executableSearchPath())
-    }
-
-    private func run(_ id: String, _ text: String, named name: String) throws -> String? {
-        let formatter = try #require(ExternalFormatterRegistry.byID[id])
-        return try ExternalFormatterRunner.format(
-            text,
-            filePath: "/tmp/\(name)",
-            formatter: formatter,
-            searchPath: LoginEnvironment.executableSearchPath())
-    }
-
-    @Test(.enabled(if: path("ruff") != nil))
-    func ruffFormatsPython() throws {
-        let formatted = try run("python", "def   f( a,b ):\n  return   a+b\n", named: "main.py")
-
-        #expect(formatted == "def f(a, b):\n    return a + b\n")
-    }
-
-    @Test(.enabled(if: path("shfmt") != nil))
-    func shfmtFormatsShell() throws {
-        let formatted = try run("shellscript", "x=1\nif [ 1 ];then\necho hi\nfi\n", named: "deploy.sh")
-
-        #expect(formatted == "x=1\nif [ 1 ]; then\n\techo hi\nfi\n")
-    }
-
-    @Test(.enabled(if: path("stylua") != nil))
-    func styluaFormatsLua() throws {
-        let formatted = try run("lua", "local   x = 1\n", named: "init.lua")
-
-        #expect(formatted == "local x = 1\n")
-    }
-
-    @Test(.enabled(if: path("xmllint") != nil))
-    func xmllintFormatsXML() throws {
-        let formatted = try run("xml", "<a><b>1</b></a>\n", named: "doc.xml")
-
-        #expect(formatted?.contains("  <b>1</b>") == true)
-    }
-
-    /// The failure that matters, against the real tool: a buffer mid-edit is a
-    /// parse error, and it has to arrive as a failure rather than as an empty
-    /// file.
-    @Test(.enabled(if: path("ruff") != nil))
-    func aPythonBufferMidEditFailsRatherThanEmptying() {
-        do {
-            let formatted = try run("python", "def f(\n", named: "main.py")
-            #expect(Bool(false), "expected a failure, got \(String(describing: formatted))")
-        } catch let failure as ExternalFormatterFailure {
-            #expect(failure.reason.hasPrefix("Ruff"))
-        } catch {
-            #expect(Bool(false), "wrong error: \(error)")
-        }
     }
 }

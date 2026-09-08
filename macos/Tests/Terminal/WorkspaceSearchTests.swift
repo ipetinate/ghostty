@@ -125,50 +125,50 @@ struct WorkspaceSearchTests {
 
 /// Reducing a document to the bars the minimap draws.
 struct CodeMinimapTests {
-    private func rows(_ source: String) -> [CodeMinimapView.Row] {
-        let tokens = SyntaxHighlighter(language: .swift)
+    private func rows(_ source: String) throws -> [CodeMinimapView.Row] {
+        let tokens = try FixtureGrammar.highlighter()
             .tokens(in: source, range: NSRange(location: 0, length: (source as NSString).length))
         return CodeMinimapView.rows(for: source, tokens: tokens)
     }
 
-    @Test func oneRowPerLine() {
+    @Test func oneRowPerLine() throws {
         let source = "let a = 1\nlet b = 2\nlet c = 3"
-        #expect(rows(source).count == 3)
+        #expect(try rows(source).count == 3)
     }
 
     /// Blank lines are what give a minimap its shape — they have to be
     /// present and empty, not skipped.
-    @Test func blankLinesAreKeptAndEmpty() {
+    @Test func blankLinesAreKeptAndEmpty() throws {
         let source = "let a = 1\n\nlet c = 3"
-        let result = rows(source)
+        let result = try rows(source)
         #expect(result.count == 3)
         #expect(result[1].length == 0)
     }
 
     /// Indentation is the other half of the shape.
-    @Test func indentationIsMeasured() {
+    @Test func indentationIsMeasured() throws {
         let source = "func x() {\n    let a = 1\n}"
-        let result = rows(source)
+        let result = try rows(source)
         #expect(result[0].indent == 0)
         #expect(result[1].indent == 4)
     }
 
     /// A line's colour is whatever it starts as, so a comment line reads as
     /// a comment at two pixels tall.
-    @Test func aCommentLineIsColouredAsAComment() {
-        let result = rows("// explanation\nlet a = 1")
+    @Test func aCommentLineIsColouredAsAComment() throws {
+        let result = try rows("// explanation\nlet a = 1")
         #expect(result[0].kind == .comment)
         #expect(result[1].kind == .keyword)
     }
 
-    @Test func anEmptyDocumentProducesNothingToDraw() {
-        #expect(rows("").allSatisfy { $0.length == 0 })
+    @Test func anEmptyDocumentProducesNothingToDraw() throws {
+        #expect(try rows("").allSatisfy { $0.length == 0 })
     }
 
     /// The length is of the *trimmed* line: trailing whitespace would
     /// otherwise draw a bar for a line that looks blank on screen.
-    @Test func trailingWhitespaceDoesNotWidenABar() {
-        let result = rows("let a = 1        \n")
+    @Test func trailingWhitespaceDoesNotWidenABar() throws {
+        let result = try rows("let a = 1        \n")
         #expect(result[0].length == "let a = 1".count)
     }
 }

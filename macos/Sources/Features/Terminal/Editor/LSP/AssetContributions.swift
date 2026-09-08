@@ -1,66 +1,5 @@
 import Foundation
 
-typealias SyntaxContribution = LanguageSyntax.Patterns
-
-extension SyntaxContribution {
-    static let maxPatternLength = 2048
-
-    static let presets: [String: String] = [
-        "number": SyntaxRules.number,
-        "cStyleString": SyntaxRules.cStyleString,
-        "capitalizedType": SyntaxRules.capitalizedType,
-        "callBeforeParen": SyntaxRules.callBeforeParen,
-        "callBeforeParenOrGeneric": SyntaxRules.callBeforeParenOrGeneric,
-    ]
-
-    static let presetPrefix = "preset:"
-
-    static func parse(json: Any?) -> SyntaxContribution {
-        guard let json = json as? [String: Any] else { return SyntaxContribution() }
-        return SyntaxContribution(
-            string: pattern(json["string"]),
-            number: pattern(json["number"]),
-            type: pattern(json["type"]),
-            function: pattern(json["function"]),
-            attribute: pattern(json["attribute"])
-        )
-    }
-
-    static func pattern(_ value: Any?) -> String? {
-        guard let raw = LanguageManifest.string(value) else { return nil }
-        if raw.hasPrefix(presetPrefix) {
-            return presets[String(raw.dropFirst(presetPrefix.count))]
-        }
-        guard raw.count <= maxPatternLength, isSafePattern(raw) else { return nil }
-        guard (try? NSRegularExpression(pattern: raw, options: [.anchorsMatchLines])) != nil else {
-            return nil
-        }
-        return raw
-    }
-
-    static func isSafePattern(_ pattern: String) -> Bool {
-        let scalars = Array(pattern.unicodeScalars)
-        var index = 0
-        while index < scalars.count {
-            let scalar = scalars[index]
-            if scalar == "\\" {
-                guard index + 1 < scalars.count else { return false }
-                let escaped = scalars[index + 1]
-                if ("1"..."9").contains(escaped) || escaped == "k" { return false }
-                index += 2
-                continue
-            }
-            if scalar == "(", index + 2 < scalars.count,
-               scalars[index + 1] == "?", scalars[index + 2] == "<" {
-                let opener: Unicode.Scalar? = index + 3 < scalars.count ? scalars[index + 3] : nil
-                guard opener == "=" || opener == "!" else { return false }
-            }
-            index += 1
-        }
-        return true
-    }
-}
-
 struct FormatterContribution: Equatable, Sendable {
     let id: String
     let name: String
@@ -71,7 +10,16 @@ struct FormatterContribution: Equatable, Sendable {
     let installPlan: ExtensionInstallPlan?
     let documentationURL: URL?
 
+    /// What this tool asks of a project before it rewrites its files, and
+    /// where it wants to be run. Empty for a tool that simply formats.
+    let projectRules: FormatterProjectRules
+
     static let maxFormatters = 32
+
+    /// A ceiling on the marker list. A tool with more names than this is not
+    /// describing a project, and every one of them is a `stat` per directory
+    /// on a walk that runs on every save.
+    static let maxMarkers = 32
 
     static func parse(json: [String: Any]) -> FormatterContribution? {
         guard let id = validID(json["id"]) else { return nil }
@@ -95,8 +43,60 @@ struct FormatterContribution: Equatable, Sendable {
             fileExtensions: fileExtensions,
             installHint: LanguageServerContribution.installHint(json["installHint"]),
             installPlan: ExtensionInstallPlan.parse(json["install"]),
-            documentationURL: LanguageServerContribution.documentationURL(json["documentationURL"])
+            documentationURL: LanguageServerContribution.documentationURL(json["documentationURL"]),
+            projectRules: projectRules(json: json)
         )
+    }
+
+    static func projectRules(json: [String: Any]) -> FormatterProjectRules {
+        FormatterProjectRules(
+            markers: markers(from: json["projectMarkers"]),
+            localBinary: relativePath(json["localBinary"]),
+            workingDirectory: LanguageManifest.string(json["workingDirectory"])
+                .flatMap(FormatterWorkingDirectory.init(rawValue:)) ?? .file
+        )
+    }
+
+    /// The markers, in the order written, dropping only the entries that
+    /// cannot be looked for.
+    ///
+    /// Lenient one entry at a time, the way the rest of the manifest is: a
+    /// list with one bad name in it loses that name, not the list.
+    static func markers(from value: Any?) -> [FormatterMarker] {
+        let raw = (value as? [Any]) ?? []
+        return raw.compactMap(marker(from:))
+            .prefix(maxMarkers)
+            .map { $0 }
+    }
+
+    static func marker(from value: Any) -> FormatterMarker? {
+        if let name = relativePath(value) { return .file(name) }
+        guard let object = value as? [String: Any],
+              let file = relativePath(object["file"]),
+              let key = LanguageManifest.string(object["containsKey"]), key.count <= 64,
+              !key.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar)
+        else { return nil }
+        return .key(named: key, inFile: file)
+    }
+
+    /// A path a walk may append to a directory it is visiting.
+    ///
+    /// The containment rule `LanguageContribution.containedURL` applies to the
+    /// extension's own directory cannot be applied here — these resolve
+    /// against the reader's project, which does not exist at parse time. So
+    /// the shape is checked instead, and it is checked strictly: absolute
+    /// paths, home-relative paths and any `..` segment are refused, because
+    /// each of them is a manifest reaching outside the tree it was pointed at.
+    static func relativePath(_ value: Any?) -> String? {
+        guard let raw = LanguageManifest.string(value), raw.count <= 128 else { return nil }
+        guard !raw.hasPrefix("/"), !raw.hasPrefix("~"), !raw.hasPrefix("./") else { return nil }
+        guard !raw.unicodeScalars.contains(where: LanguageContribution.isUnsafeScalar) else {
+            return nil
+        }
+        let segments = raw.split(separator: "/", omittingEmptySubsequences: false)
+        guard !segments.isEmpty else { return nil }
+        guard segments.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
+        return raw
     }
 
     static func validID(_ value: Any?) -> String? {

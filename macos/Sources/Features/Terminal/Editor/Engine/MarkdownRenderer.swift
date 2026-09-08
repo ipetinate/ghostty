@@ -59,6 +59,20 @@ struct MarkdownRenderer {
     /// The directory the document lives in, for resolving `./docs/a.png`.
     var baseURL: URL?
 
+    /// How a fenced code block is coloured, handed in by whoever built the
+    /// renderer.
+    ///
+    /// Handed in for two reasons that arrive at the same seam. The engine may
+    /// not name the thing that knows which grammars are installed, which is
+    /// `EditorEngineBoundaryTests`; and a caller that cannot reload the
+    /// installed extensions off disk — a test — otherwise has no way to put a
+    /// grammar where this could find it, so every fence in every assertion
+    /// came back plain whatever the renderer did with it.
+    ///
+    /// The default leaves every fence uncoloured, which is what a host that
+    /// supplies nothing gets.
+    var fences: FenceHighlighting = .plain
+
     /// One level of list or quote indentation.
     private static let indentStep: CGFloat = 22
 
@@ -147,7 +161,7 @@ struct MarkdownRenderer {
                 caption: document.flavor == .mdx && isComponent(source)
                     ? "component — shown as source, not rendered"
                     : nil,
-                language: .html,
+                language: "html",
                 to: out,
                 indent: indent,
                 containers: containers
@@ -157,7 +171,7 @@ struct MarkdownRenderer {
             appendSource(
                 source,
                 caption: "module — not evaluated",
-                language: .javascript,
+                language: "javascript",
                 to: out,
                 indent: indent,
                 containers: containers
@@ -167,7 +181,7 @@ struct MarkdownRenderer {
             appendSource(
                 source,
                 caption: "front matter",
-                language: .yaml,
+                language: "yaml",
                 to: out,
                 indent: indent,
                 containers: containers
@@ -286,7 +300,7 @@ struct MarkdownRenderer {
             /// the document stopped being prose, and without the note the
             /// preview just looks broken.
             caption: code.isClosed ? nil : "unclosed fence",
-            language: CodeLanguage.resolve(fenceInfo: code.languageHint),
+            language: code.languageHint,
             to: out,
             indent: indent,
             containers: containers
@@ -302,7 +316,7 @@ struct MarkdownRenderer {
     private func appendSource(
         _ source: String,
         caption: String?,
-        language: CodeLanguage?,
+        language: String?,
         to out: NSMutableAttributedString,
         indent: CGFloat,
         containers: [NSTextBlock]
@@ -356,9 +370,11 @@ struct MarkdownRenderer {
     /// language, and already the thing colouring the file in the other
     /// pane — and it is the difference between a preview that looks like a
     /// document and one that looks unfinished.
-    private func highlight(_ source: String, language: CodeLanguage, in body: NSMutableAttributedString) {
+    private func highlight(_ source: String, language: String, in body: NSMutableAttributedString) {
+        let highlighter = fences.highlighter(forFenceLabel: language)
+        guard !highlighter.isPlain else { return }
         let full = NSRange(location: 0, length: (source as NSString).length)
-        for token in SyntaxHighlighter(language: language).tokens(in: source, range: full) {
+        for token in highlighter.tokens(in: source, range: full) {
             guard NSMaxRange(token.range) <= body.length else { continue }
             body.addAttribute(.foregroundColor, value: style.theme.color(for: token.kind), range: token.range)
         }

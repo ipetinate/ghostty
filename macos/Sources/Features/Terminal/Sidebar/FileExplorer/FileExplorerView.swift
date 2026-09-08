@@ -35,6 +35,16 @@ struct FileExplorerView: View {
     /// The path waiting for the "Move to Trash" confirmation.
     @State private var pendingDelete: String?
 
+    /// Whether the excludes section under the search field is open.
+    ///
+    /// Closed until asked for, and remembered afterwards. Most searches
+    /// never need it, and a field that is always on screen would push the
+    /// tree down for every reader to buy something few of them use. The
+    /// count beside the header is what keeps a closed section honest: a
+    /// reader whose search is quietly missing a folder can see, without
+    /// opening anything, that patterns are in force.
+    @AppStorage(FileExplorerModel.excludesExpandedKey) private var excludesExpanded = false
+
     /// The file a reveal still owes a scroll to, or nil when nothing is
     /// pending.
     ///
@@ -63,6 +73,7 @@ struct FileExplorerView: View {
                 empty
             } else {
                 search
+                excludes
                 tree
             }
         }
@@ -227,6 +238,92 @@ struct FileExplorerView: View {
         )
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
+    }
+
+    /// The excludes section: one line of comma-separated glob patterns, and
+    /// a chip for each pattern that took effect.
+    ///
+    /// The chips are the field's only feedback, and they are the reason the
+    /// field can stay one line. A pattern that did not compile has no chip,
+    /// so `(build|dist` and `*.{ts` say what is wrong by being absent, and
+    /// nothing has to be explained in prose next to an input.
+    private var excludes: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                excludesExpanded.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: excludesExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+
+                    Text("Excludes")
+                        .font(palette.font(size: 10, weight: .semibold))
+                        .textCase(.uppercase)
+
+                    if !model.excludes.isEmpty {
+                        SidebarCountBadge(count: model.excludes.patterns.count)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Patterns the search skips")
+
+            if excludesExpanded {
+                TextField("node_modules, *.log, (build|dist)/**", text: $model.excludeText)
+                    .textFieldStyle(.plain)
+                    .font(palette.font(size: 11))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.secondary.opacity(0.12))
+                    )
+
+                if !model.excludes.isEmpty {
+                    WrapLayout(horizontalSpacing: 4, verticalSpacing: 3) {
+                        ForEach(model.excludes.patterns) { pattern in
+                            excludeChip(pattern)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 4)
+    }
+
+    /// One pattern, with the click that drops it.
+    ///
+    /// The whole chip is the button rather than the cross alone. A target
+    /// this size in a sidebar this narrow is hard enough to hit once; making
+    /// the reader hit the smaller half of it twice is how a pattern stays in
+    /// force longer than it was wanted.
+    private func excludeChip(_ pattern: FileExplorerSearchExcludes.Pattern) -> some View {
+        Button {
+            model.removeExclude(pattern)
+        } label: {
+            HStack(spacing: 3) {
+                Text(pattern.source)
+                    .lineLimit(1)
+                Image(systemName: "xmark")
+                    .font(.system(size: 7, weight: .semibold))
+            }
+            .font(palette.font(size: 9))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(.quaternary.opacity(0.6))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Stop excluding \(pattern.source)")
     }
 
     /// The directory to show beside a name, on every search result.

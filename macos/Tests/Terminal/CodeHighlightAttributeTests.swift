@@ -28,7 +28,15 @@ struct CodeHighlightAttributeTests {
     private let severity = NSColor(calibratedRed: 1, green: 0.25, blue: 0.2, alpha: 1)
 
     private func engine() -> CodeTextStorage {
-        CodeTextStorage(language: .swift, theme: theme, configuration: .default)
+        let store = GrammarStore()
+        let grammar = Grammar.parse(contentsOf: FixtureGrammar.fileURL)!
+        store.add(grammar, languageId: FixtureGrammar.languageID)
+        return CodeTextStorage(
+            languageID: FixtureGrammar.languageID,
+            highlighter: GrammarHighlighter(tokenizer: GrammarTokenizer(store: store, grammar: grammar)),
+            theme: theme,
+            configuration: .default
+        )
     }
 
     /// Two lines, so a recolour can cover one of them and leave the other.

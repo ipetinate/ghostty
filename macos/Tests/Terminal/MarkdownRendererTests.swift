@@ -97,14 +97,6 @@ struct MarkdownRendererTests {
 
     // MARK: - Code
 
-    /// The whole reason a fence keeps its info string: the app already owns
-    /// a highlighter, and an uncoloured Swift block looks unfinished.
-    @Test func aFencedSwiftBlockIsSyntaxHighlighted() {
-        let text = render("```swift\nlet x = \"hi\"\n```").text
-        let distinct = Set(foregroundColors(in: text).map(\.description))
-        #expect(distinct.count > 1, "expected more than one colour in a highlighted fence")
-    }
-
     @Test func aFenceWithNoLanguageIsLeftAlone() {
         let text = render("```\nlet x = \"hi\"\n```").text
         let distinct = Set(foregroundColors(in: text).map(\.description))
@@ -116,15 +108,84 @@ struct MarkdownRendererTests {
         #expect(text.string.contains("graph TD;"))
     }
 
-    @Test func fenceInfoStringsMapToLanguages() {
-        #expect(CodeLanguage.resolve(fenceInfo: "swift") == .swift)
-        #expect(CodeLanguage.resolve(fenceInfo: "bash") == .shell)
-        #expect(CodeLanguage.resolve(fenceInfo: "console") == .shell)
-        #expect(CodeLanguage.resolve(fenceInfo: "typescript") == .javascript)
-        #expect(CodeLanguage.resolve(fenceInfo: "yml") == .yaml)
-        #expect(CodeLanguage.resolve(fenceInfo: nil) == nil)
-        #expect(CodeLanguage.resolve(fenceInfo: "mermaid") == nil)
-        #expect(CodeLanguage.resolve(fenceInfo: "text") == nil)
+    /// The names authors write on a fence that no language id or file
+    /// extension is spelled as. A convention of markdown rather than a fact
+    /// about any language, which is why the table stays in the binary while
+    /// the languages themselves left with the server registry.
+    @Test func fenceNicknamesResolveToALanguageID() {
+        #expect(LanguageResolver.fenceAliases["bash"] == "shellscript")
+        #expect(LanguageResolver.fenceAliases["console"] == "shellscript")
+        #expect(LanguageResolver.fenceAliases["yml"] == "yaml")
+        #expect(LanguageResolver.fenceAliases["golang"] == "go")
+    }
+
+    /// A fence is coloured by the grammar an installed extension ships, by
+    /// its language id or by a file extension — and by nothing at all when
+    /// the label names no source language.
+    ///
+    /// `mermaid` and `text` are the labels that must stay plain: they are
+    /// words a fence carries, not languages, and guessing at one would colour
+    /// a diagram as if it were code.
+    @MainActor
+    @Test func aFenceIsColouredByTheGrammarAnExtensionShips() throws {
+        let snapshot = try FixtureGrammar.snapshot()
+
+        #expect(!LanguageResolver.highlighter(
+            forFenceLabel: FixtureGrammar.languageID, in: snapshot).isPlain)
+        #expect(!LanguageResolver.highlighter(
+            forFenceLabel: FixtureGrammar.fileExtension, in: snapshot).isPlain)
+
+        for label in ["mermaid", "text", "diff", "swift"] {
+            #expect(
+                LanguageResolver.highlighter(forFenceLabel: label, in: snapshot).isPlain,
+                "\(label) was coloured by an extension that does not claim it"
+            )
+        }
+
+        #expect(LanguageResolver.highlighter(forFenceLabel: nil, in: snapshot).isPlain)
+        #expect(LanguageResolver.highlighter(
+            forFenceLabel: FixtureGrammar.languageID,
+            in: FixtureGrammar.emptySnapshot()
+        ).isPlain)
+    }
+
+    /// The renderer's own half of that: the highlighter's tokens reach the
+    /// attributed string the preview draws.
+    ///
+    /// A separate test from the resolution above because the two fail
+    /// independently. A fence can resolve to a grammar and still be drawn
+    /// flat — the colouring runs over `source` while the panel holds
+    /// `source + "\n"`, and a token range off by one line is a token range
+    /// silently dropped by the bounds check in `highlight(_:language:in:)`.
+    @MainActor
+    @Test func aFenceIsDrawnInTheColoursOfItsGrammar() throws {
+        let document = MarkdownParser.parse("""
+        ```\(FixtureGrammar.languageID)
+        // note
+        let x = "hi"
+        ```
+        """)
+
+        let installed = try FixtureGrammar.snapshot()
+        let coloured = MarkdownRenderer(
+            style: style,
+            fences: FenceHighlighting { LanguageResolver.highlighter(forFenceLabel: $0, in: installed) }
+        ).render(document).text
+        let drawn = Set(foregroundColors(in: coloured).map(\.description))
+
+        for kind in [TokenKind.comment, .keyword, .string] {
+            #expect(
+                drawn.contains(style.theme.color(for: kind).description),
+                "\(kind) was resolved by the grammar and not drawn"
+            )
+        }
+
+        /// The same document with nothing installed, which is what every
+        /// fence gets on a machine with no extensions: one colour, and the
+        /// text still there.
+        let plain = MarkdownRenderer(style: style, fences: .plain).render(document).text
+        #expect(Set(foregroundColors(in: plain).map(\.description)).count == 1)
+        #expect(plain.string.contains("let x = \"hi\""))
     }
 
     /// Said out loud, because an unclosed fence is why the rest of the

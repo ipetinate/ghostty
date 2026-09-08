@@ -39,6 +39,23 @@ struct ExtensionRow: View {
             }
         }
 
+        /// The version the reader has, when it is not the version on offer.
+        /// Nil on every row that is not waiting for an update, which is what
+        /// keeps such a row looking exactly as it did.
+        var installedVersion: String? {
+            guard case .entry(_, .updateAvailable(let installed, _)) = self else { return nil }
+            return installed
+        }
+
+        var offeredVersion: String {
+            switch self {
+            case .entry(let entry, let state):
+                if case .updateAvailable(_, let available) = state { return available }
+                return entry.version
+            case .orphan(let installed): return installed.version
+            }
+        }
+
         var state: ExtensionState {
             switch self {
             case .entry(_, let state): return state
@@ -70,6 +87,19 @@ struct ExtensionRow: View {
         }
     }
 
+    /// `lanyardcard`, an SF Symbol since 2021 — before this app's deployment
+    /// target. A name that does not resolve makes SwiftUI drop the whole row
+    /// silently, so its age matters as much as its shape.
+    ///
+    /// An identity card, because the line names who published the extension.
+    /// Two shapes were tried on screen and rejected: `signature` is a drawn
+    /// squiggle that reads as a smudge at the eleven points this line is set
+    /// in, and `seal` reads as a rosette awarded rather than a person named.
+    /// Deliberately not `checkmark.seal`, which would claim a verification
+    /// nobody performs, and not a person glyph, which reads as a user
+    /// account rather than an author.
+    static let authorSymbol = "lanyardcard"
+
     static func versionText(_ entry: ExtensionIndex.Entry, state: ExtensionState) -> String {
         if case .updateAvailable(let installed, let available) = state {
             return "\(installed) \u{2192} \(available)"
@@ -80,21 +110,13 @@ struct ExtensionRow: View {
     // MARK: Form
 
     private var formBody: some View {
-        LabeledContent {
-            trailing(controlSize: .regular)
-        } label: {
+        HStack(alignment: .center, spacing: 8) {
             HStack(alignment: .center, spacing: 10) {
                 ExtensionIconView(source: icon, size: 28)
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(verbatim: subject.title)
-                            .lineLimit(1)
-                        ExtensionTagView(text: subject.versionText)
-                    }
-                    Text(verbatim: subject.author)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(verbatim: subject.title)
                         .lineLimit(1)
+                    byline(font: .caption)
                     if let error {
                         Text(verbatim: error)
                             .font(.caption)
@@ -104,6 +126,13 @@ struct ExtensionRow: View {
                 }
             }
             .help(subject.id)
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                trailing(controlSize: .regular)
+                versionTag
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
@@ -115,21 +144,18 @@ struct ExtensionRow: View {
         HStack(spacing: 12) {
             ExtensionIconView(source: icon, size: 40)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(verbatim: subject.title)
-                        .font(palette.font(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    ExtensionTagView(text: subject.versionText)
-                }
-                Text(verbatim: subject.author)
-                    .font(palette.font(size: 11))
-                    .foregroundStyle(.secondary)
+                Text(verbatim: subject.title)
+                    .font(palette.font(size: 13, weight: .semibold))
                     .lineLimit(1)
+                byline(font: palette.font(size: 11))
             }
 
             Spacer(minLength: 8)
 
-            trailing(controlSize: .regular)
+            VStack(alignment: .trailing, spacing: 4) {
+                trailing(controlSize: .regular)
+                versionTag
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
@@ -149,6 +175,25 @@ struct ExtensionRow: View {
     }
 
     // MARK: Shared
+
+    /// Who published the extension.
+    ///
+    /// The mark is a signature rather than a person: the line names the
+    /// author of a published thing, not the holder of an account, and the
+    /// generic person placeholder reads as the second one.
+    private func byline(font: Font) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: Self.authorSymbol)
+            Text(verbatim: subject.author)
+                .lineLimit(1)
+        }
+        .font(font)
+        .foregroundStyle(.secondary)
+    }
+
+    private var versionTag: some View {
+        ExtensionVersionTagView(installed: subject.installedVersion, offered: subject.offeredVersion)
+    }
 
     @ViewBuilder
     private func trailing(controlSize: ControlSize) -> some View {
@@ -325,17 +370,80 @@ struct ExtensionActivityView: View {
 
 struct ExtensionTagView: View {
     let text: String
+    var systemImage: String?
 
     var body: some View {
-        Text(verbatim: text)
+        HStack(spacing: 3) {
+            if let systemImage {
+                Image(systemName: systemImage)
+            }
+            Text(verbatim: text)
+        }
+        .foregroundStyle(.secondary)
+        .modifier(ExtensionChipChrome())
+    }
+}
+
+/// The capsule every chip in the store is drawn in, so the version tag and
+/// the plain tag cannot drift apart in size, weight or radius.
+struct ExtensionChipChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
             .font(.caption2.weight(.semibold).monospacedDigit())
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
             .background(
                 Capsule().fill(Color.secondary.opacity(0.15))
             )
-            .foregroundStyle(.secondary)
             .lineLimit(1)
+    }
+}
+
+/// The version chip that sits under a row's button.
+///
+/// With nothing to update to it is one plain version, drawn exactly as any
+/// other tag. With an update waiting it reads `installed -> offered`, and
+/// the two halves take the theme's own colours: the version on this machine
+/// in the theme's yellow, the one it could become in the theme's green.
+/// Both come from the palette rather than from `Color.orange` and
+/// `Color.green`, so a light theme colours them the way it colours
+/// everything else, and both fall back to the system colour when no theme
+/// is loaded.
+///
+/// The ask was orange, and the theme's yellow stands anyway. ANSI has no
+/// orange slot, so orange can only come from `Color.orange` — a system
+/// colour beside a theme green, which is the one pairing this chip cannot
+/// afford: the two halves are read against each other, and only one of them
+/// would follow the theme. `Color.orange` is still what a theme without a
+/// yellow gets, so the request holds wherever the palette is silent.
+struct ExtensionVersionTagView: View {
+    /// `tag`, an SF Symbol since 2019. A version of a published extension is
+    /// a git tag in the registry, so the mark is the thing itself rather
+    /// than a metaphor for it.
+    static let symbol = "tag"
+
+    let installed: String?
+    let offered: String
+
+    @ObservedObject private var palette: ThemePalette = .shared
+
+    var body: some View {
+        if let installed {
+            HStack(spacing: 3) {
+                Image(systemName: Self.symbol)
+                    .foregroundStyle(.secondary)
+                Text(verbatim: installed)
+                    .foregroundStyle(palette.yellow ?? .orange)
+                Text(verbatim: "\u{2192}")
+                    .foregroundStyle(.secondary)
+                Text(verbatim: offered)
+                    .foregroundStyle(palette.success ?? .green)
+            }
+            .modifier(ExtensionChipChrome())
+            .help(Text(verbatim: "Installed \(installed), \(offered) available"))
+        } else {
+            ExtensionTagView(text: offered, systemImage: Self.symbol)
+        }
     }
 }
 
@@ -431,6 +539,13 @@ struct ExtensionChipView: View {
     }
 }
 
+/// The label and mark for one entry of an extension's `contributes`.
+///
+/// A case for every kind `LanguageManifest` reads, and the fallthrough is
+/// there for a kind a later schema adds rather than for one this build knows
+/// about: a known kind reaching `default` shows its manifest spelling —
+/// `iconThemes`, `grammars` — beside a puzzle piece, which names nothing and
+/// tells the reader the app did not recognise its own extension.
 struct ExtensionContributionChip: Equatable {
     let title: String
     let systemImage: String
@@ -440,12 +555,18 @@ struct ExtensionContributionChip: Equatable {
         case "languages":
             return ExtensionContributionChip(
                 title: "Languages", systemImage: "chevron.left.forwardslash.chevron.right")
+        case "servers":
+            return ExtensionContributionChip(title: "Servers", systemImage: "server.rack")
         case "formatters":
             return ExtensionContributionChip(title: "Formatters", systemImage: "text.alignleft")
         case "themes":
             return ExtensionContributionChip(title: "Themes", systemImage: "paintpalette")
         case "iconThemes":
             return ExtensionContributionChip(title: "Icon Themes", systemImage: "photo.on.rectangle")
+        case "grammars":
+            return ExtensionContributionChip(title: "Grammars", systemImage: "textformat.abc")
+        case "agents":
+            return ExtensionContributionChip(title: "Agents", systemImage: "sparkles")
         default:
             return ExtensionContributionChip(title: kind, systemImage: "puzzlepiece")
         }

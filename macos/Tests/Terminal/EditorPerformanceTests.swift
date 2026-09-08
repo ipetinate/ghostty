@@ -101,21 +101,6 @@ struct MinimapPlainRowTests {
     }
 }
 
-/// Which files the highlighter recognises.
-struct SwiftInterfaceLanguageTests {
-    /// Where go-to-definition lands when the symbol lives in a framework.
-    /// Arriving as plain text made the whole file unhighlighted — and, via
-    /// the minimap, visibly broken.
-    @Test func aModuleInterfaceIsSwift() {
-        #expect(CodeLanguage.resolve(fileName: "AppIntents.swiftinterface") == .swift)
-        #expect(CodeLanguage.resolve(fileName: "Foundation.private.swiftinterface") == .swift)
-    }
-
-    @Test func ordinarySwiftIsUnaffected() {
-        #expect(CodeLanguage.resolve(fileName: "EditorPaneView.swift") == .swift)
-    }
-}
-
 /// Colouring a document that is too big to colour all at once.
 @MainActor
 struct LargeDocumentHighlightTests {

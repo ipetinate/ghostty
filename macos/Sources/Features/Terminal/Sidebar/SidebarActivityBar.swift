@@ -15,12 +15,34 @@ struct SidebarActivityBar: View {
                 chip(for: pane)
             }
             Spacer(minLength: 0)
+            settings
         }
         .padding(.horizontal, 6)
         .padding(.top, 8)
         .frame(width: SidebarActivityBarMetrics.totalWidth)
         .contentShape(Rectangle())
         .sidebarPaneSwitcherMenu()
+    }
+
+    /// Settings, at the far end of the bar.
+    ///
+    /// The tab bar at the top has the window's chrome beside it to reach
+    /// Settings from. This column has nothing, so the gesture the reader
+    /// expects has to live here, and the bottom is where every editor that
+    /// wears this shape puts it.
+    private var settings: some View {
+        Button {
+            _ = NSApp.sendAction(#selector(AppDelegate.openConfig(_:)), to: nil, from: nil)
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: SidebarActivityBarMetrics.iconSize - 2))
+                .foregroundStyle(Color.secondary)
+                .frame(width: SidebarActivityBarMetrics.width, height: SidebarActivityBarMetrics.height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Settings")
+        .padding(.bottom, 8)
     }
 
     private func chip(for pane: SidebarPane) -> some View {

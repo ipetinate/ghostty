@@ -334,4 +334,44 @@ struct WelcomeSetupPlanTests {
 
         #expect(summary.contains("Claude Code, Codex and OpenCode"))
     }
+
+    // MARK: The one switch
+
+    /// The case that was reported: an agent that is not on this machine but
+    /// carries hooks or an MCP entry drew the switch on and refused to move.
+    /// The card shows the install hint in place of the checkboxes for a
+    /// missing agent, so that switch is the only way to take the leftovers
+    /// out.
+    @Test func aConfiguredAgentCanBeSwitchedOffEvenWhenItIsNotInstalled() {
+        #expect(WelcomeSetupPlan.canChoose(hasProbed: true, isInstalled: false, isChosen: true))
+    }
+
+    /// Nothing to point hooks or an entry at until it is installed.
+    @Test func anAgentThatIsNotHereAndNotConfiguredCannotBeSwitchedOn() {
+        #expect(!WelcomeSetupPlan.canChoose(hasProbed: true, isInstalled: false, isChosen: false))
+    }
+
+    @Test func anInstalledAgentMovesEitherWay() {
+        #expect(WelcomeSetupPlan.canChoose(hasProbed: true, isInstalled: true, isChosen: false))
+        #expect(WelcomeSetupPlan.canChoose(hasProbed: true, isInstalled: true, isChosen: true))
+    }
+
+    /// While the probe is out, no switch moves: the answer it is about to
+    /// give is what decides which way this one may go.
+    @Test func nothingMovesBeforeTheProbeHasAnswered() {
+        #expect(!WelcomeSetupPlan.canChoose(hasProbed: false, isInstalled: true, isChosen: true))
+        #expect(!WelcomeSetupPlan.canChoose(hasProbed: false, isInstalled: false, isChosen: true))
+    }
+
+    /// Switching a configured agent off produces the removals, whether or not
+    /// the agent is on this machine — the plan reads state against selection
+    /// and never asks where the program is.
+    @Test func switchingOffAMissingAgentStillAsksForItsRemoval() {
+        let work = WelcomeSetupPlan.items(
+            selection: [.kimi: WelcomeSetupPlan.Selection()],
+            state: [.kimi: state(hooks: true, mcp: true, places: [.chrome])])
+
+        #expect(work.allSatisfy { $0.direction == .remove })
+        #expect(Set(work.map { $0.step }) == everything)
+    }
 }

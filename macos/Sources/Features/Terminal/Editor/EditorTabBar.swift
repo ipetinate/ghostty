@@ -142,10 +142,15 @@ struct EditorTabBar: View {
             // view with nothing to overflow does not scroll. The row is as
             // wide as its tabs; the background behind it fills the rest.
         }
-        // Visible while scrolling, not never: with enough tabs to fill the
-        // bar there was no way to reach the rest and nothing to say they were
-        // there. `.never` hid the only affordance the row had.
-        .scrollIndicators(.automatic)
+        // Never, because there is no indicator to show and asking for one
+        // costs the row its band. `InvisibleScrollers` leaves a scroller that
+        // draws nothing, so `.automatic` showed the reader nothing either —
+        // and it still had SwiftUI reserve the 17 points a legacy indicator
+        // takes, which made the viewport taller than the tabs. AppKit parked
+        // the row at the far end of that slack and the tabs sat clipped at the
+        // top of the bar, with an empty strip under them, until the selection
+        // changed.
+        .scrollIndicators(.never)
         // Taller than the tabs by exactly the strip the overlay scroller
         // needs. Two things come out of that gap: the scroller stops being
         // drawn over the tab labels and over the rule at the bottom of the
@@ -297,8 +302,31 @@ private struct EditorTabItem: View {
 
     private var accent: Color { palette.accent ?? .accentColor }
 
+    /// The name on the tab. A restored tab carries no title — the session
+    /// remembers paths — so an extension tab used to show the id its path is
+    /// built from, `phantom.tailwind`, rather than the extension's name.
+    private var label: String {
+        guard let extensionID else { return tab.name }
+        return tab.title ?? ExtensionStore.shared.displayName(forExtension: extensionID) ?? tab.name
+    }
+
+    /// The extension a `phantom-extension://` tab stands for, or nil for an
+    /// ordinary file.
+    private var extensionID: String? { ExtensionDocument.extensionID(fromPath: tab.path) }
+
+    /// An extension tab wears the extension's own icon, the same artwork the
+    /// store draws, and falls back to the puzzle mark until the image is
+    /// decoded. Read from the cache rather than awaited, because this is also
+    /// what the drag preview renders and an `ImageRenderer` runs no tasks.
     private var tabIcon: FileIcon {
-        tab.symbol.map { .symbol(name: $0, color: .secondary) } ?? icons.icon(forFile: tab.name)
+        if let extensionID {
+            if let source = ExtensionStore.shared.iconSource(forExtension: extensionID),
+               let image = ExtensionIconCache.shared.image(forKey: source.key) {
+                return .image(image)
+            }
+            return .symbol(name: ExtensionDocument.symbol, color: .secondary)
+        }
+        return tab.symbol.map { .symbol(name: $0, color: .secondary) } ?? icons.icon(forFile: tab.name)
     }
 
     var body: some View {
@@ -308,11 +336,15 @@ private struct EditorTabItem: View {
             /// AppKit view and takes every click under it, so laid over the
             /// whole tab it would swallow the one button in here.
             HStack(spacing: 5) {
-                FileIconView(icon: tabIcon, size: 13)
+                if let extensionID {
+                    ExtensionTabMark(extensionID: extensionID, size: 13)
+                } else {
+                    FileIconView(icon: tabIcon, size: 13)
+                }
 
                 pinMark
 
-                Text(tab.name)
+                Text(label)
                     .font(palette.font(size: 11, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
 
@@ -416,7 +448,7 @@ private struct EditorTabItem: View {
                 /// pin does not travel — which is exactly what it does.
                 pinMark
 
-                Text(tab.name)
+                Text(label)
                     .font(palette.font(size: 11, weight: .semibold))
                     .lineLimit(1)
 
@@ -518,92 +550,20 @@ private struct EditorTabItem: View {
     }
 }
 
-// MARK: - The scrollbar that used to run through the tabs
-
-/// A scroller that occupies its place and draws nothing.
+/// An extension's icon on its document tab, drawn from the store so the
+/// artwork appears as soon as the registry index or the installed copy can
+/// answer for it.
 ///
-/// The tab strip drew a horizontal bar through the middle of the row, and a
-/// tab strip is the one place a scroller has nothing to add: a strip with more
-/// tabs than fit already says so by clipping one at its edge, which is the
-/// affordance every editor with a scrolling tab strip relies on.
-///
-/// **A scroller that draws nothing, rather than `hasHorizontalScroller = false`.**
-/// Turning the scroller off does not only remove the indicator: an
-/// `NSScrollView` resolves `horizontalScrollElasticity` of `.automatic`
-/// against whether that axis has a scroller, so switching it off puts the
-/// strip's own scrolling at risk — and the strip has to keep scrolling by
-/// trackpad and by shift-wheel, which is how a tab past the right edge is
-/// reached at all.
-///
-/// **And why `OverlayScrollers()` is replaced here rather than deleted.** That
-/// call is what keeps a *legacy* scroller off the row: with "Show scroll bars:
-/// Always" in System Settings, AppKit gives every scroll view a legacy
-/// scroller, which is permanent and claims a column of layout for itself.
-/// Deleting the call brings that back — a wider bar than the one being
-/// removed, drawn clipped over the tab labels.
-///
-/// `.scrollIndicators(.hidden)` is not the answer either, for the reason
-/// `OverlayScrollers` already records: the modifier does not reach the
-/// scroller SwiftUI's own scroll view draws.
-final class InvisibleScroller: NSScroller {
-    override static func scrollerWidth(
-        for controlSize: NSControl.ControlSize,
-        scrollerStyle: NSScroller.Style
-    ) -> CGFloat {
-        0
-    }
+/// Its own view, and the only part of the tab that observes the store: a tab
+/// bar redrawing every row whenever an install finishes is a cost the other
+/// tabs have no reason to pay.
+private struct ExtensionTabMark: View {
+    let extensionID: String
+    var size: CGFloat = 13
 
-    /// Required of any `NSScroller` subclass used as an overlay scroller,
-    /// which is the style this installs.
-    override static var isCompatibleWithOverlayScrollers: Bool { true }
+    @ObservedObject private var store: ExtensionStore = .shared
 
-    override func drawKnob() {}
-
-    override func drawKnobSlot(in slotRect: NSRect, highlight: Bool) {}
-}
-
-/// Puts an ``InvisibleScroller`` on the enclosing scroll view, in place of the
-/// thin one `OverlayScrollers` installs.
-///
-/// Placed inside the scroll view's content with no size of its own, so it can
-/// find its way up to the scroll view and otherwise does nothing — the same
-/// shape, and for the same reason, as `OverlayScrollers`.
-private struct InvisibleScrollers: View {
     var body: some View {
-        Representable()
-            .frame(width: 0, height: 0)
-            .accessibilityHidden(true)
-    }
-
-    private struct Representable: NSViewRepresentable {
-        func makeNSView(context: Context) -> NSView { Finder() }
-
-        func updateNSView(_ nsView: NSView, context: Context) {
-            (nsView as? Finder)?.apply()
-        }
-    }
-
-    private final class Finder: NSView {
-        /// Applied on arrival in a window, which is the first moment there is
-        /// a scroll view above this to find.
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            apply()
-        }
-
-        /// Idempotent, because SwiftUI calls `updateNSView` on every pass and
-        /// replacing a scroller mid-fade throws away the one being drawn.
-        func apply() {
-            guard let scrollView = enclosingScrollView else { return }
-            guard !(scrollView.horizontalScroller is InvisibleScroller) else { return }
-
-            /// Overlay as well as invisible. The style is what stops AppKit
-            /// from parking a scroller in the layout forever for a reader
-            /// whose System Settings say to always show scroll bars.
-            scrollView.scrollerStyle = .overlay
-            scrollView.autohidesScrollers = true
-            scrollView.horizontalScroller = InvisibleScroller()
-            scrollView.verticalScroller = InvisibleScroller()
-        }
+        ExtensionIconView(source: store.iconSource(forExtension: extensionID), size: size)
     }
 }

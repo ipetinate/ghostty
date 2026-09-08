@@ -7,7 +7,7 @@ import SwiftUI
 /// through an entry that showed itself only when the search text matched
 /// one of four hardcoded words — a settings screen you had to already
 /// know about in order to find. It belongs with the rest of the editor's
-/// settings, and it leaves the Language Servers list about servers again.
+/// settings, and that list no longer exists to hide it.
 ///
 /// The three globals are `@AppStorage`, which is what makes them live: a
 /// change here lands in `UserDefaults` immediately, and every other reader
@@ -19,8 +19,8 @@ import SwiftUI
 struct CompletionSettingsSection: View {
     /// Read here rather than handed in. It used to be a parameter so that
     /// the two halves of the Language Servers screen could not disagree
-    /// about which extensions exist; there is no second half now, and the
-    /// resolver is the same singleton either way.
+    /// about which extensions exist; that screen is gone, and the resolver
+    /// is the same singleton either way.
     @ObservedObject private var languages = LanguageResolver.shared
 
     @AppStorage(CompletionSettingsStore.enabledKey) private var isEnabled = true
@@ -66,22 +66,17 @@ struct CompletionSettingsSection: View {
             DisclosureGroup(isExpanded: $showsLanguages) {
                 ForEach(rows) { row in
                     Toggle(isOn: binding(for: row.languageID)) {
-                        HStack(spacing: 6) {
-                            Text(verbatim: row.title)
-                            if row.isContributed {
-                                Text("Extension")
-                                    .font(.caption2.weight(.semibold))
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(
-                                        Capsule().fill(Color.secondary.opacity(0.15))
-                                    )
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Text(verbatim: row.title)
                     }
                     .toggleStyle(.switch)
                     .disabled(!isEnabled)
+                }
+
+                if rows.isEmpty {
+                    Text("No extension is installed, so there is no language to switch. The three settings above apply to every file.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if hasStoredPreferences {
@@ -167,36 +162,28 @@ struct CompletionSettingsSection: View {
 
     // MARK: The list
 
-    /// One row per language id, compiled-in and contributed together,
-    /// sorted by the name on screen.
+    /// One row per language id the installed extensions contribute, sorted
+    /// by the name on screen.
     ///
-    /// Deduplicated by language id, with the contributed one losing: a
-    /// contribution that claims a language this build already owns loads
-    /// shadowed and inert, so listing it twice would offer two switches for
-    /// one answer. The registry is consulted for the id and the extension
-    /// only for the ones it adds.
+    /// There is no compiled-in half any more: every language this app knows
+    /// how to complete for arrives in an extension, so the installed catalog
+    /// is the whole list. An empty one is a real answer — nothing installed,
+    /// nothing to switch — and says so rather than showing a blank group.
+    ///
+    /// Deduplicated by language id, the active contribution winning: two
+    /// extensions claiming one language resolve to one of them, and two
+    /// switches for one answer would be wrong whichever way they were set.
     private var rows: [LanguageCompletionRow] {
         var seen: Set<String> = []
-        var rows: [LanguageCompletionRow] = []
-
-        for server in LSPServerRegistry.all where seen.insert(server.languageID).inserted {
-            rows.append(LanguageCompletionRow(
-                languageID: server.languageID,
-                title: LanguageCompletionRow.title(forLanguageID: server.languageID),
-                isContributed: false
-            ))
-        }
-
-        for contributed in languages.catalog.contributed
-        where seen.insert(contributed.language.languageID).inserted {
-            rows.append(LanguageCompletionRow(
-                languageID: contributed.language.languageID,
-                title: contributed.language.displayName,
-                isContributed: true
-            ))
-        }
-
-        return rows.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        let contributed = languages.catalog.contributed
+        return (contributed.filter(\.isActive) + contributed.filter { !$0.isActive })
+            .filter { seen.insert($0.language.languageID).inserted }
+            .map {
+                LanguageCompletionRow(
+                    languageID: $0.language.languageID,
+                    title: $0.language.displayName)
+            }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 }
 
@@ -204,52 +191,6 @@ struct CompletionSettingsSection: View {
 private struct LanguageCompletionRow: Identifiable {
     let languageID: String
     let title: String
-    let isContributed: Bool
 
     var id: String { languageID }
-
-    /// A human name for a compiled-in LSP language id.
-    ///
-    /// `LSPServerDefinition.displayName` cannot answer this: it is the
-    /// *server's* name, and four ids share "TypeScript Language Server" —
-    /// a list of those would offer the same row four times with no way to
-    /// tell which `.tsx` was. Kept beside the list that needs it rather
-    /// than added to the registry, which is a table about servers; a
-    /// language with no server at all still belongs in this list one day,
-    /// and the registry would have nowhere to put it.
-    static func title(forLanguageID languageID: String) -> String {
-        let names = [
-            "typescript": "TypeScript",
-            "typescriptreact": "TypeScript JSX",
-            "javascript": "JavaScript",
-            "javascriptreact": "JavaScript JSX",
-            "vue": "Vue",
-            "swift": "Swift",
-            "kotlin": "Kotlin",
-            "python": "Python",
-            "rust": "Rust",
-            "go": "Go",
-            "zig": "Zig",
-            "json": "JSON",
-            "yaml": "YAML",
-            "toml": "TOML",
-            "shellscript": "Shell",
-            "html": "HTML",
-            "css": "CSS",
-            "scss": "SCSS",
-            "less": "Less",
-            "java": "Java",
-            "c": "C",
-            "cpp": "C++",
-            "terraform": "Terraform",
-            "php": "PHP",
-            "ruby": "Ruby",
-            "markdown": "Markdown",
-        ]
-        /// A server added to the registry without a name here is listed
-        /// under its id rather than dropped: a missing row is a language
-        /// that silently cannot be configured, which is worse than an ugly
-        /// one.
-        return names[languageID] ?? languageID.capitalized
-    }
 }

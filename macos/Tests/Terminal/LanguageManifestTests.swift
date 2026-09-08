@@ -45,7 +45,6 @@ struct LanguageManifestTests {
           "name": "Elixir",
           "extensions": ["ex", "exs"],
           "fileNames": ["mix.lock"],
-          "keywords": ["def", "defmodule", "do", "end"],
           "lineComment": "#",
           "blockComment": ["\"\"\"", "\"\"\""],
           "category": "script",
@@ -77,10 +76,9 @@ struct LanguageManifestTests {
         #expect(language.languageID == "elixir")
         #expect(language.fileExtensions == ["ex", "exs"])
         #expect(language.fileNames == ["mix.lock"])
-        #expect(language.keywords == ["def", "defmodule", "do", "end"])
         #expect(language.lineComment == "#")
         let tripleQuote = "\"\"\""
-        #expect(language.blockComment == LanguageSyntax.BlockComment(
+        #expect(language.blockComment == BlockComment(
             open: tripleQuote,
             close: tripleQuote
         ))
@@ -171,7 +169,6 @@ struct LanguageManifestTests {
             "languages": [{
               "languageId": "elixir",
               "extensions": ["ex"],
-              "keywords": ["def"],
               "server": { "command": "elixir-ls" }
             }]
           }
@@ -183,7 +180,6 @@ struct LanguageManifestTests {
 
         let language = try #require(manifest.languages.first)
         #expect(language.fileExtensions == ["ex"])
-        #expect(language.keywords == ["def"])
         #expect(language.server == nil)
         #expect(language.serverRejection == .ineligible(.needsNewerApp(declared: "2")))
     }
@@ -262,7 +258,6 @@ struct LanguageManifestTests {
               "languageId": "elixir",
               "name": "Elixir",
               "extensions": "ex,exs",
-              "keywords": ["def"],
               "server": { "command": "elixir-ls" }
             }]
           }
@@ -272,7 +267,6 @@ struct LanguageManifestTests {
         let language = try #require(manifest.languages.first)
         #expect(language.fileExtensions.isEmpty)
         #expect(language.displayName == "Elixir")
-        #expect(language.keywords == ["def"])
         #expect(language.server?.command == "elixir-ls")
     }
 
@@ -307,6 +301,85 @@ struct LanguageManifestTests {
         #expect(manifest.languages.first?.fileExtensions == ["ex", "exs"])
     }
 
+    // MARK: File name patterns
+
+    /// The dialect itself is `GlobPatternTests`' subject, against the table
+    /// the registry shares. What is checked here is the field: a bad element
+    /// costs that element, the survivors are canonical, and a pattern that
+    /// would reach outside the file it is deciding about never lands.
+    @Test func patternsAreCanonicalAndOneBadElementCostsThatElement() throws {
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{
+              "languageId": "dotenv",
+              "fileNamePatterns": [
+                ".ENV.*", 7, null, "  *.env  ", "../*.env", "*.[ab]", "{a,b", ".env.*", "*.{tf,hcl}"
+              ]
+            }]
+          }
+        }
+        """#))
+        #expect(manifest.languages.first?.filePatterns.map(\.source)
+            == [".env.*", "*.env", "*.{tf,hcl}"])
+    }
+
+    @Test func patternsAreCappedAndTheLanguageSurvivesTheCap() throws {
+        let patterns = (0..<(GlobPattern.maxPatternsPerLanguage + 10))
+            .map { #""p\#($0).*""# }
+            .joined(separator: ", ")
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{
+              "languageId": "dotenv",
+              "extensions": ["env"],
+              "fileNamePatterns": [\#(patterns)]
+            }]
+          }
+        }
+        """#))
+        let language = try #require(manifest.languages.first)
+        #expect(language.filePatterns.count == GlobPattern.maxPatternsPerLanguage)
+        #expect(language.fileExtensions == ["env"])
+    }
+
+    /// VS Code spells the key `filenamePatterns`; this format spells it the
+    /// way it spells `fileNames`. An author who copies the VS Code key gets
+    /// nothing here — which is why the registry refuses that spelling by name
+    /// rather than letting a published manifest claim files it never gets.
+    @Test func theVSCodeSpellingOfTheKeyIsNotRead() throws {
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{ "languageId": "dotenv", "filenamePatterns": [".env.*"] }]
+          }
+        }
+        """#))
+        #expect(manifest.languages.first?.filePatterns.isEmpty == true)
+    }
+
+    @Test func aPatternIsAClaimLikeAnyOtherClaim() throws {
+        let manifest = try #require(parse(#"""
+        {
+          "id": "acme.dotenv",
+          "contributes": {
+            "languages": [{
+              "languageId": "dotenv",
+              "extensions": ["env"],
+              "fileNames": ["dotenv"],
+              "fileNamePatterns": [".env.*"]
+            }]
+          }
+        }
+        """#))
+        #expect(manifest.languages.first?.claims
+            == ["lang:dotenv", "ext:env", "name:dotenv", "pattern:.env.*"])
+    }
+
     @Test func aLanguageWithNoUsableIDIsDroppedAndItsSiblingsSurvive() throws {
         let manifest = try #require(parse(#"""
         {
@@ -339,85 +412,6 @@ struct LanguageManifestTests {
         """#))
         #expect(manifest.languages.count == 1)
         #expect(manifest.languages.first?.fileExtensions == ["ex"])
-    }
-
-    // MARK: Keywords
-
-    /// Keywords are spliced into a regex alternation that runs on every
-    /// keystroke. Only identifier-shaped ones survive — and nothing useful
-    /// is lost, because the pattern is `\b(?:…)\b` and a word with no word
-    /// characters at its edges could never have matched inside those
-    /// boundaries anyway.
-    @Test func onlyIdentifierShapedKeywordsSurvive() throws {
-        let manifest = try #require(parse(#"""
-        {
-          "id": "acme.elixir",
-          "contributes": {
-            "languages": [{
-              "languageId": "elixir",
-              "keywords": [
-                "def", "end",
-                "a|b", ".*", "(", ")", "[a-z]", "a)|(b", "^", "$", "\\",
-                "(a+)+$", "->>", "with space", "", "9lives", "_ok", "Mixed1",
-                "café"
-              ]
-            }]
-          }
-        }
-        """#))
-
-        #expect(manifest.languages.first?.keywords == ["def", "end", "_ok", "Mixed1"])
-    }
-
-    /// The pattern built from a hostile list still has to compile — a
-    /// keyword list that broke the regex would silently turn highlighting
-    /// off for the whole language.
-    @Test func thePatternBuiltFromHostileKeywordsCompiles() throws {
-        let manifest = try #require(parse(#"""
-        {
-          "id": "acme.elixir",
-          "contributes": {
-            "languages": [{
-              "languageId": "elixir",
-              "keywords": ["def", "a|b", "(a+)+$", ".*"],
-              "lineComment": "#"
-            }]
-          }
-        }
-        """#))
-
-        let syntax = try #require(manifest.languages.first).syntax
-        let pattern = try #require(SyntaxHighlighter.pattern(for: syntax))
-        #expect(throws: Never.self) {
-            try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
-        }
-    }
-
-    /// Fifty thousand keywords is not a language; it is a regex somebody
-    /// else gets to size. Asserted on the field parser rather than on a
-    /// whole manifest because fifty thousand of them do not fit inside the
-    /// byte ceiling — which is the other half of the same defence.
-    @Test func fiftyThousandKeywordsAreCapped() {
-        let many = (0..<50_000).map { "kw\($0)" }
-        let parsed = LanguageContribution.keywords(from: many)
-
-        #expect(parsed.count == LanguageContribution.maxKeywords)
-        #expect(parsed.first == "kw0")
-    }
-
-    @Test func aKeywordListOverTheCapIsTruncatedEndToEnd() throws {
-        let many = (0..<(LanguageContribution.maxKeywords + 500))
-            .map { "\"kw\($0)\"" }
-            .joined(separator: ",")
-        let manifest = try #require(parse(#"""
-        {
-          "id": "acme.elixir",
-          "contributes": {
-            "languages": [{ "languageId": "elixir", "keywords": [\#(many)] }]
-          }
-        }
-        """#))
-        #expect(manifest.languages.first?.keywords.count == LanguageContribution.maxKeywords)
     }
 
     // MARK: Icons
@@ -498,7 +492,6 @@ struct LanguageManifestTests {
                 "languages": [{
                   "languageId": "elixir",
                   "extensions": ["ex"],
-                  "keywords": ["def"],
                   "server": { "command": "\#(escapedCommand)" }
                 }]
               }
@@ -510,7 +503,6 @@ struct LanguageManifestTests {
             #expect(language.serverRejection == .unsafeCommand(command), "\(command)")
 
             #expect(language.fileExtensions == ["ex"], "\(command)")
-            #expect(language.keywords == ["def"], "\(command)")
         }
     }
 
@@ -595,40 +587,6 @@ struct LanguageManifestTests {
         #expect(
             manifest.languages.first?.server?.initializationOptionsJSON
                 == #"{"a":{"deep":true},"b":1}"#
-        )
-    }
-
-    // MARK: Base language
-
-    /// A contribution is lexed like something. The extension it claims is
-    /// the strongest hint, then its comment markers, and `.plain` when
-    /// neither says anything — dull, never wrong.
-    /// An extension this build already knows wins over the comment markers,
-    /// and a single-file component — a container the highlighter splits into
-    /// other languages — is never a base a contribution can have.
-    @Test func theBaseLanguageComesFromTheStrongestHintAvailable() {
-        #expect(
-            LanguageContribution.base(fileExtensions: ["ex"], lineComment: "#", blockComment: nil)
-                == .python
-        )
-        #expect(
-            LanguageContribution.base(fileExtensions: ["ex"], lineComment: "//", blockComment: nil)
-                == .go
-        )
-        #expect(
-            LanguageContribution.base(fileExtensions: ["ex"], lineComment: nil, blockComment: nil)
-                == .plain
-        )
-        #expect(
-            LanguageContribution.base(fileExtensions: ["kt"], lineComment: "#", blockComment: nil)
-                == .kotlin
-        )
-        #expect(
-            LanguageContribution.base(
-                fileExtensions: ["svelte"],
-                lineComment: nil,
-                blockComment: nil
-            ) == .html
         )
     }
 

@@ -217,6 +217,10 @@ class AppDelegate: NSObject,
         // settings window is ever opened.
         _ = GuiConfigStore.shared
 
+        #if DEBUG
+        GrammarTokenDump.runIfRequested()
+        #endif
+
         // System settings overrides
         UserDefaults.ghostty.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.

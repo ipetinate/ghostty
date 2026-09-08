@@ -34,6 +34,68 @@ struct CodeTheme: Equatable {
     var currentLineNumber: NSColor
     var currentLineBackground: NSColor?
 
+    /// The band behind selected text, or nil for a theme that names none.
+    var selectionBackground: NSColor?
+
+    /// The colour selected glyphs take in the **terminal**, carried here so
+    /// one type answers for the theme's whole selection.
+    ///
+    /// The editor does not use it — see `selectedTextAttributes`.
+    var selectionForeground: NSColor?
+
+    /// What the text view paints the selection with while it has focus.
+    ///
+    /// **A background, and a foreground only when the theme asked for one.**
+    /// AppKit's default dictionary carries `NSColor.selectedTextColor`, which
+    /// measured `#ffffff` under this appearance and replaced every token
+    /// colour inside the selected range: selecting a line turned it
+    /// monochrome and dropping the selection brought its colours back. That
+    /// is right for a terminal, where selected text taking one colour is
+    /// what every terminal does, and wrong for a code editor, where the band
+    /// is drawn *behind* code that keeps its colours. This app is both, which
+    /// is why the terminal's behaviour reached the editor and read as
+    /// deliberate. Omitting `.foregroundColor` is the whole of the repair.
+    ///
+    /// The band comes from the theme's `selection-background` and falls back
+    /// to `NSColor.selectedTextBackgroundColor` — the `#476288` that was
+    /// measured — for a theme that declares none.
+    ///
+    /// **`selection-foreground` is deliberately not honoured here, and the
+    /// count is the reason.** All 606 themes installed on the machine this
+    /// was measured on declare it, 246 of them equal to their plain
+    /// foreground, because these files are terminal palettes from the
+    /// Ghostty and iTerm collections and in a terminal that key means "the
+    /// ink of a selected cell". Honouring it in the editor left the
+    /// selection monochrome on every one of them — in the theme's colour
+    /// rather than white, which is the same defect one shade quieter. The
+    /// only theme it appeared fixed under was the one that omits the key.
+    ///
+    /// The terminal still honours it, on the Zig side, where it means what
+    /// it was written to mean.
+    var selectedTextAttributes: [NSAttributedString.Key: Any] {
+        unemphasizedSelectedTextAttributes
+    }
+
+    /// What it paints the selection with while the window is not key.
+    ///
+    /// The band only, as with focus. AppKit substitutes
+    /// `NSColor.unemphasizedSelectedTextBackgroundColor` for the band in this
+    /// state and keeps whatever foreground it was handed: measured `#464646`
+    /// dark and `#dcdcdc` light. A theme picks its selected-text colour
+    /// against its *own* band, so on that grey the pairing is one nobody
+    /// chose. Of the 606 themes installed here, 206 fall under 3.0:1 that
+    /// way and 143 of those clear 4.5:1 on the band they declared.
+    /// Catppuccin Mocha is the extreme: `#1e1e2e` reads 12.95:1 on its own
+    /// `#f5e0dc` and 1.74:1 on the grey, which on screen is a selection with
+    /// no readable text in it at all.
+    ///
+    /// The tokens' own colours are legible there — Mocha's measure 4.48:1 to
+    /// 7.43:1 on `#464646` — so an unfocused selection is given the same
+    /// treatment as a theme that named no selected-text colour.
+    var unemphasizedSelectedTextAttributes: [NSAttributedString.Key: Any] {
+        [.backgroundColor: selectionBackground ?? .selectedTextBackgroundColor]
+    }
+
     func color(for kind: TokenKind) -> NSColor {
         tokens[kind] ?? foreground
     }
@@ -67,6 +129,23 @@ struct CodeTheme: Equatable {
     /// trade one fact for the other.
     var bracketMatchBackground: NSColor {
         foreground.withAlphaComponent(0.22)
+    }
+
+    /// The colour of the box drawn round a symbol a jump landed on.
+    ///
+    /// Borrowed from the palette rather than added to the theme, for the same
+    /// reason as `bracketColors`: a terminal theme has sixteen colours and no
+    /// notion of this one, so a new field would be a colour invented out of
+    /// nothing and wrong for half the themes somebody might pick.
+    ///
+    /// The number slot, which is yellow in every sixteen-colour scheme — the
+    /// colour every editor marks a search hit in, and the reason it is that
+    /// slot and not the blue one: **the selection is blue**, and telling the
+    /// mark apart from a selection is the whole point of drawing it. Full
+    /// strength here; how much of it the wash and the outline take is the
+    /// drawing's business.
+    var revealHighlight: NSColor {
+        color(for: .number)
     }
 
     /// A neutral theme, used before a host supplies one and by the tests.

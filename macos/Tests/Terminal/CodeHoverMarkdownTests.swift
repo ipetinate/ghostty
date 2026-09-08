@@ -140,7 +140,7 @@ struct CodeHoverMarkdownTests {
 
         #expect(signature == .code(
             "core::iter::traits::iterator\n\nfn map<B, F>(self, f: F) -> Map<Self, F>",
-            language: .rust
+            language: "rust"
         ))
         #expect(documentation == [.prose("Takes a closure.")], "\(documentation)")
     }
@@ -163,7 +163,7 @@ struct CodeHoverMarkdownTests {
 
         #expect(signature == nil)
         #expect(
-            documentation == [.prose("The current value."), .code("let a = 1", language: .swift)],
+            documentation == [.prose("The current value."), .code("let a = 1", language: "swift")],
             "\(documentation)"
         )
     }

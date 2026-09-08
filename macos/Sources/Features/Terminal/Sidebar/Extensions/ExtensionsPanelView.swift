@@ -8,7 +8,6 @@ struct ExtensionsPanelView: View {
     @State private var kind: ExtensionCatalogFilter.Kind = .all
     @State private var sort: ExtensionCatalogFilter.Sort = .name
     @State private var selectedID: String?
-    @State private var hasLoaded = false
 
     var body: some View {
         let sections = catalog
@@ -21,7 +20,7 @@ struct ExtensionsPanelView: View {
             searchRow
             registryContent(sections)
         }
-        .onAppear(perform: loadOnce)
+        .onAppear { Task { await store.loadIfNeeded() } }
     }
 
     private var catalog: ExtensionCatalogFilter.Sections {
@@ -33,20 +32,25 @@ struct ExtensionsPanelView: View {
             sort: sort)
     }
 
-    private func loadOnce() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        store.reloadInstalled()
-        Task { await store.refresh() }
-    }
-
     private var searchRow: some View {
         HStack(spacing: 2) {
             search
             sortMenu
+            refreshButton
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 12)
+    }
+
+    private var refreshButton: some View {
+        SidebarIconButton(help: "Reload the registry") {
+            Task { await store.reload() }
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .disabled(store.isRefreshing)
     }
 
     private var sortMenu: some View {
@@ -146,27 +150,44 @@ struct ExtensionsPanelView: View {
                 } else if sections.isEmpty {
                     message(emptyMessage)
                 } else if kind == .all {
-                    ForEach(ExtensionCatalogGrouping.groups(sections.entries)) { group in
-                        heading(group.title, systemImage: group.systemImage)
-                        ForEach(group.entries) { entry in
-                            row(for: entry)
-                        }
-                    }
+                    let split = ExtensionCatalogGrouping.partitioned(sections.entries)
+                    groups(split.leading)
+                    orphans(sections)
+                    groups(split.trailing)
                 } else {
                     ForEach(sections.entries) { entry in
                         row(for: entry)
                     }
-                }
-
-                if !sections.orphans.isEmpty {
-                    heading("Installed, not in the registry", systemImage: "questionmark.folder")
-                    ForEach(sections.orphans) { installed in
-                        row(for: installed)
-                    }
+                    orphans(sections)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
+            /// The list is chrome, so it gets the thin overlay knob the file
+            /// tree and the tab strips wear, rather than the full-width
+            /// legacy scroller macOS hands out when scroll bars are set to
+            /// always show.
+            .background(alignment: .topTrailing) { OverlayScrollers() }
+        }
+    }
+
+    @ViewBuilder
+    private func groups(_ list: [ExtensionCatalogGrouping.Group]) -> some View {
+        ForEach(list) { group in
+            heading(group.title, systemImage: group.systemImage)
+            ForEach(group.entries) { entry in
+                row(for: entry)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func orphans(_ sections: ExtensionCatalogFilter.Sections) -> some View {
+        if !sections.orphans.isEmpty {
+            heading("Installed, not in the registry", systemImage: "questionmark.folder")
+            ForEach(sections.orphans) { installed in
+                row(for: installed)
+            }
         }
     }
 
@@ -216,16 +237,23 @@ struct ExtensionsPanelView: View {
         .contextMenu { openInSettings(id: installed.id) }
     }
 
+    /// Offered only once the extension is installed, which is the same rule
+    /// the store card and the Extensions pane apply. Nothing is configured
+    /// about an extension that is not on this machine, so the item led to a
+    /// list rather than to settings.
+    @ViewBuilder
     private func openInSettings(id: String) -> some View {
-        Button("Open in Settings") {
-            ExtensionDocumentTabs.openInSettings(id: id)
+        if store.installed.contains(where: { $0.id == id }) {
+            Button {
+                ExtensionDocumentTabs.openInSettings(id: id)
+            } label: {
+                Label("Open in Settings", systemImage: "gearshape")
+            }
         }
     }
 
     private var emptyMessage: String {
-        kind == .all
-            ? "No extension matches."
-            : "No extension matches in " + kind.title + "."
+        ExtensionCatalogFilter.emptyMessage(kind: kind, query: searchText)
     }
 
     private func message(_ text: String) -> some View {

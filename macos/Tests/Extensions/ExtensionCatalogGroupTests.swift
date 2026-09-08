@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 @testable import Ghostty
 import Testing
@@ -39,14 +40,23 @@ struct ExtensionCatalogGroupTests {
         #expect(ExtensionCatalogGrouping.group(for: lua) == .language(.script))
     }
 
-    @Test func anOlderIndexIsClassifiedFromTheLanguageItNames() {
+    /// An index built before `categories` existed declares none, and none is
+    /// the whole answer: the compiled-in table that could once have said
+    /// "rust is compiled" left with the server registry, so the entry files
+    /// under Languages instead of being guessed at.
+    @Test func anOlderIndexIsNotGuessedAtFromTheLanguageItNames() {
         let rust = Self.entry("phantom.rust", contributes: ["languages"], languages: ["rust"])
-        #expect(ExtensionCatalogGrouping.group(for: rust) == .language(.compiled))
+        #expect(ExtensionCatalogGrouping.group(for: rust) == .languages)
     }
 
     @Test func aLanguageNobodyKnowsStillLandsUnderLanguages() {
         let mystery = Self.entry("phantom.mystery", contributes: ["languages"], languages: ["mystery"])
         #expect(ExtensionCatalogGrouping.group(for: mystery) == .languages)
+    }
+
+    @Test func aGrammarPackHasAHeadingRatherThanFallingUnderOther() {
+        let grammar = Self.entry("phantom.tsx-grammar", contributes: ["grammars"])
+        #expect(ExtensionCatalogGrouping.group(for: grammar) == .grammars)
     }
 
     @Test(arguments: [
@@ -75,9 +85,70 @@ struct ExtensionCatalogGroupTests {
         #expect(groups[0].entries.map(\.id) == ["phantom.go", "phantom.zig"])
     }
 
+    @Test func themesWaitAtTheEndOfTheListing() {
+        let split = ExtensionCatalogGrouping.partitioned([
+            Self.entry("phantom.dracula", contributes: ["themes"]),
+            Self.entry("phantom.symbols", contributes: ["iconThemes"]),
+            Self.entry("phantom.go", contributes: ["languages"], categories: ["compiled"]),
+        ])
+
+        #expect(split.leading.map(\.title) == ["Compiled", "Icon Packs"])
+        #expect(split.trailing.map(\.title) == ["Themes"])
+    }
+
     @Test func everyHeadingHasItsOwnIdentity() {
         let ids = ExtensionCatalogGrouping.order.map(\.id)
         #expect(Set(ids).count == ids.count)
         #expect(ExtensionCatalogGroup.iconThemes.title == "Icon Packs")
+    }
+}
+
+/// The chip beside a row, for every kind a manifest may contribute.
+///
+/// Two failures live here and neither one reports itself. A kind with no
+/// case of its own shows its manifest spelling — `iconThemes`, `grammars` —
+/// where a label belongs, and a symbol name that does not resolve draws an
+/// 18-point hole that can take the whole row with it.
+///
+/// The list is written out rather than read from the parser, deliberately:
+/// `LanguageManifest.knownContributesKeys` is the other copy, and a kind
+/// added there without a chip is exactly what this is here to catch.
+@MainActor
+struct ExtensionContributionChipTests {
+    static let kinds = [
+        "languages", "servers", "formatters", "themes", "iconThemes", "grammars", "agents",
+    ]
+
+    @Test func everyKindHasALabelOfItsOwn() {
+        for kind in Self.kinds {
+            #expect(
+                ExtensionContributionChip.of(kind).title != kind,
+                "\(kind) falls through to the raw manifest spelling")
+        }
+    }
+
+    @Test func everyKindDrawsItsSymbol() {
+        for kind in Self.kinds + ["somethingLater"] {
+            let symbol = ExtensionContributionChip.of(kind).systemImage
+            #expect(
+                NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil,
+                "\(kind) names \(symbol), which is not an SF Symbol")
+        }
+    }
+
+    @Test func everyHeadingDrawsItsSymbol() {
+        for group in ExtensionCatalogGrouping.order {
+            #expect(
+                NSImage(systemSymbolName: group.systemImage, accessibilityDescription: nil) != nil,
+                "\(group.id) names \(group.systemImage), which is not an SF Symbol")
+        }
+    }
+
+    @Test func everyTabDrawsItsSymbol() {
+        for kind in ExtensionCatalogFilter.Kind.allCases {
+            #expect(
+                NSImage(systemSymbolName: kind.systemImage, accessibilityDescription: nil) != nil,
+                "\(kind.rawValue) names \(kind.systemImage), which is not an SF Symbol")
+        }
     }
 }

@@ -360,6 +360,19 @@ struct CompletionSettingsStoreTests {
 
     // MARK: The keying decision
 
+    /// Two language ids served by one binary, which is the shape the whole
+    /// keying argument rests on. An extension contributes them; nothing in
+    /// the binary does.
+    private static func definition(languageID: String) -> LSPServerDefinition {
+        LSPServerDefinition(
+            languageID: languageID,
+            displayName: "TypeScript",
+            command: "typescript-language-server",
+            arguments: ["--stdio"],
+            installHint: "npm i -g typescript-language-server"
+        )
+    }
+
     /// The reason the two stores are keyed differently, as a test rather
     /// than only as a comment on each of them.
     ///
@@ -371,8 +384,8 @@ struct CompletionSettingsStoreTests {
     /// which is the bug this asserts cannot happen.
     @Test func completionIsKeyedByLanguageWhileAnOverrideIsKeyedByBinary() {
         withCleanDefaults {
-            let typescript = LSPServerRegistry.server(forLanguage: "typescriptreact")!
-            let javascript = LSPServerRegistry.server(forLanguage: "javascript")!
+            let typescript = Self.definition(languageID: "typescriptreact")
+            let javascript = Self.definition(languageID: "javascript")
             #expect(typescript.command == javascript.command)
 
             CompletionSettingsStore.setEnabled(false, forLanguage: typescript.languageID)

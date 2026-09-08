@@ -1,0 +1,563 @@
+{
+  "note": [
+    "The shared conformance table for the Phantom glob dialect.",
+    "Two byte-identical copies exist, and neither repository can read the other's:",
+    "  phantom/macos/Tests/Terminal/Fixtures/glob-pattern-cases.json",
+    "  phantom-extensions/packages/registry/test/glob-pattern-cases.json",
+    "Both test suites hash this file and compare the digest against a constant they",
+    "declare, so editing one copy fails that repository's tests until the digest is",
+    "updated - which is the moment to copy the file across and update the other one.",
+    "",
+    "'accepted', 'rejected' and 'matches' are the contract of a manifest's",
+    "contributes.languages[].fileNamePatterns: canonical, name-only, no separator.",
+    "'paths' is the contract of the dialect itself, which a caller matching a whole",
+    "path uses - '.editorconfig' section headers are the one this was written for."
+  ],
+  "limits": {
+    "maxSourceLength": 64,
+    "maxBranches": 16,
+    "maxPatternsPerLanguage": 32,
+    "maxCandidateLength": 255
+  },
+  "accepted": [
+    {
+      "pattern": ".env.*",
+      "canonical": ".env.*",
+      "branches": 1
+    },
+    {
+      "pattern": ".env*",
+      "canonical": ".env*",
+      "branches": 1,
+      "why": "the form .gitignore files declare"
+    },
+    {
+      "pattern": ".env.*.local",
+      "canonical": ".env.*.local",
+      "branches": 1,
+      "why": "two suffixes, so a star crosses a dot"
+    },
+    {
+      "pattern": "*.env",
+      "canonical": "*.env",
+      "branches": 1
+    },
+    {
+      "pattern": "*",
+      "canonical": "*",
+      "branches": 1
+    },
+    {
+      "pattern": "?",
+      "canonical": "?",
+      "branches": 1
+    },
+    {
+      "pattern": "**.kt",
+      "canonical": "**.kt",
+      "branches": 1,
+      "why": "in a name there is no separator to cross"
+    },
+    {
+      "pattern": ".env.{prod,dev1,staging}",
+      "canonical": ".env.{prod,dev1,staging}",
+      "branches": 3
+    },
+    {
+      "pattern": "*.{tf,tfvars,hcl}",
+      "canonical": "*.{tf,tfvars,hcl}",
+      "branches": 3,
+      "why": "an .editorconfig header, verbatim"
+    },
+    {
+      "pattern": "{*test.kt,*tests.kt,*spec.kt}",
+      "canonical": "{*test.kt,*tests.kt,*spec.kt}",
+      "branches": 3,
+      "why": "a brace list of patterns"
+    },
+    {
+      "pattern": "a{b,c}d",
+      "canonical": "a{b,c}d",
+      "branches": 2
+    },
+    {
+      "pattern": "{a}.env",
+      "canonical": "{a}.env",
+      "branches": 1,
+      "why": "a list of one is the alternative itself"
+    },
+    {
+      "pattern": "a,b.env",
+      "canonical": "a,b.env",
+      "branches": 1,
+      "why": "a comma outside a list is a literal"
+    },
+    {
+      "pattern": "{a,b}{c,d}{e,f}{g,h}",
+      "canonical": "{a,b}{c,d}{e,f}{g,h}",
+      "branches": 16,
+      "why": "exactly maxBranches"
+    },
+    {
+      "pattern": ".env.local",
+      "canonical": ".env.local",
+      "branches": 1,
+      "why": "a wildcard is not required, only pointless"
+    },
+    {
+      "pattern": "  .ENV.{PROD,DEV1}  ",
+      "canonical": ".env.{prod,dev1}",
+      "branches": 2,
+      "why": "trimmed of spaces and tabs, then lower-cased"
+    },
+    {
+      "pattern": "\t*.ENV\t",
+      "canonical": "*.env",
+      "branches": 1
+    },
+    {
+      "pattern": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*",
+      "canonical": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*",
+      "branches": 1,
+      "why": "exactly maxSourceLength scalars"
+    },
+    {
+      "pattern": "caf?.txt",
+      "canonical": "caf?.txt",
+      "branches": 1,
+      "why": "non-ASCII names are matched scalar by scalar"
+    }
+  ],
+  "rejected": [
+    {
+      "pattern": "",
+      "why": "empty"
+    },
+    {
+      "pattern": "   ",
+      "why": "empty once trimmed"
+    },
+    {
+      "pattern": ".",
+      "why": "the current directory is not a file name"
+    },
+    {
+      "pattern": "..",
+      "why": "the parent directory is not a file name"
+    },
+    {
+      "pattern": ".env/*",
+      "why": "a language's pattern sees a name, never a path"
+    },
+    {
+      "pattern": "src\\*.env",
+      "why": "a Windows-shaped path should not be writable either"
+    },
+    {
+      "pattern": "[abc].txt",
+      "why": "character classes are not in the dialect"
+    },
+    {
+      "pattern": "[0-9].env",
+      "why": "and neither are ranges"
+    },
+    {
+      "pattern": "{a,b",
+      "why": "an unclosed list"
+    },
+    {
+      "pattern": "a}b",
+      "why": "a close with no open"
+    },
+    {
+      "pattern": "{}",
+      "why": "a list with no alternatives"
+    },
+    {
+      "pattern": "{a,}",
+      "why": "an empty alternative; write the pattern without the list"
+    },
+    {
+      "pattern": "{,a}",
+      "why": "the same, at the front"
+    },
+    {
+      "pattern": "{a,{b,c}}",
+      "why": "lists do not nest; write a second pattern"
+    },
+    {
+      "pattern": "{a,b}{c,d}{e,f}{g,h}{i,j}",
+      "why": "32 branches, past maxBranches"
+    },
+    {
+      "pattern": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*",
+      "why": "longer than maxSourceLength scalars"
+    },
+    {
+      "pattern": ".env.‮lacol",
+      "why": "a bidirectional override decides what the row appears to say"
+    },
+    {
+      "pattern": ".env.\nlocal",
+      "why": "a newline is a control scalar"
+    },
+    {
+      "pattern": ".env.​local",
+      "why": "a zero-width space is invisible padding"
+    }
+  ],
+  "matches": [
+    {
+      "pattern": ".env.*",
+      "name": ".env.local",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.production",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.staging-eu",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.dev1.local",
+      "matches": true,
+      "why": "a star crosses dots"
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env.",
+      "matches": true,
+      "why": "a star matches an empty run"
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".env",
+      "matches": false,
+      "why": "the literal trailing dot is not there"
+    },
+    {
+      "pattern": ".env.*",
+      "name": ".envrc",
+      "matches": false
+    },
+    {
+      "pattern": ".env.*",
+      "name": "app.env.local",
+      "matches": false,
+      "why": "the whole name has to match"
+    },
+    {
+      "pattern": ".env*",
+      "name": ".env",
+      "matches": true
+    },
+    {
+      "pattern": ".env*",
+      "name": ".env.prod",
+      "matches": true
+    },
+    {
+      "pattern": ".env*",
+      "name": ".envrc",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*.local",
+      "name": ".env.dev1.local",
+      "matches": true
+    },
+    {
+      "pattern": ".env.*.local",
+      "name": ".env..local",
+      "matches": true,
+      "why": "the star may match nothing"
+    },
+    {
+      "pattern": ".env.*.local",
+      "name": ".env.local",
+      "matches": false,
+      "why": "the second literal dot is missing"
+    },
+    {
+      "pattern": ".env.*.local",
+      "name": ".env.dev1.local.bak",
+      "matches": false
+    },
+    {
+      "pattern": "*.env",
+      "name": ".dev.env",
+      "matches": true
+    },
+    {
+      "pattern": "*.env",
+      "name": ".env",
+      "matches": true
+    },
+    {
+      "pattern": "*.env",
+      "name": "env",
+      "matches": false
+    },
+    {
+      "pattern": "*",
+      "name": "anything.txt",
+      "matches": true
+    },
+    {
+      "pattern": "*",
+      "name": "",
+      "matches": true,
+      "why": "a star matches an empty run"
+    },
+    {
+      "pattern": "?.txt",
+      "name": "a.txt",
+      "matches": true
+    },
+    {
+      "pattern": "?.txt",
+      "name": "ab.txt",
+      "matches": false
+    },
+    {
+      "pattern": "?.txt",
+      "name": ".txt",
+      "matches": false,
+      "why": "a question mark is exactly one scalar"
+    },
+    {
+      "pattern": "a.b",
+      "name": "a.b",
+      "matches": true
+    },
+    {
+      "pattern": "a.b",
+      "name": "axb",
+      "matches": false,
+      "why": "a dot is a literal"
+    },
+    {
+      "pattern": "*.*.env",
+      "name": "a.b.env",
+      "matches": true
+    },
+    {
+      "pattern": "*.*.env",
+      "name": "a.env",
+      "matches": false
+    },
+    {
+      "pattern": "*a*b*",
+      "name": "xxaxxbxx",
+      "matches": true
+    },
+    {
+      "pattern": "*a*b*",
+      "name": "xxbxxaxx",
+      "matches": false
+    },
+    {
+      "pattern": "**.kt",
+      "name": "user.kt",
+      "matches": true
+    },
+    {
+      "pattern": ".env.{prod,dev1,staging}",
+      "name": ".env.dev1",
+      "matches": true
+    },
+    {
+      "pattern": ".env.{prod,dev1,staging}",
+      "name": ".env.prod",
+      "matches": true
+    },
+    {
+      "pattern": ".env.{prod,dev1,staging}",
+      "name": ".env.test",
+      "matches": false
+    },
+    {
+      "pattern": "*.{tf,tfvars,hcl}",
+      "name": "main.tf",
+      "matches": true
+    },
+    {
+      "pattern": "*.{tf,tfvars,hcl}",
+      "name": "terraform.tfvars",
+      "matches": true
+    },
+    {
+      "pattern": "*.{tf,tfvars,hcl}",
+      "name": "main.tfstate",
+      "matches": false
+    },
+    {
+      "pattern": "{*test.kt,*tests.kt,*spec.kt}",
+      "name": "usertest.kt",
+      "matches": true
+    },
+    {
+      "pattern": "{*test.kt,*tests.kt,*spec.kt}",
+      "name": "userspec.kt",
+      "matches": true
+    },
+    {
+      "pattern": "{*test.kt,*tests.kt,*spec.kt}",
+      "name": "user.kt",
+      "matches": false
+    },
+    {
+      "pattern": "a{b,c}d",
+      "name": "abd",
+      "matches": true
+    },
+    {
+      "pattern": "a{b,c}d",
+      "name": "acd",
+      "matches": true
+    },
+    {
+      "pattern": "a{b,c}d",
+      "name": "ad",
+      "matches": false,
+      "why": "a list matches one alternative, never none"
+    },
+    {
+      "pattern": "a,b.env",
+      "name": "a,b.env",
+      "matches": true
+    },
+    {
+      "pattern": "caf?.txt",
+      "name": "café.txt",
+      "matches": true,
+      "why": "one precomposed scalar"
+    },
+    {
+      "pattern": "*a*a*a*a*a*a*a*a*a*a*b",
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "matches": false,
+      "why": "the input that hangs a backtracking matcher; this one has to answer"
+    },
+    {
+      "pattern": "{*a*a*a*a*a*a*a*a*a*a*b,*a*a*a*a*a*a*a*a*a*a*c}",
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "matches": false,
+      "why": "the same, once per branch, which is where a list multiplies the damage"
+    },
+    {
+      "pattern": "*",
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "matches": false,
+      "why": "longer than maxCandidateLength, so the matcher refuses to pay for it"
+    }
+  ],
+  "paths": [
+    {
+      "pattern": "sales-portal-bff/**.kt",
+      "path": "sales-portal-bff/src/main/kotlin/App.kt",
+      "matches": true,
+      "why": "an .editorconfig header, verbatim"
+    },
+    {
+      "pattern": "sales-portal-bff/**.kt",
+      "path": "sales-portal-bff/App.kt",
+      "matches": true
+    },
+    {
+      "pattern": "sales-portal-bff/**.kt",
+      "path": "other/src/App.kt",
+      "matches": false
+    },
+    {
+      "pattern": "bash-preexec.sh",
+      "path": "bash-preexec.sh",
+      "matches": true,
+      "why": "a header with no wildcard at all"
+    },
+    {
+      "pattern": "*",
+      "path": "a",
+      "matches": true
+    },
+    {
+      "pattern": "*",
+      "path": "a/b",
+      "matches": false,
+      "why": "a single star never crosses a separator"
+    },
+    {
+      "pattern": "**",
+      "path": "a/b",
+      "matches": true
+    },
+    {
+      "pattern": "*/*",
+      "path": "a/b",
+      "matches": true
+    },
+    {
+      "pattern": "*/*",
+      "path": "a/b/c",
+      "matches": false
+    },
+    {
+      "pattern": "**/*",
+      "path": "a/b/c",
+      "matches": true
+    },
+    {
+      "pattern": "**/*x",
+      "path": "a/b/cx",
+      "matches": true,
+      "why": "the case a single-backtrack matcher answers wrongly"
+    },
+    {
+      "pattern": "*/*x",
+      "path": "a/b/cx",
+      "matches": false
+    },
+    {
+      "pattern": "?",
+      "path": "/",
+      "matches": false,
+      "why": "a question mark will not take a separator either"
+    },
+    {
+      "pattern": "a?c",
+      "path": "a/c",
+      "matches": false
+    },
+    {
+      "pattern": "src/**/*.ts",
+      "path": "src/a/b/c.ts",
+      "matches": true
+    },
+    {
+      "pattern": "src/**/*.ts",
+      "path": "src/c.ts",
+      "matches": false,
+      "why": "the literal separators are both required; this is glob, not intuition"
+    },
+    {
+      "pattern": "src/**.ts",
+      "path": "src/c.ts",
+      "matches": true
+    },
+    {
+      "pattern": "*.{ts,tsx}",
+      "path": "a.tsx",
+      "matches": true
+    },
+    {
+      "pattern": "*.{ts,tsx}",
+      "path": "src/a.tsx",
+      "matches": false
+    }
+  ]
+}

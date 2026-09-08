@@ -51,12 +51,12 @@ struct WelcomeBasicsStep: View {
         Row(
             symbol: "curlybraces",
             title: "An editor with language servers",
-            detail: "Hover, completion, go to definition, rename, diagnostics — on a click.",
-            section: .languageServers),
+            detail: "Hover, completion, go to definition, rename, diagnostics — install a language from the store.",
+            section: .extensions),
         Row(
             symbol: "text.alignleft",
             title: "Formatters",
-            detail: "The project's own Prettier, its language server, or the language's tool.",
+            detail: "The tool the project declares, its language server, or the language's own.",
             section: .files),
         Row(
             symbol: "paintpalette",

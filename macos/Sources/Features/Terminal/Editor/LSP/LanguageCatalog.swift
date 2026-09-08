@@ -13,14 +13,17 @@ import Foundation
 ///
 /// 1. a promoted contribution from the user's directory
 /// 2. a promoted contribution from the bundle
-/// 3. **the compiled-in registry**
-/// 4. a contribution from the user's directory
-/// 5. a contribution from the bundle
+/// 3. a contribution from the user's directory
+/// 4. a contribution from the bundle
 ///
-/// The registry sitting third is the invariant the whole design turns on:
-/// copying a file into a directory must never change a language the user
-/// already had. Promotion moves a contribution above it, and promotion is a
-/// click in Settings — never something the file can ask for.
+/// There used to be a fifth rank between the promoted pair and the rest —
+/// the compiled-in table of servers — and the invariant it stood for was
+/// that copying a file into a directory must never change a language the
+/// user already had. The table is gone: after 0.17.0 a language server
+/// exists only because an installed extension declared it, so there is
+/// nothing compiled in for a contribution to yield to. Promotion survives,
+/// and it is what settles two extensions claiming the same file — a click
+/// in Settings, never something a file can ask for.
 ///
 /// Ties inside a rank are broken by **directory name, lexicographically**,
 /// and the loser stays in the catalog marked conflicted. Which one wins
@@ -72,8 +75,61 @@ struct LanguageCatalog: Equatable {
                 command: server.command,
                 arguments: server.arguments,
                 installHint: server.installHint,
-                origin: .manifest(provenance)
+                initializationOptionsKind: server.resolver,
+                initializationOptionsJSON: server.initializationOptionsJSON,
+                origin: .manifest(provenance),
+                category: language.category,
+                documentationURL: server.documentationURL,
+                maximumJavaFeatureVersion: server.maximumJavaFeatureVersion
             )
+        }
+    }
+
+    /// One contributed companion server, and where it landed.
+    ///
+    /// Separate from `Contributed` because a companion is not a language: it
+    /// claims no file type and owns no `languageId`, it only offers itself
+    /// beside whoever does. Shadowing is by **command**, so two extensions
+    /// shipping the same binary produce one running process and a row saying
+    /// which of them lost.
+    struct ContributedServer: Equatable, Identifiable {
+        let provenance: ExtensionProvenance
+        let listIdentity: String
+        let extensionName: String
+        let extensionVersion: String
+        let publisher: String
+        let server: CompanionServerContribution
+        let resolution: Resolution
+        let manifestURL: URL
+
+        var id: String { listIdentity + "#server:" + server.command }
+
+        var isActive: Bool { resolution == .active }
+
+        /// Whether this file's project shows the server is wanted, by the
+        /// same walk a formatter uses to ask whether a project adopted it: a
+        /// marker anywhere between the file and the enclosing repository.
+        /// Rules that declare nothing attach it to every file.
+        func attaches(toFile path: String, fileManager: FileManager = .default) -> Bool {
+            FormatterProject.discover(
+                forFile: path,
+                rules: server.projectRules,
+                fileManager: fileManager
+            ).adoption != .unadopted
+        }
+
+        /// The launchable definition for one of the language ids this server
+        /// was declared for, or nil when it is not in force or does not
+        /// claim that id.
+        func serverDefinition(forLanguage languageID: String) -> LSPServerDefinition? {
+            guard isActive else { return nil }
+            return server.definition(forLanguage: languageID, provenance: provenance)
+        }
+
+        /// Every definition this contribution can produce, for a screen that
+        /// lists what could be installed rather than what a file gets.
+        var serverDefinitions: [LSPServerDefinition] {
+            server.languageIDs.compactMap(serverDefinition(forLanguage:))
         }
     }
 
@@ -102,7 +158,8 @@ struct LanguageCatalog: Equatable {
                 extensions: Set(formatter.fileExtensions),
                 installHint: formatter.installHint,
                 note: nil,
-                provenance: provenance
+                provenance: provenance,
+                projectRules: formatter.projectRules
             )
         }
     }
@@ -121,6 +178,14 @@ struct LanguageCatalog: Equatable {
         let iconTheme: IconThemeContribution
 
         var id: String { listIdentity + "#iconTheme:" + iconTheme.name }
+    }
+
+    struct ContributedGrammar: Equatable, Sendable, Identifiable {
+        let listIdentity: String
+        let extensionName: String
+        let grammar: GrammarContribution
+
+        var id: String { listIdentity + "#grammar:" + grammar.scopeName }
     }
 
     struct ContributedAgent: Equatable, Sendable, Identifiable {
@@ -143,8 +208,10 @@ struct LanguageCatalog: Equatable {
     }
 
     enum Shadow: Equatable, Sendable {
-        /// The compiled-in registry, or the highlighter's own language
-        /// table — either is "a language the user already had".
+        /// Something this build carries itself. No language is any more —
+        /// every one of them arrives in an extension — so what is left to
+        /// shadow a contribution is the agent registry, whose ids an
+        /// extension may not take over.
         case builtIn
 
         /// Another extension, named so Settings can say which.
@@ -153,17 +220,21 @@ struct LanguageCatalog: Equatable {
 
     let entries: [Entry]
     let contributed: [Contributed]
+    let servers: [ContributedServer]
     let formatters: [ContributedFormatter]
     let themes: [ContributedTheme]
     let iconThemes: [ContributedIconTheme]
+    let grammars: [ContributedGrammar]
     let agents: [ContributedAgent]
 
     static let empty = LanguageCatalog(
         entries: [],
         contributed: [],
+        servers: [],
         formatters: [],
         themes: [],
         iconThemes: [],
+        grammars: [],
         agents: []
     )
 
@@ -180,16 +251,31 @@ struct LanguageCatalog: Equatable {
     /// The contribution in force for a file, or nil when this build's own
     /// tables own it.
     ///
-    /// Matched the way `LSPServerRegistry.languageID(forPath:)` matches:
-    /// **a whole file name beats an extension**, because a name is the more
-    /// specific statement — `go.mod` is Go, and `.mod` is a Fortran module
-    /// as often as it is anything else.
+    /// **A whole file name beats a pattern, and a pattern beats an
+    /// extension**, in order of how much each one commits to. A name names
+    /// one file and nothing else — `go.mod` is Go, and `.mod` is a Fortran
+    /// module as often as it is anything else. A pattern names a shape, so
+    /// `.env.*` should lose to a manifest that went to the trouble of
+    /// listing `.env.local` and win over one that only said `local`. An
+    /// extension is the weakest statement of the three: it claims a suffix
+    /// every language that ever used it shares.
+    ///
+    /// Each stage searches `contributed` in its own rank order, so a
+    /// promotion moves a contribution ahead of its rivals *within* a stage
+    /// and never across one: promoting an extension whose claim is a pattern
+    /// does not take a file off an extension that named it outright.
     func contribution(forFileName fileName: String) -> Contributed? {
         let lowered = fileName.lowercased()
         if let byName = contributed.first(where: {
             $0.isActive && $0.language.fileNames.contains(lowered)
         }) {
             return byName
+        }
+
+        if let byPattern = contributed.first(where: { candidate in
+            candidate.isActive && candidate.language.filePatterns.contains { $0.matches(lowered) }
+        }) {
+            return byPattern
         }
 
         let ext = (lowered as NSString).pathExtension
@@ -202,6 +288,20 @@ struct LanguageCatalog: Equatable {
     func contribution(forLanguageID languageID: String) -> Contributed? {
         let lowered = languageID.lowercased()
         return contributed.first { $0.isActive && $0.language.languageID == lowered }
+    }
+
+    /// The companion servers in force for a language id, in the order they
+    /// should be consulted. Whether one attaches to a particular file is the
+    /// caller's question — see `ContributedServer.attaches(toFile:)`.
+    func companionServers(forLanguageID languageID: String) -> [ContributedServer] {
+        let lowered = languageID.lowercased()
+        return servers.filter { $0.isActive && $0.server.languageIDs.contains(lowered) }
+    }
+
+    /// The extension a provenance names, for a prompt or a row that wants
+    /// its name, publisher and version.
+    func entry(for provenance: ExtensionProvenance) -> Entry? {
+        entries.first { $0.manifest.provenance == provenance }
     }
 
     func formatter(forFileName fileName: String) -> ContributedFormatter? {
@@ -245,17 +345,15 @@ struct LanguageCatalog: Equatable {
 
     // MARK: Resolution
 
-    /// Precedence, lowest number first. The registry's own rank is between
-    /// promoted and unpromoted contributions, which is the entire policy in
-    /// one integer.
-    private static let registryRank = 2
-
+    /// Precedence, lowest number first: a contribution the reader promoted
+    /// outranks one they did not, and the user's directory outranks the
+    /// bundle. Nothing is compiled in for either to yield to.
     private static func rank(scope: LanguageManifest.Scope, promoted: Bool) -> Int {
         switch (scope, promoted) {
         case (.user, true): return 0
         case (.bundled, true): return 1
-        case (.user, false): return 3
-        case (.bundled, false): return 4
+        case (.user, false): return 2
+        case (.bundled, false): return 3
         }
     }
 
@@ -310,16 +408,10 @@ struct LanguageCatalog: Equatable {
         var contributed: [Contributed] = []
 
         for pair in ordered {
-            let outranksRegistry = pair.rank < registryRank
-
             var resolution = Resolution.active
             for claim in pair.language.claims {
                 if let owner = claimed[claim] {
                     resolution = .shadowed(by: .extensionID(owner), claim: claim)
-                    break
-                }
-                if !outranksRegistry, builtInOwns(claim) {
-                    resolution = .shadowed(by: .builtIn, claim: claim)
                     break
                 }
             }
@@ -349,9 +441,11 @@ struct LanguageCatalog: Equatable {
         return LanguageCatalog(
             entries: entries,
             contributed: contributed,
+            servers: resolveServers(manifests: manifests),
             formatters: resolveFormatters(manifests: manifests),
             themes: resolveThemes(manifests: manifests),
             iconThemes: resolveIconThemes(manifests: manifests),
+            grammars: resolveGrammars(manifests: manifests),
             agents: resolveAgents(manifests: manifests)
         )
     }
@@ -386,6 +480,22 @@ struct LanguageCatalog: Equatable {
         }
     }
 
+    /// One grammar per scope name, the highest-ranked extension's winning.
+    /// Rank is the same order every other contribution uses, so an extension
+    /// the reader promoted also wins the grammar for a scope two extensions
+    /// both ship.
+    static func resolveGrammars(manifests: [LanguageManifest]) -> [ContributedGrammar] {
+        var seen: Set<String> = []
+        return ordered(\.grammars, in: manifests, by: \.scopeName).compactMap { manifest, grammar in
+            guard seen.insert(grammar.scopeName).inserted else { return nil }
+            return ContributedGrammar(
+                listIdentity: manifest.listIdentity,
+                extensionName: manifest.name,
+                grammar: grammar
+            )
+        }
+    }
+
     static func resolveIconThemes(manifests: [LanguageManifest]) -> [ContributedIconTheme] {
         var seen: Set<String> = []
         return ordered(\.iconThemes, in: manifests, by: \.name).compactMap { manifest, iconTheme in
@@ -398,6 +508,40 @@ struct LanguageCatalog: Equatable {
         }
     }
 
+    /// One companion per binary. Two extensions attaching the same command
+    /// to a language would run the same process twice for one file, so the
+    /// higher-ranked one wins and the other is listed shadowed. Two different
+    /// binaries for one language both attach: that is the point of the shape.
+    ///
+    /// Claimed by command and not by language id, because a companion is
+    /// offered beside a language's own server rather than instead of it: two
+    /// of them serving the same document is the normal case, and shadowing on
+    /// the language would turn a Tailwind server and a tsserver plugin host
+    /// into a conflict neither of them has.
+    static func resolveServers(manifests: [LanguageManifest]) -> [ContributedServer] {
+        var claimed: [String: String] = [:]
+        return ordered(\.servers, in: manifests, by: \.command).map { manifest, server in
+            let claim = "server:" + server.command
+            let resolution: Resolution
+            if let owner = claimed[claim] {
+                resolution = .shadowed(by: .extensionID(owner), claim: claim)
+            } else {
+                resolution = .active
+                claimed[claim] = manifest.listIdentity
+            }
+            return ContributedServer(
+                provenance: manifest.provenance,
+                listIdentity: manifest.listIdentity,
+                extensionName: manifest.name,
+                extensionVersion: manifest.version,
+                publisher: manifest.publisher,
+                server: server,
+                resolution: resolution,
+                manifestURL: manifest.manifestURL
+            )
+        }
+    }
+
     static func resolveFormatters(manifests: [LanguageManifest]) -> [ContributedFormatter] {
         var claimed: [String: String] = [:]
         return ordered(\.formatters, in: manifests, by: \.id).map { manifest, formatter in
@@ -405,10 +549,6 @@ struct LanguageCatalog: Equatable {
             for ext in formatter.fileExtensions {
                 if let owner = claimed[ext] {
                     resolution = .shadowed(by: .extensionID(owner), claim: "ext:" + ext)
-                    break
-                }
-                if ExternalFormatterRegistry.formatter(forFileNamed: "f." + ext) != nil {
-                    resolution = .shadowed(by: .builtIn, claim: "ext:" + ext)
                     break
                 }
             }
@@ -448,30 +588,6 @@ struct LanguageCatalog: Equatable {
                 resolution: resolution
             )
         }
-    }
-
-    /// Whether this build already owns a claim.
-    ///
-    /// Both compiled-in tables count, because both are "a language the user
-    /// already had": `LSPServerRegistry` decides which server starts, and
-    /// `CodeLanguage` decides how the file is coloured. An extension that
-    /// took `.svelte` from the highlighter without taking a server from
-    /// anybody would still have changed something the user did not ask to
-    /// change.
-    static func builtInOwns(_ claim: String) -> Bool {
-        if let languageID = claim.dropPrefixIfPresent("lang:") {
-            return LSPServerRegistry.server(forLanguage: languageID) != nil
-        }
-        if let ext = claim.dropPrefixIfPresent("ext:") {
-            let sample = "f." + ext
-            return LSPServerRegistry.languageID(forPath: sample) != nil
-                || CodeLanguage.resolve(fileName: sample) != .plain
-        }
-        if let name = claim.dropPrefixIfPresent("name:") {
-            return LSPServerRegistry.languageID(forPath: name) != nil
-                || CodeLanguage.namedFiles.contains(name)
-        }
-        return false
     }
 }
 

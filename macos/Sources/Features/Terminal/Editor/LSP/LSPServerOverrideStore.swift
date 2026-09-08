@@ -1,9 +1,9 @@
 import Foundation
 
-/// One server's worth of user overrides to the registry's defaults.
+/// One server's worth of user overrides to what a manifest declared.
 ///
 /// All three fields read as "no override" when blank, rather than the
-/// registry's own required fields, so a user changing one of them — say,
+/// manifest's own required fields, so a user changing one of them — say,
 /// pointing at a different binary — doesn't also have to retype the
 /// arguments they were happy with.
 struct LSPServerOverride: Codable, Equatable {
@@ -18,22 +18,20 @@ struct LSPServerOverride: Codable, Equatable {
     }
 }
 
-/// Reads and writes per-server overrides, keyed by the registry's *default*
-/// command.
+/// Reads and writes per-server overrides, keyed by the *declared* command.
 ///
-/// Not by language id: four ids in the registry (`typescript`,
-/// `typescriptreact`, `javascript`, `javascriptreact`) are the same
+/// Not by language id: four ids (`typescript`, `typescriptreact`,
+/// `javascript`, `javascriptreact`) are the same
 /// `typescript-language-server` process, and a user who changes that
 /// server's command or arguments means all four, not one quarter of them.
 /// Keying by the default command is also why this stays independent of
 /// whatever the override itself changes the command *to* — the identity of
 /// "which server is this a setting for" can't be the thing being edited.
 ///
-/// `LSPServerRegistry` stays what it has always been: pure data, no
-/// `UserDefaults`, testable without the app around it. This is the layer
-/// above it that a user's own choices go through — the registry is the
-/// default, this is the override, and `LSPCenter.effectiveDefinition`
-/// merges them.
+/// `LanguageCatalog` stays pure: parsed manifests, no `UserDefaults`,
+/// testable without the app around it. This is the layer above it that a
+/// user's own choices go through — the manifest is the default, this is the
+/// override, and `LSPCenter.effectiveDefinition` merges them.
 ///
 /// The other store of user decisions about servers, `LanguageTrustStore`,
 /// is keyed by **extension id** instead, and the difference is not an

@@ -47,6 +47,12 @@ final class ExtensionStore: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastRefreshError: String?
 
+    /// Counts finished calls to `reload()`, so a page already open can tell
+    /// that its staged copy was dropped and ask for it again. Without it the
+    /// reader who pressed Refresh with a page open kept a spinner until they
+    /// changed tabs, because the view only restages when its own key changes.
+    @Published private(set) var reloads = 0
+
     private let extensionsDirOverride: URL?
     private let cachesDirOverride: URL?
     private var stagings: [String: Task<URL, Error>] = [:]
@@ -73,23 +79,96 @@ final class ExtensionStore: ObservableObject {
         ExtensionPreviewCache.root(cachesDir: cachesDir)
     }
 
+    /// The catalogue, read once for the whole app.
+    ///
+    /// The two views that show it — the Extensions pane and the sidebar
+    /// panel — used to hold this guard in a `@State` flag of their own, and
+    /// SwiftUI destroys the pane's state when the settings window changes
+    /// section. So every visit to Extensions rescanned the folder and
+    /// refetched the index, and every value that published laid the list out
+    /// again. Measured with 131 extensions installed: four full layout
+    /// passes, the pane painting between 0.9 s and 1.2 s after the click —
+    /// 1.5 s to 3.0 s on the sweep that reported it.
+    ///
+    /// What is installed stays current without this: `install`, `remove`
+    /// and `reload` all rescan, and Refresh is how somebody picks up a
+    /// folder they edited by hand.
+    func loadIfNeeded() async {
+        guard index == nil, !isRefreshing else { return }
+        await reloadInstalledOffMainThread()
+        await refresh()
+    }
+
+    /// Fetches the catalogue, and publishes what changed.
+    ///
+    /// `@Published` notifies on assignment rather than on change. Assigning
+    /// the index already held, or clearing an error that was already nil,
+    /// notified every row reading this store and bought a full layout pass
+    /// of the list for nothing.
     func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         do {
-            index = try await Self.fetchIndex()
-            lastRefreshError = nil
+            let fetched = try await Self.fetchIndex()
+            if fetched != index { index = fetched }
+            if lastRefreshError != nil { lastRefreshError = nil }
         } catch {
             lastRefreshError = Self.refreshMessage(for: error)
         }
     }
 
     func reloadInstalled() {
-        installed = Self.scanInstalled(in: extensionsDir)
+        publish(installed: Self.scanInstalled(in: extensionsDir))
     }
 
+    /// The same scan, off the main thread.
+    ///
+    /// Reading the 131 manifests in the owner's folder costs 53 ms to 79 ms,
+    /// and on the path that opens the Extensions pane that is time between
+    /// the click and the first frame.
+    func reloadInstalledOffMainThread() async {
+        let directory = extensionsDir
+        publish(installed: await Task.detached(priority: .userInitiated) {
+            Self.scanInstalled(in: directory)
+        }.value)
+    }
+
+    /// Publishes only a list that differs from the one already held.
+    ///
+    /// A rescan that finds the same 131 extensions is the common case, and
+    /// republishing it laid every row out again for no visible change. See
+    /// `refresh()` for the same rule on the catalogue.
+    private func publish(installed scanned: [InstalledExtension]) {
+        guard scanned != installed else { return }
+        installed = scanned
+    }
+
+    /// The whole store, read again: the catalogue, what is installed, and
+    /// the staged pages an icon may have been drawn from.
+    ///
+    /// `refresh()` fetches the index and stops there, which is not what a
+    /// reader means by refreshing the store. A page staged earlier keeps
+    /// answering for the version it was staged at, and `iconURL(for:)`
+    /// prefers that copy over the index, so an extension whose page had been
+    /// opened kept showing its old icon until the app was restarted.
+    func reload() async {
+        previews.removeAll()
+        errors.removeAll()
+        reloadInstalled()
+        await refresh()
+        reloads += 1
+    }
+
+    /// Downloads and installs, rather than installing whatever the preview
+    /// cache happens to hold.
+    ///
+    /// It used to reuse the staged tree, which saved a download for anyone
+    /// who read the page before pressing Install. That worked only while
+    /// the page and the install came from one asset. The cache now holds
+    /// the document bundle, which is not an extension, so an install
+    /// fetches the installable asset every time.
     func install(_ entry: ExtensionIndex.Entry) async {
         guard activity[entry.id] == nil else { return }
         errors[entry.id] = nil
@@ -98,16 +177,24 @@ final class ExtensionStore: ObservableObject {
 
         let directory = extensionsDir
         do {
-            let staged = try await stagedDirectory(for: entry)
-            activity[entry.id] = .installing
-            try await Task.detached(priority: .utility) {
-                try ExtensionInstaller.install(from: staged, as: entry, into: directory)
-            }.value
+            try await ExtensionInstaller.install(
+                entry,
+                into: directory,
+                progress: report(for: entry.id)
+            )
             noteInstalledChanged()
             Task { await self.refreshRequirements(id: entry.id) }
         } catch {
             errors[entry.id] = Self.message(for: error)
             reloadInstalled()
+        }
+    }
+
+    /// Forwards a step to the row, and only while the row is showing one.
+    private func report(for id: String) -> @MainActor @Sendable (ExtensionActivity) -> Void {
+        { [weak self] step in
+            guard let self, self.activity[id] != nil else { return }
+            self.activity[id] = step
         }
     }
 
@@ -214,18 +301,47 @@ final class ExtensionStore: ObservableObject {
         previews[id] = nil
     }
 
+    /// The icon and the name of one extension by id, wherever they are to be
+    /// had: the registry index when it lists the extension, the installed
+    /// copy otherwise.
+    ///
+    /// Asked by id rather than by entry because the callers have only an id:
+    /// a document tab holds a `phantom-extension://` path, and the settings
+    /// form is keyed on the id as well.
+    func iconSource(forExtension id: String) -> ExtensionIconSource? {
+        if let entry = index?.extensions.first(where: { $0.id == id }) { return icon(for: entry) }
+        return installed.first { $0.id == id }?.iconURL.map(ExtensionIconSource.file)
+    }
+
+    func displayName(forExtension id: String) -> String? {
+        if let installed = installed.first(where: { $0.id == id }) { return installed.name }
+        guard let entry = index?.extensions.first(where: { $0.id == id }) else { return nil }
+        return entry.card?.title ?? entry.name
+    }
+
     func icon(for entry: ExtensionIndex.Entry) -> ExtensionIconSource? {
         ExtensionIconSource.of(entry: entry, file: iconURL(for: entry))
     }
 
+    /// **The installed copy answers first.** It used to be the staged page,
+    /// and that is how the store kept putting an old icon back: reading an
+    /// extension's page downloads the version the index names and unpacks it
+    /// into the preview cache, so from then on the row drew the icon of
+    /// whatever version was published rather than the one on the machine.
+    /// Elixir 1.1.1 was installed with the owner's logo and the store went
+    /// back to the drawn one every time its page was opened.
+    ///
+    /// The staged tree still answers for an extension that is *not*
+    /// installed, which is the case it exists for: showing an icon before
+    /// anybody presses Install.
     func iconURL(for entry: ExtensionIndex.Entry) -> URL? {
         let onDisk = installed.first { $0.id == entry.id }
         guard let icon = entry.card?.icon else { return onDisk?.iconURL }
-        if case .ready(let document, _)? = previews[entry.id],
-           let url = LanguageContribution.containedURL(icon, root: document.deletingLastPathComponent()) {
+        if let root = onDisk?.root, let url = LanguageContribution.containedURL(icon, root: root) {
             return url
         }
-        if let root = onDisk?.root, let url = LanguageContribution.containedURL(icon, root: root) {
+        if case .ready(let document, _)? = previews[entry.id],
+           let url = LanguageContribution.containedURL(icon, root: document.deletingLastPathComponent()) {
             return url
         }
         return onDisk?.iconURL
@@ -258,10 +374,7 @@ final class ExtensionStore: ObservableObject {
         }.value
         if let verified { return verified }
 
-        let report: @MainActor @Sendable (ExtensionActivity) -> Void = { [weak self] step in
-            guard let self, self.activity[entry.id] != nil else { return }
-            self.activity[entry.id] = step
-        }
+        let report = report(for: entry.id)
         let staging = Task<URL, Error>.detached(priority: .utility) {
             try await ExtensionPreviewCache.stage(entry, root: root, progress: report)
         }
@@ -362,9 +475,23 @@ final class ExtensionStore: ObservableObject {
             .map {
                 InstalledExtension(
                     id: $0.id, name: $0.name, version: $0.version, root: $0.root,
-                    publisher: $0.publisher, iconURL: $0.languages.first?.iconURL)
+                    publisher: $0.publisher,
+                    iconURL: $0.languages.first?.iconURL ?? artworkURL(in: $0.root))
             }
             .sorted(by: displayOrder)
+    }
+
+    /// The artwork a contribution-less extension still has.
+    ///
+    /// A theme contributes no language, so there is no language icon to read,
+    /// and the icon its page declares is in the card rather than the
+    /// manifest. Until the catalogue arrives that left a restored theme tab
+    /// wearing the puzzle mark, so the packaged file answers first.
+    nonisolated private static func artworkURL(in root: URL) -> URL? {
+        let url = root
+            .appendingPathComponent(ExtensionMediaGate.mediaDirectoryName, isDirectory: true)
+            .appendingPathComponent("icon.png")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     nonisolated private static func displayOrder(_ lhs: InstalledExtension, _ rhs: InstalledExtension) -> Bool {

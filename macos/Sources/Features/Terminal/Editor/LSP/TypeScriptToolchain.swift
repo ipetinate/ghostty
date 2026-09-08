@@ -35,8 +35,8 @@ enum TypeScriptToolchain: Equatable, Sendable {
     /// The file whose presence decides everything above.
     static let tsserverFileName = "tsserver.js"
 
-    /// Where `@vue/typescript-plugin` lives when a project depends on it.
-    static let vuePluginPath = "node_modules/@vue/typescript-plugin"
+    /// Where a project keeps its `node_modules`, relative to the workspace.
+    static let nodeModulesPath = "node_modules"
 
     /// What this workspace has.
     ///
@@ -58,11 +58,12 @@ enum TypeScriptToolchain: Equatable, Sendable {
         return fileManager.fileExists(atPath: tsserver) ? .tsserver(path: tsserver) : .native
     }
 
-    /// The plugin directory for a workspace, when it is installed there.
+    /// The directory a named tsserver plugin lives in, when it is installed
+    /// for this workspace.
     ///
-    /// Absolute, because `@vue/typescript-plugin`'s `location` is read
-    /// through `URI.file(...)` and a relative path resolves against whatever
-    /// the server's working directory happens to be.
+    /// Absolute, because a plugin's `location` is read through
+    /// `URI.file(...)` and a relative path resolves against whatever the
+    /// server's working directory happens to be.
     /// The project's copy wins, and a global install is the fallback.
     ///
     /// The fallback is what makes installing the plugin from Settings mean
@@ -73,16 +74,26 @@ enum TypeScriptToolchain: Equatable, Sendable {
     ///
     /// Local first because a project pinning its own plugin has a reason to,
     /// and because a global copy at a different version than the project's
-    /// Vue tooling is the mismatch the pinning exists to prevent.
+    /// own tooling is the mismatch the pinning exists to prevent.
+    ///
+    /// `plugin` is a package name out of a manifest and is refused unless it
+    /// is one — see `isPackageName`. It is joined onto two directories this
+    /// app then reads, so a `..` in it would be a manifest choosing which
+    /// directory a language server loads code from.
     ///
     /// Safe to shell out here: this runs while resolving a server's launch
     /// options, once per server, not on the typing path.
-    static func vuePluginLocation(
+    static func pluginLocation(
+        _ plugin: String,
         root: String,
         searchPath: String = "",
         fileManager: FileManager = .default
     ) -> String? {
-        let local = (root as NSString).appendingPathComponent(vuePluginPath)
+        guard isPackageName(plugin) else { return nil }
+
+        let local = (root as NSString)
+            .appendingPathComponent(nodeModulesPath)
+            .appending("/" + plugin)
         if fileManager.fileExists(atPath: local) { return local }
 
         guard !searchPath.isEmpty,
@@ -93,8 +104,20 @@ enum TypeScriptToolchain: Equatable, Sendable {
         let root = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !root.isEmpty else { return nil }
 
-        let global = (root as NSString).appendingPathComponent("@vue/typescript-plugin")
+        let global = (root as NSString).appendingPathComponent(plugin)
         return fileManager.fileExists(atPath: global) ? global : nil
+    }
+
+    /// Whether a string is an npm package name and nothing else — a scope, a
+    /// name, and the characters npm itself allows in one.
+    static func isPackageName(_ plugin: String) -> Bool {
+        guard !plugin.isEmpty, plugin.count <= 214 else { return false }
+        guard !plugin.hasPrefix("/"), !plugin.hasPrefix("."), !plugin.hasSuffix("/") else {
+            return false
+        }
+        guard !plugin.split(separator: "/").contains("..") else { return false }
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789@/._-")
+        return plugin.allSatisfy(allowed.contains)
     }
 
     /// The version string beside a project's TypeScript, for a message.

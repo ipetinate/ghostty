@@ -41,7 +41,12 @@ enum EditorTheme {
 
     @MainActor
     static func make(from palette: ThemePalette) -> CodeTheme {
-        make(colors: palette.colors, background: palette.background)
+        make(
+            colors: palette.colors,
+            background: palette.background,
+            selectionBackground: palette.selectionBackground,
+            selectionForeground: palette.selectionForeground
+        )
     }
 
     /// The pure half, so the mapping can be tested against a palette that
@@ -51,7 +56,18 @@ enum EditorTheme {
     /// config has loaded — falls back rather than reaching past the end of
     /// the array. Highlighting that is briefly plain is a great deal better
     /// than a crash on launch.
-    static func make(colors: [NSColor], background: NSColor?) -> CodeTheme {
+    ///
+    /// The two selection colors default to nil so that the callers which
+    /// only ever cared about the token mapping — the tests, mostly — stay
+    /// callable. Nil is also the honest answer for a theme that names
+    /// neither: the band becomes the system's and the tokens keep their own
+    /// colors. See ``CodeTheme/selectedTextAttributes``.
+    static func make(
+        colors: [NSColor],
+        background: NSColor?,
+        selectionBackground: NSColor? = nil,
+        selectionForeground: NSColor? = nil
+    ) -> CodeTheme {
         guard colors.count >= 16 else { return .fallback }
 
         let backgroundColor = background ?? .textBackgroundColor
@@ -69,7 +85,9 @@ enum EditorTheme {
             tokens: tokens,
             lineNumber: colors[ANSI.brightBlack],
             currentLineNumber: foreground,
-            currentLineBackground: foreground.withAlphaComponent(0.06)
+            currentLineBackground: foreground.withAlphaComponent(0.06),
+            selectionBackground: selectionBackground,
+            selectionForeground: selectionForeground
         )
     }
 }
@@ -132,20 +150,6 @@ enum EditorSettings {
     /// strongly in both directions, and the direction that surprises nobody
     /// is the one where saving writes exactly what is on screen.
     static let formatOnSaveKey = "EditorFormatOnSave"
-
-    /// Let a project's own Prettier format the files it handles, in place of
-    /// the language server.
-    ///
-    /// On by default, because a repository that carries a Prettier config has
-    /// already decided how its files are written, and a language server
-    /// formatting them another way is the wrong answer arriving faster.
-    ///
-    /// Worth a switch at all because honouring that decision means running
-    /// `node_modules/.bin/prettier` **from the repository that was opened** —
-    /// the only way the project's own version and plugins apply, and the same
-    /// thing every editor does, but still code from a folder rather than from
-    /// this app. Turning this off keeps formatting on the language server.
-    static let usesPrettierKey = "EditorUsesPrettier"
 
     /// Offer the Markdown snippet catalogue when a `/` is typed.
     ///

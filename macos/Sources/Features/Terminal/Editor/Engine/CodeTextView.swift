@@ -57,10 +57,27 @@ struct CodeTextView: NSViewRepresentable {
 
     /// How this file is lexed, base language included.
     ///
-    /// Not a bare `CodeLanguage`: a language an extension contributed has no
-    /// case of its own, and passing only the base is what left such a file
-    /// with a server but no colour.
-    let syntax: LanguageSyntax
+    /// The language an installed extension gave this file, or nil. The name
+    /// alone, because it is what the storage compares to decide whether the
+    /// grammar beside it has to be swapped — a comparison of highlighters
+    /// would rebuild the tokenizer on every SwiftUI update.
+    let languageID: String?
+
+    /// The grammar `languageID` names.
+    ///
+    /// Resolved by the host and handed in, because which grammar a language
+    /// id names is a fact about what the host installed, and the engine may
+    /// not ask — see `FenceHighlighting` and `EditorEngineBoundaryTests`.
+    ///
+    /// No default, so that a caller supplying a language cannot forget to say
+    /// what colours it and get a silently uncoloured file.
+    let highlighter: GrammarHighlighter
+
+    /// How a fenced code block inside a hover card is coloured.
+    ///
+    /// Carried here rather than resolved at the card, because `CodeHoverPanel`
+    /// is made by this view and so has no host of its own to ask.
+    let fences: FenceHighlighting
 
     /// Which markup this file is. Beside `language` rather than inside the
     /// configuration, because it describes the file and not the editor — see
@@ -312,7 +329,8 @@ struct CodeTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             storage: CodeTextStorage(
-                syntax: syntax,
+                languageID: languageID,
+                highlighter: highlighter,
                 theme: theme,
                 configuration: configuration
             ),
@@ -428,6 +446,16 @@ struct CodeTextView: NSViewRepresentable {
         /// Paint, not a control: a click here belongs to the text under it.
         blame.refusesFirstResponder = true
 
+        /// The box round a symbol a jump landed on, in front of the glyphs and
+        /// inside the document for the same reasons as the waves below — and
+        /// added before them, so a diagnostic on the symbol stays legible
+        /// through the mark rather than under it.
+        let revealHighlight = CodeRevealHighlightView(frame: textView.bounds)
+        revealHighlight.textView = textView
+        textView.addSubview(revealHighlight)
+        textView.revealHighlight = revealHighlight
+        context.coordinator.revealHighlight = revealHighlight
+
         /// The diagnostic waves, in front of the glyphs and inside the
         /// document — which is what scrolls them for free. Added before the
         /// ghost text so a squiggle running to the end of a line passes under
@@ -518,6 +546,21 @@ struct CodeTextView: NSViewRepresentable {
             object: scrollView.contentView
         )
 
+        /// The reader scrolling away from a jump, which takes the mark on it
+        /// away — see ``CodeRevealHighlightView/clear()``.
+        ///
+        /// This notification and not the bounds change above, which is posted
+        /// for a programmatic scroll too: `reveal` scrolls twice on its way in,
+        /// so a mark cleared on any scroll would be cleared by the very jump
+        /// that put it there. A live scroll is a scroll the reader's own hand
+        /// started, and nothing else posts it.
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.readerStartedScrolling),
+            name: NSScrollView.willStartLiveScrollNotification,
+            object: scrollView
+        )
+
         if let undoTimeline { textView.undoTimeline = undoTimeline }
         context.coordinator.hostEditName = replacementName
         context.coordinator.hostEditIsUndoable = replacementIsUndoable
@@ -566,6 +609,7 @@ struct CodeTextView: NSViewRepresentable {
             code.onRunCodeAction = onRunCodeAction
             code.completionOffersDocumentation = completionOffersDocumentation
             code.completionIconFont = completionIconFont
+            code.hoverFences = fences
         }
         /// Reapplied every update, like the closures above it: a document can
         /// stop being writable while it is on screen — its terminal moves to
@@ -580,7 +624,9 @@ struct CodeTextView: NSViewRepresentable {
         context.coordinator.apply(assistance: assistance, revision: assistanceRevision)
         context.coordinator.applyUnderlines(underlines)
 
-        context.coordinator.storage.setSyntax(syntax)
+        if context.coordinator.storage.languageID != languageID {
+            context.coordinator.storage.setHighlighter(highlighter, languageID: languageID)
+        }
         context.coordinator.applyAppearance(
             theme: theme,
             configuration: configuration,
@@ -687,6 +733,10 @@ struct CodeTextView: NSViewRepresentable {
         /// host will use, so the first update always loads.
         private var appliedRevision = Int.min
 
+        /// What `skippedRegions(around:in:)` last lexed. Dropped whenever the
+        /// text changes, which is the only thing that can make it wrong.
+        private var skippedRegionCache: (window: NSRange, ranges: [NSRange])?
+
         /// The pending minimap rebuild. See `scheduleMinimapRefresh`.
         private var minimapTask: Task<Void, Never>?
 
@@ -751,6 +801,20 @@ struct CodeTextView: NSViewRepresentable {
         /// The wave under each problem. See `CodeSquiggleView`.
         weak var squiggles: CodeSquiggleView?
 
+        /// The box round the symbol the last jump landed on.
+        /// See `CodeRevealHighlightView`.
+        weak var revealHighlight: CodeRevealHighlightView?
+
+        /// Where `reveal` last put the caret, so the selection change it makes
+        /// itself is not read as the reader moving the caret away.
+        ///
+        /// The mark goes when the reader does anything, and moving the caret is
+        /// one of those things — but `reveal` moves the caret *to* the symbol
+        /// on its way in, and that notification arrives before the mark is even
+        /// drawn. Comparing against the range put there tells the two apart
+        /// without a flag that has to be unset on every path out.
+        private var revealedSelection: NSRange?
+
         /// The reader's switches as this view was last told them, and the
         /// revision that answer came from. See `apply(assistance:revision:)`.
         private(set) var assistance = EditorAssistance.all
@@ -792,6 +856,15 @@ struct CodeTextView: NSViewRepresentable {
             guard revision != appliedRevision else { return }
             let isFirstLoad = appliedRevision == Int.min
             appliedRevision = revision
+            skippedRegionCache = nil
+
+            /// The text under the mark is about to be replaced, and this path
+            /// does not go through `textDidChange` — `isApplyingExternalText`
+            /// stops it there. Without this the mark could outlive the
+            /// characters it was drawn over, which is the one way it can lie.
+            /// Harmless on the open-and-jump path: this runs before the jump.
+            revealHighlight?.clear()
+
             if isFirstLoad {
                 apply(text: text)
             } else {
@@ -1020,7 +1093,7 @@ struct CodeTextView: NSViewRepresentable {
                 for: NSRange(location: lower, length: upper - lower),
                 in: textStorage.string as NSString
             )
-            storage.highlight(textStorage, in: region)
+            storage.highlight(textStorage, in: region, seedWhenBehind: highlightsOnDemand)
             colorBrackets(in: region)
         }
 
@@ -1052,8 +1125,7 @@ struct CodeTextView: NSViewRepresentable {
             let text = textStorage.string as NSString
             // The tokens the highlighter already produced, so a brace inside
             // a string or a comment doesn't open a level that never closes.
-            let skipped = SyntaxHighlighter(syntax: storage.syntax)
-                .tokens(in: textStorage.string, range: region)
+            let skipped = storage.tokens(in: textStorage.string, range: region, seedWhenBehind: highlightsOnDemand)
                 .filter { $0.kind == .string || $0.kind == .comment }
                 .map(\.range)
 
@@ -1170,17 +1242,46 @@ struct CodeTextView: NSViewRepresentable {
 
             let text = textStorage.string as NSString
             let caret = min(selection.location, text.length)
-            let window = CodeTextStorage.invalidationRange(
-                for: NSRange(location: caret, length: 0),
+
+            /// Before the window is lexed, because the lex is the whole cost
+            /// and a caret in the middle of a word cannot make a pair.
+            guard BracketMatch.isOnBracket(in: text, caret: caret) else { return nil }
+
+            return BracketMatch.pair(
                 in: text,
-                padding: BracketMatch.searchLimit
+                caret: caret,
+                skipping: skippedRegions(around: caret, in: textStorage)
             )
-            let skipped = SyntaxHighlighter(syntax: storage.syntax)
-                .tokens(in: textStorage.string, range: window)
+        }
+
+        /// The string and comment ranges the bracket scan must not count,
+        /// lexed once per block of the document rather than once per click.
+        ///
+        /// The lex is what costs: the window is `BracketMatch.searchLimit`
+        /// each way, some two hundred lines through the grammar engine, and it
+        /// ran on every caret move — a click on ordinary text paid for it and
+        /// threw the answer away. The window is aligned to a block of that
+        /// same size and kept until the text changes, so every caret inside
+        /// one block answers from the first lex, while still covering the full
+        /// distance the scan may walk from any position in that block.
+        private func skippedRegions(around caret: Int, in textStorage: NSTextStorage) -> [NSRange] {
+            let limit = BracketMatch.searchLimit
+            let text = textStorage.string as NSString
+            let block = (caret / limit) * limit
+            let window = CodeTextStorage.invalidationRange(
+                for: NSRange(location: block, length: min(limit, max(text.length - block, 0))),
+                in: text,
+                padding: limit
+            )
+
+            if let cached = skippedRegionCache, cached.window == window { return cached.ranges }
+
+            let ranges = storage
+                .tokens(in: textStorage.string, range: window, seedWhenBehind: highlightsOnDemand)
                 .filter { $0.kind == .string || $0.kind == .comment }
                 .map(\.range)
-
-            return BracketMatch.pair(in: text, caret: caret, skipping: skipped)
+            skippedRegionCache = (window, ranges)
+            return ranges
         }
 
         /// Asks for a redraw after attributes changed in bulk.
@@ -1199,6 +1300,13 @@ struct CodeTextView: NSViewRepresentable {
         private func requestRedraw(of textView: NSTextView) {
             textView.needsDisplay = true
             gutter?.needsDisplay = true
+        }
+
+        /// The reader has started scrolling by hand, which takes the mark on
+        /// the last jump away. See where this is subscribed for why it is not
+        /// the bounds change beside it.
+        @objc func readerStartedScrolling() {
+            revealHighlight?.clear()
         }
 
         /// Re-colours after a scroll settles, for a document being coloured
@@ -1628,29 +1736,54 @@ struct CodeTextView: NSViewRepresentable {
         func refreshMinimap() {
             guard let minimap, minimap.isHidden == false, let textView else { return }
             let text = textView.string
-            let tokens = SyntaxHighlighter(syntax: storage.syntax)
-                .tokens(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+            let tokens = storage.tokens(in: text, range: NSRange(location: 0, length: (text as NSString).length))
             minimap.setRows(CodeMinimapView.rows(for: text, tokens: tokens))
         }
 
-        /// Selects a range and brings it into view, centred.
+        /// Marks a range and brings it into view, centred.
         ///
         /// Centred rather than merely visible: `scrollRangeToVisible` does
         /// the least it can, so a definition one line below the fold lands
         /// on the very last row — technically visible, and with none of the
         /// surrounding code that makes it readable.
+        ///
+        /// **Marked, not selected.** This used to select the range as it
+        /// arrived, and a language server that answers "where is this defined"
+        /// with the whole definition — Elixir's returns the entire module —
+        /// turned a jump into a screen of selection blue the reader had to
+        /// click away, with the next keystroke poised to replace all of it.
+        /// So the caret goes to the symbol selecting nothing, and
+        /// `CodeRevealHighlightView` draws a box over the part of the range
+        /// worth pointing at, which `CodeRevealHighlight` derives.
+        ///
+        /// A range with nothing in it to mark — an agent asking for a line,
+        /// which arrives as an empty range — still moves the caret and still
+        /// scrolls. It draws no box, because there is nothing under one.
         func reveal(_ reveal: (id: String, range: NSRange)) {
             guard reveal.id != lastRevealID, let textView else { return }
             lastRevealID = reveal.id
 
-            let length = (textView.string as NSString).length
+            let text = textView.string as NSString
+            let length = text.length
             let clipped = NSRange(
                 location: min(reveal.range.location, length),
                 length: min(reveal.range.length, max(0, length - reveal.range.location))
             )
 
-            textView.setSelectedRange(clipped)
-            textView.scrollRangeToVisible(clipped)
+            let symbol = CodeRevealHighlight.range(for: clipped, in: text)
+            let caret = NSRange(location: symbol?.location ?? clipped.location, length: 0)
+
+            revealedSelection = caret
+            textView.setSelectedRange(caret)
+
+            if let symbol {
+                revealHighlight?.show(symbol)
+            } else {
+                revealHighlight?.clear()
+            }
+
+            let revealed = symbol ?? caret
+            textView.scrollRangeToVisible(revealed)
             if highlightsOnDemand { highlightVisibleRegion() }
 
             // Once layout has settled, for the same reason opening a file
@@ -1658,7 +1791,7 @@ struct CodeTextView: NSViewRepresentable {
             // frame it would be scrolling within.
             DispatchQueue.main.async { [weak textView] in
                 guard let textView, let scrollView = textView.enclosingScrollView else { return }
-                let rect = textView.firstRect(forCharacterRange: clipped, actualRange: nil)
+                let rect = textView.firstRect(forCharacterRange: revealed, actualRange: nil)
                 guard rect.height > 0 else { return }
                 let local = textView.convert(
                     textView.window?.convertFromScreen(rect) ?? .zero,
@@ -1819,6 +1952,7 @@ struct CodeTextView: NSViewRepresentable {
 
             gutter?.theme = theme
             minimap?.theme = theme
+            revealHighlight?.color = theme.revealHighlight
 
             // The hover card paints itself with the editor's own colours and
             // the file's language, so it has to be told both. Outside the
@@ -1837,7 +1971,8 @@ struct CodeTextView: NSViewRepresentable {
             // guard about what gets drawn.
             if let code = textView as? CodeNSTextView {
                 code.hoverTheme = theme
-                code.hoverLanguage = storage.language
+                code.lineHighlighter = storage.highlighter
+                code.lineLanguageID = storage.languageID
                 code.closesBrackets = configuration.closesBrackets
                 code.closesQuotes = configuration.closesQuotes
                 code.closesTags = configuration.closesTags
@@ -1856,6 +1991,14 @@ struct CodeTextView: NSViewRepresentable {
             textView.font = configuration.font
             textView.insertionPointColor = theme.foreground
             textView.textColor = theme.foreground
+            if let code = textView as? CodeNSTextView {
+                code.selectionAttributes = (
+                    focused: theme.selectedTextAttributes,
+                    unfocused: theme.unemphasizedSelectedTextAttributes
+                )
+            } else {
+                textView.selectedTextAttributes = theme.selectedTextAttributes
+            }
             currentLineColor = configuration.highlightsCurrentLine
                 ? theme.currentLineBackground
                 : nil
@@ -1930,20 +2073,29 @@ struct CodeTextView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+
+            /// The caret has left the symbol a jump marked, so the mark goes.
+            /// Every caret move but the one `reveal` makes itself — see
+            /// `revealedSelection`.
+            if textView.selectedRange() == revealedSelection {
+                revealedSelection = nil
+            } else {
+                revealHighlight?.clear()
+            }
+
             // The band follows the cursor, and so does the highlighted number
             // in the gutter — both are the same fact drawn in two places.
-            gutter?.setCurrentLine(currentLineNumber(in: textView))
+            // Counted once: the count walks the text from its start to the
+            // caret, and it was run twice per click.
+            let line = currentLineNumber(in: textView)
+            gutter?.setCurrentLine(line)
             updateCurrentLineBand()
             highlightBracketMatch()
 
             /// Asked on every caret move, and cheap on all but the first: the
             /// centre answers a repeated question from its cache and only
             /// spawns `git blame` for a line it has not seen.
-            EditorBlameCenter.shared.request(
-                path: documentPath,
-                line: textView.selectedRange().length == 0
-                    ? currentLineNumber(in: textView)
-                    : nil)
+            EditorBlameCenter.shared.request(path: documentPath, line: line)
         }
 
         /// Moves the band to the line the insertion point is on.
@@ -2134,11 +2286,13 @@ struct CodeTextView: NSViewRepresentable {
             else { return }
 
             let edited = textView.selectedRange()
+            storage.invalidate(from: edited.location)
+            skippedRegionCache = nil
             let region = CodeTextStorage.invalidationRange(
                 for: edited,
                 in: textStorage.string as NSString
             )
-            storage.highlight(textStorage, in: region)
+            storage.highlight(textStorage, in: region, seedWhenBehind: highlightsOnDemand)
             // Typing a brace changes the depth of everything after it, so
             // the whole document's colours are stale — but recolouring all of
             // it per keystroke is the cost this editor exists to avoid. The
@@ -2150,6 +2304,11 @@ struct CodeTextView: NSViewRepresentable {
             /// is the only part that can be wrong on screen — the rest is
             /// redrawn when it is scrolled into.
             squiggles?.setNeedsDisplay(squiggles?.visibleRect ?? .zero)
+
+            /// The reader is typing, so the mark on the last jump has been
+            /// answered and goes. Also why that mark needs none of the care
+            /// the waves take over moving text: it never outlives an edit.
+            revealHighlight?.clear()
 
             gutter?.reload()
             scheduleMinimapRefresh()
@@ -2247,6 +2406,10 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// `CodeSquiggleView` for why overriding `draw(_:)` here is not available.
     weak var squiggles: CodeSquiggleView?
 
+    /// The box round the symbol the last jump landed on, drawn in front of the
+    /// text by a subview for the same reason. See `CodeRevealHighlightView`.
+    weak var revealHighlight: CodeRevealHighlightView?
+
     /// Whether a row is worth offering an info glyph on.
     ///
     /// Asked of the host because the honest answer is about the *server* — it
@@ -2295,6 +2458,55 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// crash report did not describe. The host supplies it, because the engine
     /// may not name the logger — see `EditorEngineBoundaryTests`.
     var onDiagnosticNote: ((String) -> Void)?
+
+    /// The colours a selection is drawn with, one dictionary per focus state.
+    ///
+    /// A pair rather than the single `selectedTextAttributes` AppKit exposes,
+    /// because AppKit paints the two states differently and only tells you
+    /// about one of them: while the window is not key it swaps the band for
+    /// `NSColor.unemphasizedSelectedTextBackgroundColor` and keeps the
+    /// foreground it was given, which strands a theme's declared
+    /// selected-text colour on a grey nobody paired it with. See
+    /// ``CodeTheme/unemphasizedSelectedTextAttributes`` for the measurements.
+    ///
+    /// Set by the host when the theme changes; which of the two is in force
+    /// is this view's own business, since only the view knows when it has
+    /// focus.
+    var selectionAttributes: (focused: [NSAttributedString.Key: Any],
+                              unfocused: [NSAttributedString.Key: Any]) = ([:], [:]) {
+        didSet { applySelectionAttributes() }
+    }
+
+    /// Whether this view draws the *emphasized* selection — the focused view
+    /// of the key window, and the only state in which AppKit honours a
+    /// supplied selection background.
+    private var drawsEmphasizedSelection: Bool {
+        guard let window else { return false }
+        return window.isKeyWindow && window.firstResponder === self
+    }
+
+    private func applySelectionAttributes(emphasized: Bool? = nil) {
+        let wanted = (emphasized ?? drawsEmphasizedSelection)
+            ? selectionAttributes.focused
+            : selectionAttributes.unfocused
+        guard !wanted.isEmpty else { return }
+        selectedTextAttributes = wanted
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { applySelectionAttributes(emphasized: window?.isKeyWindow == true) }
+        return became
+    }
+
+    /// Passing `false` rather than reading the responder back: this is called
+    /// while the change is still in flight, so `window.firstResponder` is
+    /// still this view and the computed answer would be the stale one.
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { applySelectionAttributes(emphasized: false) }
+        return resigned
+    }
 
     private var isShowingDocumentation = false
 
@@ -2444,7 +2656,13 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// How the card paints itself. Set by the coordinator, the only thing here
     /// that knows the file's colours and language.
     var hoverTheme: CodeTheme = .fallback
-    var hoverLanguage: CodeLanguage = .plain
+    var lineHighlighter: GrammarHighlighter = .plain
+    var lineLanguageID: String?
+
+    /// How a fenced block inside the hover card is coloured. Set by the
+    /// coordinator for the same reason `hoverTheme` is: this object makes the
+    /// card, and only the host knows which grammars are installed.
+    var hoverFences: FenceHighlighting = .plain
 
     /// The three auto-closing switches, mirrored from the configuration.
     ///
@@ -2503,7 +2721,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
 
     /// Which markup this file is, which the language cannot answer.
     ///
-    /// `.ts` and `.tsx` are one `CodeLanguage`, and that is right for lexing
+    /// `.ts` and `.tsx` share one language id, and that is right for lexing
     /// and wrong here: JSX is legal in one and a syntax error in the other,
     /// so `<` means a tag in the first and only ever a generic in the second.
     /// Kept beside the language rather than inside `CodeEditorConfiguration`
@@ -2608,6 +2826,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
         /// this is the one moment the new size is known — `fitDocumentWidth`
         /// above changes it from inside this very pass.
         if let squiggles, squiggles.frame != bounds { squiggles.frame = bounds }
+        if let revealHighlight, revealHighlight.frame != bounds { revealHighlight.frame = bounds }
     }
 
     /// ⌘-click goes to the definition; without the modifier this is an
@@ -2615,6 +2834,12 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     override func mouseDown(with event: NSEvent) {
         hoverOffset = nil
         hideHover()
+
+        /// A click is the reader answering the last jump, so its mark goes —
+        /// including a click that lands on the caret the jump left, which
+        /// moves nothing and so tells the selection nothing. A ⌘-click clears
+        /// it here and the jump it starts draws the next one.
+        revealHighlight?.clear()
 
         guard Self.isJumpClick(event.modifierFlags), let onJumpToDefinition else {
             super.mouseDown(with: event)
@@ -2771,6 +2996,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
             info,
             theme: hoverTheme,
             font: font ?? .monospacedSystemFont(ofSize: 12, weight: .regular),
+            fences: hoverFences,
             anchor: anchor,
             over: self
         )
@@ -2875,11 +3101,9 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSWindow.didResignKeyNotification,
-            object: nil
-        )
+        for name in [NSWindow.didResignKeyNotification, NSWindow.didBecomeKeyNotification] {
+            NotificationCenter.default.removeObserver(self, name: name, object: nil)
+        }
         if let window {
             NotificationCenter.default.addObserver(
                 self,
@@ -2887,7 +3111,15 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
                 name: NSWindow.didResignKeyNotification,
                 object: window
             )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(editorWindowDidBecomeKey),
+                name: NSWindow.didBecomeKeyNotification,
+                object: window
+            )
         }
+
+        applySelectionAttributes()
 
         if window == nil { dismissEverythingFloating() }
     }
@@ -2933,9 +3165,18 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// reader may come back to the *same* word, and the guard against a
     /// repeated offset would otherwise swallow the hover they asked for.
     @objc private func editorWindowDidResignKey() {
+        applySelectionAttributes(emphasized: false)
         hoverOffset = nil
         guard !hoverHoldsPointer() else { return }
         hideHover()
+    }
+
+    /// The window coming back: the selection is drawn emphasized again, so
+    /// the theme's own band and its declared selected-text colour return with
+    /// it. Nothing else here — a window becoming key is not a reason to open
+    /// or close anything.
+    @objc private func editorWindowDidBecomeKey() {
+        applySelectionAttributes()
     }
 
     /// Anything that moves the text out from under the card closes it: the
@@ -3217,37 +3458,6 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
         requestCompletions(explicitly: false, immediate: true)
     }
 
-    /// Which language the caret's line is actually written in.
-    ///
-    /// A container language answers nothing useful about a single line, and
-    /// that was a real bug rather than a hypothetical one: `.vue` routes to
-    /// `SFCRegions`, which needs the whole document to find `^<script>` and
-    /// `^</script>`, so a lone line came back with **no tokens at all** and
-    /// the caller's string-and-comment suppression silently never fired in a
-    /// Vue file. Measured — the same line yields `[keyword, string]` as
-    /// `.javascript` and `[]` as `.vue`.
-    ///
-    /// The obvious repair is to hand over the whole document and scope the
-    /// range to the line, and that is correct and unaffordable: 2.7 ms per
-    /// keystroke on a 5000-line component, growing linearly with the file,
-    /// because `SFCRegions` compiles three expressions and scans everything
-    /// three times per call with no cache. Resolving the language instead
-    /// costs a bounded backwards literal search and leaves the tokenizing
-    /// scoped to one line, which is ~12 µs.
-    ///
-    /// Only a container needs resolving. Everything else — including `.jsx`,
-    /// which is JavaScript that happens to carry tags — is already the
-    /// language its lines are written in.
-    static func effectiveLanguage(
-        _ language: CodeLanguage,
-        in content: NSString,
-        at caret: Int,
-        dialect: CodeTagDialect
-    ) -> CodeLanguage {
-        guard language == .vue else { return language }
-        return CodeTagClose.isInMarkup(content, caret: caret, dialect: dialect) ? .html : .javascript
-    }
-
     /// The trigger policy, asked over the caret's line only — a per-keystroke
     /// path cannot afford to tokenize the document to find out whether it is
     /// inside a string.
@@ -3258,12 +3468,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
         let line = content.substring(with: lineRange)
         let caretInLine = caret - lineRange.location
 
-        let suppressed = SyntaxHighlighter(language: Self.effectiveLanguage(
-            hoverLanguage,
-            in: content,
-            at: caret,
-            dialect: tagDialect
-        ))
+        let suppressed = lineHighlighter
             .tokens(in: line, range: NSRange(location: 0, length: (line as NSString).length))
             .contains { token in
                 (token.kind == .string || token.kind == .comment)
@@ -3474,10 +3679,9 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
     /// those files offered nothing at all.
     ///
     /// **Keywords are not here, and that is a cut rather than an oversight.**
-    /// A built-in language has no keyword *list* — `LanguageSyntax.builtIn`
-    /// carries an empty one and the highlighter matches keywords by pattern —
-    /// so offering them would mean writing fourteen lists beside a table that
-    /// already encodes the same words, and watching the two drift. In a file
+    /// A grammar has no keyword *list* — it matches keywords by pattern — so
+    /// offering them would mean writing a list per language beside a grammar
+    /// that already encodes the same words, and watching the two drift. In a file
     /// that has used a keyword even once it is already in the buffer and comes
     /// back through here anyway. A *contributed* language does carry a list,
     /// and this is where it would attach.
@@ -3857,7 +4061,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
             CodeCompletionDocPanel.Content(state: documentationState, detail: detail),
             theme: hoverTheme,
             font: font ?? .monospacedSystemFont(ofSize: 12, weight: .regular),
-            language: hoverLanguage,
+            highlighter: lineHighlighter,
             beside: list.frame,
             over: self
         )
@@ -4261,7 +4465,7 @@ final class CodeNSTextView: NSTextView, CodeUndoTarget {
             forLine: line.trimmingTrailingNewline,
             caretInLine: caret - lineRange.location,
             indentUnit: indentUnit,
-            continuesLists: hoverLanguage == .markdown
+            continuesLists: lineLanguageID == "markdown"
         )
 
         /// Nothing but the newline and nothing removed is what

@@ -1,0 +1,30 @@
+{
+  "name": "Fixture",
+  "scopeName": "source.fixture",
+  "fileTypes": ["fx"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#keyword" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        { "name": "comment.line.double-slash.fixture", "match": "//.*$" },
+        { "name": "comment.block.fixture", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "string": {
+      "name": "string.quoted.double.fixture",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.fixture", "match": "\\\\." }
+      ]
+    },
+    "keyword": {
+      "name": "keyword.control.fixture",
+      "match": "\\b(let|const|var|func|if|else|return)\\b"
+    }
+  }
+}

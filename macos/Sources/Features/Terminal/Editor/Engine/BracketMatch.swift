@@ -41,6 +41,24 @@ enum BracketMatch {
     /// pays for would make a caret move more expensive than an edit.
     static let searchLimit = 4096
 
+    /// Whether the caret is standing on a bracket at all.
+    ///
+    /// Asked before the window around the caret is lexed, because the lex is
+    /// the expensive half of `pair(in:caret:skipping:)` and a caret in the
+    /// middle of a word can never produce a pair. It reads the same two
+    /// positions that function walks and nothing else: a bracket inside a
+    /// string still has to be lexed to be ruled out.
+    static func isOnBracket(in text: NSString, caret: Int) -> Bool {
+        for index in [caret - 1, caret] {
+            guard index >= 0, index < text.length else { continue }
+            let character = character(at: index, in: text)
+            if BracketDepth.closing[character] != nil || BracketDepth.closers[character] != nil {
+                return true
+            }
+        }
+        return false
+    }
+
     /// The pair the caret is on, or `nil`.
     ///
     /// `nil` covers three different situations on purpose: the caret is on no

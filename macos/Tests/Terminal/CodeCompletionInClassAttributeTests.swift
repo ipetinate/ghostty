@@ -37,11 +37,19 @@ struct CodeCompletionInClassAttributeTests {
     /// them. `CodeClassAttribute` looks for `"`, `'` and `` ` `` and knows
     /// nothing about `“` — so a harness missing these lines reports that
     /// completion inside `className` is dead, in an app where it is not.
+    ///
+    /// The grammar is load-bearing for the same reason. String suppression is
+    /// the highlighter's answer — `completionDecision` asks `lineHighlighter`
+    /// for the tokens on the caret's line — so a view with no grammar has no
+    /// strings, and the half of the contract that says these keystrokes stay
+    /// quiet cannot fail. `FixtureGrammar` is what the coordinator would hand
+    /// a text view for a file an installed extension claims, and its
+    /// double-quoted string rule is the one the tests below stand on.
     private func makeTextView(
         text: String,
         caret: Int,
         completesInsideClassAttribute: Bool
-    ) -> (window: NSWindow, textView: CodeNSTextView, provider: Provider) {
+    ) throws -> (window: NSWindow, textView: CodeNSTextView, provider: Provider) {
         let frame = NSRect(x: 0, y: 0, width: 600, height: 300)
         let textView = CodeNSTextView(frame: frame)
         textView.isEditable = true
@@ -52,11 +60,12 @@ struct CodeCompletionInClassAttributeTests {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.string = text
         textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.lineHighlighter = try FixtureGrammar.highlighter()
+        textView.lineLanguageID = FixtureGrammar.languageID
 
         textView.completionEnabled = true
         textView.completesInsideClassAttribute = completesInsideClassAttribute
         textView.completionTriggers = ["."]
-        textView.hoverLanguage = .javascript
         textView.completionFetchDelay = .milliseconds(1)
         textView.setSelectedRange(NSRange(location: caret, length: 0))
 
@@ -93,8 +102,8 @@ struct CodeCompletionInClassAttributeTests {
 
     /// The control. Without it a green suite could mean "the harness never
     /// asks for anything" rather than "the exception works".
-    @Test func anOrdinaryIdentifierAsksTheProvider() async {
-        let (window, textView, provider) = makeTextView(
+    @Test func anOrdinaryIdentifierAsksTheProvider() async throws {
+        let (window, textView, provider) = try makeTextView(
             text: "const value = 1\nva",
             caret: 18,
             completesInsideClassAttribute: false
@@ -111,8 +120,8 @@ struct CodeCompletionInClassAttributeTests {
     /// `className=""` must ask, even though a class attribute's value is a
     /// string literal and the string suppression would otherwise close the
     /// list on exactly these keystrokes.
-    @Test func typingInsideAClassAttributeAsksTheProvider() async {
-        let (window, textView, provider) = makeTextView(
+    @Test func typingInsideAClassAttributeAsksTheProvider() async throws {
+        let (window, textView, provider) = try makeTextView(
             text: #"<div className="">"#,
             caret: 16,
             completesInsideClassAttribute: true
@@ -129,8 +138,8 @@ struct CodeCompletionInClassAttributeTests {
     /// `-` is neither an identifier character nor one of the trigger
     /// characters, so nothing but the class-attribute rule lets it through —
     /// and half of Tailwind's vocabulary is on the far side of a dash.
-    @Test func aDashInsideAClassAttributeAsksTheProvider() async {
-        let (window, textView, provider) = makeTextView(
+    @Test func aDashInsideAClassAttributeAsksTheProvider() async throws {
+        let (window, textView, provider) = try makeTextView(
             text: #"<div className="w">"#,
             caret: 17,
             completesInsideClassAttribute: true
@@ -145,8 +154,8 @@ struct CodeCompletionInClassAttributeTests {
 
     /// A space starts the next class with an empty prefix, which is the whole
     /// list again — the moment a reader adds a second utility.
-    @Test func aSpaceInsideAClassAttributeAsksTheProvider() async {
-        let (window, textView, provider) = makeTextView(
+    @Test func aSpaceInsideAClassAttributeAsksTheProvider() async throws {
+        let (window, textView, provider) = try makeTextView(
             text: #"<div className="flex ">"#,
             caret: 21,
             completesInsideClassAttribute: true
@@ -163,8 +172,8 @@ struct CodeCompletionInClassAttributeTests {
     /// than the rule being unconditional: with no server attached that
     /// completes inside a class attribute, these keystrokes are ordinary text
     /// inside an ordinary string and must stay quiet.
-    @Test func theSameKeystrokesAskNothingWhenNoServerCompletesClasses() async {
-        let (window, textView, provider) = makeTextView(
+    @Test func theSameKeystrokesAskNothingWhenNoServerCompletesClasses() async throws {
+        let (window, textView, provider) = try makeTextView(
             text: #"<div className="">"#,
             caret: 16,
             completesInsideClassAttribute: false
@@ -183,14 +192,13 @@ struct CodeCompletionInClassAttributeTests {
     /// one.
     ///
     /// **The literal is closed on purpose.** The suppression is the
-    /// highlighter's answer, and its string pattern needs a closing quote —
-    /// measured, the same line without one yields no string token, the
-    /// identifier rule applies, and the list opens. That is existing
-    /// behaviour and arguably the right one while a line is half-typed; it is
-    /// noted here so the next person to write this test does not assert the
-    /// opposite and conclude the exception is leaking.
-    @Test func anOrdinaryStringStillAsksNothing() async {
-        let (window, textView, provider) = makeTextView(
+    /// highlighter's answer, and the fixture's string rule is a `begin`/`end`
+    /// pair around a double quote: a closed literal is the case it plainly
+    /// covers, and the case this test wants to stand on. What a half-typed
+    /// line does is the tokenizer's own question and is not what the
+    /// class-attribute exception is carved out of.
+    @Test func anOrdinaryStringStillAsksNothing() async throws {
+        let (window, textView, provider) = try makeTextView(
             text: #"const greeting = "hello wor""#,
             caret: 27,
             completesInsideClassAttribute: true

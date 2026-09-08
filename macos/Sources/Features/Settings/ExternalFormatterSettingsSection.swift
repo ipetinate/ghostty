@@ -2,17 +2,17 @@ import SwiftUI
 
 /// The formatters that are a command, as a section of the Editor pane.
 ///
-/// One row per `ExternalFormatterRegistry.all`, built from the table rather
-/// than written out again here: a fifth tool added there arrives here with
-/// nothing to change. A formatter an installed extension contributes gets the
-/// same row after them, marked with where it came from.
+/// One row per formatter an installed extension contributes, and nothing
+/// else: there is no compiled-in table left to list first, so an empty
+/// catalog is an empty section and says so rather than drawing a heading
+/// over nothing.
 ///
 /// Every row says three things, because between them they are the whole
 /// question somebody in this pane has. What runs — the command line, spelled
 /// as it will be run. Whether it is *there* — a tool that is not installed is
 /// the ordinary reason formatting does nothing, and it is invisible until
-/// somebody says so. And what it will do that might surprise, for the two that
-/// have an answer.
+/// somebody says so. And what it will do that might surprise, for the ones
+/// whose manifest has an answer.
 struct ExternalFormatterSettingsSection: View {
     /// Where each tool was found, once the probe has answered. A missing entry
     /// after `hasProbed` means the tool is not installed.
@@ -31,7 +31,7 @@ struct ExternalFormatterSettingsSection: View {
     @ObservedObject private var resolver: LanguageResolver = .shared
 
     private var formatters: [ExternalFormatter] {
-        ExternalFormatterRegistry.all + resolver.catalog.formatters.compactMap(\.externalFormatter)
+        resolver.catalog.formatters.compactMap(\.externalFormatter)
     }
 
     var body: some View {
@@ -39,29 +39,55 @@ struct ExternalFormatterSettingsSection: View {
             ForEach(formatters) { formatter in
                 row(formatter)
             }
+
+            if formatters.isEmpty {
+                Text("No extension is installed that contributes a formatter, so there is nothing to run here. Format on Save above still reaches whatever the language server offers.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } header: {
             Text("Formatters")
         } footer: {
-            Text("""
-            These run the tools their languages actually use, for the files \
-            neither Prettier nor a language server formats. Each one takes the \
-            buffer on standard input and hands back the formatted text, and \
-            each is given the file's name so it can find the project's own \
-            configuration — a `pyproject.toml`, a `stylua.toml`.
-
-            A language server that formats gets there first, so this never \
-            overrides what a project's own tooling would do. They run on ⇧⌘F, \
-            and on save when Format on Save is on.
-
-            Point one at a different binary — a `ruff` inside a virtualenv, \
-            say — by typing its full path. Clearing a field puts the default \
-            back.
-            """)
+            footerText
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .task { await probe() }
         .onAppear { settings = ExternalFormatterStore.all }
+    }
+
+    /// Two footers, because the section has two states and one sentence
+    /// cannot serve both. With no formatter installed the paragraphs below
+    /// would explain controls that are not on screen.
+    @ViewBuilder
+    private var footerText: some View {
+        if formatters.isEmpty {
+            Text("""
+            A formatter that is a command arrives in an extension, alongside \
+            the language it formats. Install one from Extensions and its tool \
+            is listed here, with a switch and a field to point it somewhere \
+            else.
+            """)
+        } else {
+            Text("""
+            These run the tools their languages actually use, for the files \
+            no language server formats. Each one takes the buffer on standard \
+            input and hands back the formatted text, and each is given the \
+            file's name so it can find the project's own configuration — a \
+            `pyproject.toml`, a `stylua.toml`.
+
+            A language server that formats gets there first, unless the \
+            project declares the tool itself — a configuration file, or the \
+            tool installed into the project — in which case the project has \
+            already answered. They run on ⇧⌘F, and on save when Format on \
+            Save is on.
+
+            Point one at a different binary — a `ruff` inside a virtualenv, \
+            say — by typing its full path. Clearing a field puts the default \
+            back.
+            """)
+        }
     }
 
     // MARK: One formatter

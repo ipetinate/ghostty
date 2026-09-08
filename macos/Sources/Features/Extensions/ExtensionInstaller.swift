@@ -11,6 +11,7 @@ enum ExtensionInstaller {
         case unreadableArchive(String)
         case unsafeEntry(ExtensionArchive.EntryRejection)
         case noManifest
+        case noDocument
         case symbolicLink(String)
         case unexpectedItem(String)
         case manifestMismatch(id: String, version: String)
@@ -38,6 +39,8 @@ enum ExtensionInstaller {
                 return rejection.message
             case .noManifest:
                 return "The archive has no \(ExtensionArchive.manifestFileName) at its root."
+            case .noDocument:
+                return "The preview archive has no \(ExtensionCard.documentFileName) at its root."
             case .symbolicLink(let path):
                 return "The archive contains a symbolic link: \(ExtensionArchive.shown(path))."
             case .unexpectedItem(let path):
@@ -76,7 +79,7 @@ enum ExtensionInstaller {
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         let archive = scratch.appendingPathComponent("\(entry.id)-\(entry.version).zip")
-        try await fetch(entry, to: archive, progress: progress)
+        try await fetch(entry.download, to: archive, progress: progress)
 
         await progress(.verifying)
         let staged = scratch.appendingPathComponent("extracted", isDirectory: true)
@@ -87,8 +90,42 @@ enum ExtensionInstaller {
     }
 
     static func stage(archive: URL, expecting entry: ExtensionIndex.Entry, into destination: URL) async throws {
-        try verify(archive, against: entry)
+        try verify(archive, against: entry.download)
         try await extract(archive, into: destination, expecting: entry)
+    }
+
+    /// Unpacks a preview archive — the document and its media, and no code.
+    ///
+    /// Held to the same guards as the installable one: the digest the index
+    /// lists, no path that leaves the root, no symbolic link, nothing that
+    /// is neither a file nor a directory. It is still a file off the
+    /// internet being unzipped.
+    ///
+    /// What it is *not* held to is a manifest: the bundle carries no
+    /// `extension.json`, so what proves it is the right bundle is the digest
+    /// and a document at its root. The digest is the stronger claim of the
+    /// two — the index names it per version — which is why there is no check
+    /// here comparing an id to the entry's.
+    static func stagePreview(
+        archive: URL,
+        expecting asset: ExtensionIndex.Asset,
+        into destination: URL
+    ) async throws {
+        try verify(archive, against: asset)
+
+        let listing = await run("/usr/bin/unzip", ["-Z1", archive.path])
+        guard listing.succeeded else { throw Failure.unreadableArchive(listing.message) }
+
+        let entries = ExtensionArchive.entries(fromListing: listing.stdout)
+        if let rejection = ExtensionArchive.firstRejection(in: entries) {
+            throw Failure.unsafeEntry(rejection)
+        }
+        guard ExtensionArchive.hasDocumentAtRoot(entries) else { throw Failure.noDocument }
+
+        let extraction = await run("/usr/bin/ditto", ["-x", "-k", archive.path, destination.path])
+        guard extraction.succeeded else { throw Failure.extraction(extraction.message) }
+
+        try inspect(destination)
     }
 
     static func install(from staged: URL, as entry: ExtensionIndex.Entry, into extensionsDir: URL) throws {
@@ -134,12 +171,12 @@ enum ExtensionInstaller {
     // MARK: Download
 
     static func fetch(
-        _ entry: ExtensionIndex.Entry,
+        _ asset: ExtensionIndex.Asset,
         to file: URL,
         progress: @escaping @MainActor @Sendable (ExtensionActivity) -> Void
     ) async throws {
         do {
-            try await stream(entry, to: file, progress: progress)
+            try await stream(asset, to: file, progress: progress)
         } catch let failure as Failure {
             throw failure
         } catch {
@@ -148,12 +185,12 @@ enum ExtensionInstaller {
     }
 
     private static func stream(
-        _ entry: ExtensionIndex.Entry,
+        _ asset: ExtensionIndex.Asset,
         to file: URL,
         progress: @escaping @MainActor @Sendable (ExtensionActivity) -> Void
     ) async throws {
         let request = URLRequest(
-            url: entry.downloadURL,
+            url: asset.url,
             cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: downloadIdleTimeout
         )
@@ -169,7 +206,7 @@ enum ExtensionInstaller {
         let handle = try FileHandle(forWritingTo: file)
         defer { try? handle.close() }
 
-        let expected = entry.bytes
+        let expected = asset.bytes
         var received = 0
         var lastReported = 0.0
         var buffer = Data(capacity: chunkBytes)
@@ -205,12 +242,12 @@ enum ExtensionInstaller {
 
     // MARK: Verification
 
-    static func verify(_ file: URL, against entry: ExtensionIndex.Entry) throws {
+    static func verify(_ file: URL, against asset: ExtensionIndex.Asset) throws {
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? -1
-        guard size == entry.bytes else {
-            throw Failure.sizeMismatch(received: size, expected: entry.bytes)
+        guard size == asset.bytes else {
+            throw Failure.sizeMismatch(received: size, expected: asset.bytes)
         }
-        guard try digest(of: file) == entry.sha256 else { throw Failure.digestMismatch }
+        guard try digest(of: file) == asset.sha256 else { throw Failure.digestMismatch }
     }
 
     static func digest(of file: URL) throws -> String {

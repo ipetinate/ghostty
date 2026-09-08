@@ -12,7 +12,7 @@ import Testing
 /// rewrite, which ships no `tsserver` for it to drive.
 struct LSPLaunchSettingsTests {
     @Test func theArgumentCarriesTheResolvedPath() {
-        let argument = LSPInitializationOptions.vueTSDKArgument(tsdk: "/w/node_modules/typescript/lib")
+        let argument = LSPInitializationOptions.tsdkArgument(tsdk: "/w/node_modules/typescript/lib")
         #expect(argument == "--tsdk=/w/node_modules/typescript/lib")
     }
 
@@ -21,8 +21,8 @@ struct LSPLaunchSettingsTests {
     /// of them.
     @Test func theOptionAndTheArgumentNameTheSamePath() {
         let tsdk = "/w/node_modules/typescript/lib"
-        #expect(LSPInitializationOptions.vueValue(tsdk: tsdk)["typescript"]?["tsdk"] == .string(tsdk))
-        #expect(LSPInitializationOptions.vueTSDKArgument(tsdk: tsdk).hasSuffix(tsdk))
+        #expect(LSPInitializationOptions.sdkValue(tsdk: tsdk)["typescript"]?["tsdk"] == .string(tsdk))
+        #expect(LSPInitializationOptions.tsdkArgument(tsdk: tsdk).hasSuffix(tsdk))
     }
 
     @Test func launchSettingsCarryNoArgumentsByDefault() {
@@ -34,21 +34,20 @@ struct LSPLaunchSettingsTests {
     /// the order a command line is read in.
     @Test func extraArgumentsAreAppendedToTheDefinitions() {
         let process = LSPProcess(
-            definition: LSPServerRegistry.server(forLanguage: "vue")!,
+            definition: LSPServerDefinition(
+                languageID: "vue",
+                displayName: "Vue",
+                command: "vue-language-server",
+                arguments: ["--stdio"],
+                installHint: "npm i -g @vue/language-server",
+                initializationOptionsKind: .typeScriptSDKArgument
+            ),
             extraArguments: ["--tsdk=/w/node_modules/typescript/lib"],
             environmentProvider: { [:] }
         )
 
         #expect(process.definition.arguments == ["--stdio"])
         #expect(process.extraArguments == ["--tsdk=/w/node_modules/typescript/lib"])
-    }
-
-    /// The Vue server is the one definition that asks for the lookup, and
-    /// the TypeScript half deliberately is not: it takes the same project's
-    /// `tsserver.js` through `initializationOptions` instead.
-    @Test func onlyTheVueServerAsksForTheSDKLookup() {
-        #expect(LSPServerRegistry.server(forLanguage: "vue")?.initializationOptionsKind == .vueTypeScriptSDK)
-        #expect(LSPServerRegistry.vueTypeScriptServer.initializationOptionsKind == .vueTypeScriptPlugin)
     }
 
     /// A `tsdk` directory that exists but holds nothing loadable is refused
@@ -61,7 +60,7 @@ struct LSPLaunchSettingsTests {
         try? FileManager.default.createDirectory(atPath: lib, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: root) }
 
-        switch LSPInitializationOptions.vueLoadableTypeScriptSDK(root: root, searchPath: "") {
+        switch LSPInitializationOptions.loadableTypeScriptSDK(root: root, searchPath: "") {
         case .success(let path): Issue.record("expected a refusal, got \(path)")
         case .failure(let reason):
             #expect(reason == LSPInitializationOptions.unloadableTypeScriptMessage)
@@ -76,7 +75,7 @@ struct LSPLaunchSettingsTests {
         FileManager.default.createFile(atPath: lib + "/typescript.js", contents: Data())
         defer { try? FileManager.default.removeItem(atPath: root) }
 
-        switch LSPInitializationOptions.vueLoadableTypeScriptSDK(root: root, searchPath: "") {
+        switch LSPInitializationOptions.loadableTypeScriptSDK(root: root, searchPath: "") {
         case .success(let path): #expect(path == lib)
         case .failure(let reason): Issue.record("expected the local path, got \(reason)")
         }

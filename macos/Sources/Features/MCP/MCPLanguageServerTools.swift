@@ -10,8 +10,8 @@ import Foundation
 ///
 /// ## Why the loop needs both
 ///
-/// A diagnostic tells an agent that Vue's `<script>` block is unserved because
-/// a TypeScript plugin is missing. The fix is a value in
+/// A diagnostic tells an agent that half a file is unserved because a plugin
+/// its server needed is missing. The fix is a value in
 /// `initializationOptions`. Without `configure_language_server` it can only
 /// describe the fix; without `restart_language_server` the fix sits in a
 /// setting that takes effect the next time the server starts, which used to
@@ -50,8 +50,7 @@ enum MCPLanguageServerTools {
                 schema: MCPSchema.object([
                     "server": MCPSchema.string(
                         "The server's name, command or language id, as "
-                        + "list_language_servers reported it — built-in or contributed "
-                        + "by an extension."),
+                        + "list_language_servers reported it."),
                 ], required: ["server"]))
         ) { context, answer in
             guard let named = context.string("server") else {
@@ -104,10 +103,9 @@ enum MCPLanguageServerTools {
                 description: """
                     Set a language server's initializationOptions — the JSON it is \
                     handed at startup. Use it to fix a server that runs but cannot \
-                    interpret a file, which is what a missing plugin looks like: Vue's \
-                    <script> block needing the TypeScript plugin is the case this \
-                    exists for. The reader is asked before anything is written, and \
-                    they see the JSON. It refuses to overwrite options the reader typed \
+                    interpret a file, which is what a missing plugin looks like. The \
+                    reader is asked before anything is written, and they see the JSON. \
+                    It refuses to overwrite options the reader typed \
                     themselves, and the setting applies in every project — it is the \
                     app's configuration, not this project's. Restart the server \
                     afterwards for it to take effect.
@@ -115,8 +113,7 @@ enum MCPLanguageServerTools {
                 schema: MCPSchema.object([
                     "server": MCPSchema.string(
                         "The server's name, command or language id, as "
-                        + "list_language_servers reported it — built-in or contributed "
-                        + "by an extension."),
+                        + "list_language_servers reported it."),
                     "initialization_options": MCPSchema.string(
                         "The JSON object to send at startup. Must be an object. Pass an "
                         + "empty string to go back to this app's own default."),
@@ -235,18 +232,18 @@ enum MCPLanguageServerTools {
     // MARK: Naming a server
 
     static var knownServers: [LSPServerDefinition] {
-        knownServers(
-            builtIn: LSPServerRegistry.distinctServers,
-            contributed: LanguageResolver.shared.catalog.contributed.compactMap(\.serverDefinition)
-        )
+        knownServers(contributed: LanguageResolver.shared.allServerDefinitions)
     }
 
-    static func knownServers(
-        builtIn: [LSPServerDefinition],
-        contributed: [LSPServerDefinition]
-    ) -> [LSPServerDefinition] {
+    /// One entry per distinct binary. Listing a server once per language id
+    /// it serves would report the same TypeScript process four times, and a
+    /// model reading the list has no way to tell that is one thing.
+    ///
+    /// The `builtIn:` half is gone with the compiled-in table: after 0.17.0
+    /// every server a caller can name came from an installed extension.
+    static func knownServers(contributed: [LSPServerDefinition]) -> [LSPServerDefinition] {
         var seen: Set<String> = []
-        return (builtIn + contributed).filter { seen.insert($0.command).inserted }
+        return contributed.filter { seen.insert($0.command).inserted }
     }
 
     static func origin(of definition: LSPServerDefinition) -> String {

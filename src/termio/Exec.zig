@@ -1263,6 +1263,37 @@ const Subprocess = struct {
         const pty = &(self.pty orelse return null);
         return pty.getProcessInfo(info);
     }
+
+    /// Whether a process other than the one we started owns the terminal.
+    ///
+    /// The pty's foreground process group, compared against the pid of the
+    /// child we spawned. A shell with job control puts each foreground job
+    /// in a process group of its own and hands it the terminal, so the two
+    /// differ exactly while a program runs and match while the shell waits.
+    ///
+    /// The comparison is against the process this surface actually started,
+    /// so no shell has to be named and a custom `command` is not mistaken
+    /// for one.
+    ///
+    /// False whenever either pid is unknown, and false for a shell that runs
+    /// its children in its own process group: this answer only ever adds a
+    /// reason to confirm, and `Terminal.cursorIsAtPrompt` is still the other
+    /// one.
+    pub fn hasForegroundProcess(self: *Subprocess) bool {
+        const pty = &(self.pty orelse return false);
+        const foreground = pty.getProcessInfo(.foreground_pid) orelse return false;
+
+        const pid = switch (self.process orelse return false) {
+            .fork_exec => |cmd| cmd.pid orelse return false,
+
+            // Flatpak runs the command on the host, where we have neither a
+            // pid of our own nor a pty to read a group from.
+            .flatpak => return false,
+        };
+
+        const child = std.math.cast(u64, pid) orelse return false;
+        return foreground != child;
+    }
 };
 
 /// The read thread works with a companion gather thread to form a two-stage
@@ -2061,6 +2092,12 @@ fn appendEnvAlways(
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Exec, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.subprocess.getProcessInfo(info);
+}
+
+/// Whether a process other than the one we started owns the terminal. See
+/// `Subprocess.hasForegroundProcess`.
+pub fn hasForegroundProcess(self: *Exec) bool {
+    return self.subprocess.hasForegroundProcess();
 }
 
 test "execCommand darwin: shell command" {

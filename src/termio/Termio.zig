@@ -827,3 +827,9 @@ pub const ThreadData = struct {
 pub fn getProcessInfo(self: *Termio, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.backend.getProcessInfo(info);
 }
+
+/// Whether a process other than the one the backend started owns the
+/// terminal. See `termio.Exec.Subprocess.hasForegroundProcess`.
+pub fn hasForegroundProcess(self: *Termio) bool {
+    return self.backend.hasForegroundProcess();
+}

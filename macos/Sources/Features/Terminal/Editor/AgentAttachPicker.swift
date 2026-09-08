@@ -46,7 +46,9 @@ struct AgentAttachPicker: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
+                .scrollIndicators(.hidden)
                 .frame(maxHeight: 320)
             }
 

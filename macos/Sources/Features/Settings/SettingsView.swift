@@ -80,9 +80,11 @@ struct SettingsRootView: View {
                         WorktreeIcon(size: 13)
                     }
                 }
+                .background(alignment: .top) { OverlayScrollers() }
                 .tag(section)
             }
             .listStyle(.sidebar)
+            .scrollIndicators(.hidden)
             // Wide enough for the longest section name at the window's
             // opening width. "Keyboard Shortcuts" is the longest, and at an
             // ideal of 180 it opened already truncated to "Keyboard
@@ -199,9 +201,11 @@ struct GeneralSettingsView: View {
                 Text("Everything changed in this window is stored in \(GuiConfigStore.fileName) (the Phantom settings file), which is included from your main config. Hand-written options in the main config stay untouched. Style options (fonts, colors, blur) live in Appearance.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .background(alignment: .top) { OverlayScrollers() }
             }
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle("General")
         .onAppear {
             restoreWindows = (store.string("window-save-state") ?? "always") == "always"
@@ -445,9 +449,11 @@ struct SidebarSettingsView: View {
                 Text("Terminals the sidebar opens start in the home directory unless a group's project path applies. Type a path like `~/dev` to change it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .background(alignment: .top) { OverlayScrollers() }
             }
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle("Sidebar")
         .onAppear {
             sidebarEnabled = store.bool("sidebar")
@@ -532,9 +538,11 @@ struct AgentsSettingsView: View {
                 Text("A notification when an agent finishes or needs an answer, for the times its window is not the one you are looking at.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .background(alignment: .top) { OverlayScrollers() }
             }
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle("Agents")
         .onAppear {
             AgentHooksRegistration.logStatus()

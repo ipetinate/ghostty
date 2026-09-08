@@ -146,8 +146,9 @@ struct GitPanelView: View {
                 }
             }
             .padding(.vertical, 6)
+            .background(alignment: .top) { OverlayScrollers() }
         }
-        .scrollIndicators(.automatic)
+        .scrollIndicators(.hidden)
     }
 
     private func needsDivider(above index: Int, in repos: [String]) -> Bool {
@@ -516,7 +517,11 @@ struct GitFailureSheet: View {
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
+                            .background(alignment: .top) {
+                                OverlayScrollers(weight: .content)
+                            }
                     }
+                    .scrollIndicators(.hidden)
                     // Bounded on purpose — this is exactly the content that
                     // has no natural size limit.
                     .frame(maxHeight: 220)

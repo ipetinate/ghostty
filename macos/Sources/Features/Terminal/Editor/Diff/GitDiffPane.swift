@@ -103,6 +103,7 @@ struct GitDiffPane: View {
                 .background(alignment: .top) { OverlayScrollers(weight: .content) }
                 .synchronizedScroll(scrollSync, as: syncSide)
             }
+            .scrollIndicators(.hidden)
         }
     }
 

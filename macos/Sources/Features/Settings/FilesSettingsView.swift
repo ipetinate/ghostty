@@ -49,6 +49,7 @@ struct FilesSettingsView: View {
                         Text(action.title).tag(action.rawValue)
                     }
                 }
+                .background(alignment: .top) { OverlayScrollers() }
 
                 /// Directly under the choice it depends on. This lived two
                 /// panes away, under a header that read "Panels", and only
@@ -237,6 +238,7 @@ struct FilesSettingsView: View {
 
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle("Editor")
         .sheet(isPresented: $isChoosingFont) {
             /// The terminal preview, because that is what the editor is:

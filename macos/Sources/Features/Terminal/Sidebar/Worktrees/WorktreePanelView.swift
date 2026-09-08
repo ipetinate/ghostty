@@ -226,8 +226,9 @@ struct WorktreePanelView: View {
                 }
             }
             .padding(.vertical, 6)
+            .background(alignment: .top) { OverlayScrollers() }
         }
-        .scrollIndicators(.automatic)
+        .scrollIndicators(.hidden)
     }
 
     /// The Git panel's rule, reused rather than restated: the question of

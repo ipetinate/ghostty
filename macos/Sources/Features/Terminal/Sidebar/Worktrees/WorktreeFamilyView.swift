@@ -113,7 +113,11 @@ struct WorktreeFamilyView: View {
             VStack(spacing: 0) {
                 header
                 search
-                ScrollView { list(showsLoadState: false) }
+                ScrollView {
+                    list(showsLoadState: false)
+                        .background(alignment: .top) { OverlayScrollers() }
+                }
+                .scrollIndicators(.hidden)
             }
 
         case .section(let isExpanded, let onToggle):

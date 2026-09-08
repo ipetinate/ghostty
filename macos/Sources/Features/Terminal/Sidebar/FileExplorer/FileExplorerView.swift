@@ -448,11 +448,11 @@ struct FileExplorerView: View {
                 .padding(.bottom, 8)
                 .background(alignment: .top) { OverlayScrollers() }
             }
-            // Automatic rather than hidden: the bar should appear while
-            // scrolling and go away after, which is what overlay scrollers
-            // do — hiding it outright loses the only clue about how much
-            // tree there is below.
-            .scrollIndicators(.automatic)
+            // Hidden rather than automatic: the modifier does not reach the
+            // overlay scroller `OverlayScrollers` installs, so the bar still
+            // appears while scrolling and fades after. Asking for an
+            // indicator only has SwiftUI reserve the band a legacy one takes.
+            .scrollIndicators(.hidden)
             .onChange(of: model.currentDirectory) { path in
                 guard let path else { return }
                 withAnimation(.easeOut(duration: 0.2)) {

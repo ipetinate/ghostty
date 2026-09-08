@@ -2232,7 +2232,11 @@ private struct ServerLogView: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
+                    .background(alignment: .top) {
+                        OverlayScrollers(weight: .content)
+                    }
             }
+            .scrollIndicators(.hidden)
         }
         .frame(width: 560, height: 360)
     }

@@ -120,7 +120,9 @@ struct AppearanceSettingsView: View {
                         .scrollDisabled(true)
                         .fixedSize(horizontal: false, vertical: true)
                     }
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
+                .scrollIndicators(.hidden)
             }
         }
         .navigationTitle("Appearance")
@@ -1167,7 +1169,9 @@ private struct ThemeSeedPicker: View {
                         }
                     }
                     .padding(12)
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
+                .scrollIndicators(.hidden)
                 .onAppear {
                     guard !currentName.isEmpty else { return }
                     proxy.scrollTo(currentName, anchor: .center)
@@ -1273,7 +1277,9 @@ private struct ThemeCreatorWindowView: View {
                 onSaved: onSaved
             )
             .padding(16)
+            .background(alignment: .top) { OverlayScrollers() }
         }
+        .scrollIndicators(.hidden)
         .frame(minWidth: 640)
         .onAppear { catalog.loadIfNeeded() }
     }
@@ -1407,6 +1413,7 @@ private struct AllThemesView: View {
                         }
                     }
                     .padding(14)
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
                 .scrollIndicators(.hidden)
             }
@@ -1450,7 +1457,11 @@ private struct ThemeSourceView: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
+                    .background(alignment: .top) {
+                        OverlayScrollers(weight: .content)
+                    }
             }
+            .scrollIndicators(.hidden)
 
             Divider()
 

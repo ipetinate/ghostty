@@ -88,6 +88,7 @@ struct CSVTableView: View {
                 /// of this window no longer has.
                 .background(alignment: .top) { OverlayScrollers(weight: .content) }
             }
+            .scrollIndicators(.hidden)
             /// So a cell can be copied out. A table you cannot take a value
             /// from is a table you have to switch back to source to use.
             .textSelection(.enabled)

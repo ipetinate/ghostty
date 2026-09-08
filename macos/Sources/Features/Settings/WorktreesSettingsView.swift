@@ -28,6 +28,7 @@ struct WorktreesSettingsView: View {
                     prompt: Text(verbatim: "~/.phantom/worktrees"))
                 .autocorrectionDisabled()
                 .onSubmit(commitRoot)
+                .background(alignment: .top) { OverlayScrollers() }
             } header: {
                 Text("Location")
             } footer: {
@@ -83,6 +84,7 @@ struct WorktreesSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle("Worktrees")
         .id(defaultsRevision)
         .onAppear { rootDraft = managedRootRaw }

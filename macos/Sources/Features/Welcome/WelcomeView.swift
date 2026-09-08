@@ -253,7 +253,9 @@ struct WelcomeView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
+            .background(alignment: .top) { OverlayScrollers() }
         }
+        .scrollIndicators(.hidden)
     }
 
     private func card(for agent: CodingAgent) -> some View {

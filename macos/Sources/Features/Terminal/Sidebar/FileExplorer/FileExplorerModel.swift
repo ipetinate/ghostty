@@ -531,12 +531,21 @@ final class FileExplorerModel: ObservableObject {
     }
 
     /// Commits a rename field. Returns the new path on success.
+    ///
+    /// A blank name cancels. A field the reader emptied is not a request for
+    /// a file called nothing, and answering it with an alert makes them
+    /// dismiss a dialog to get back to where Esc would have left them.
     @discardableResult
     func commitRename(path: String, to name: String) -> Result<URL, FileExplorerError> {
         editing = nil
 
         let source = URL(fileURLWithPath: path)
         let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            rebuildRows()
+            return .failure(FileExplorerError("A name is required."))
+        }
+
         let result = FileExplorerFilesystem.rename(source, to: trimmed)
         switch result {
         case .success(let target):
@@ -550,15 +559,23 @@ final class FileExplorerModel: ObservableObject {
         return result
     }
 
-    /// Commits a create field.
+    /// Commits a create field. A blank name cancels, for the reason
+    /// `commitRename(path:to:)` gives: nothing is written and nothing is
+    /// explained, because nothing was asked for.
     @discardableResult
     func commitCreate(parent: String, isFolder: Bool, name: String) -> Result<URL, FileExplorerError> {
         editing = nil
 
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            rebuildRows()
+            return .failure(FileExplorerError("A name is required."))
+        }
+
         let directory = URL(fileURLWithPath: parent, isDirectory: true)
         let result = isFolder
-            ? FileExplorerFilesystem.createFolder(named: name, in: directory)
-            : FileExplorerFilesystem.createFile(named: name, in: directory)
+            ? FileExplorerFilesystem.createFolder(named: trimmed, in: directory)
+            : FileExplorerFilesystem.createFile(named: trimmed, in: directory)
         switch result {
         case .success(let target):
             selection = target.path

@@ -204,8 +204,32 @@ enum FileExplorerFilesystem {
     }
 
     /// The name the explorer should prefill when creating an item.
+    ///
+    /// A file gets no extension. What kind of file it is, is the reader's to
+    /// say, and a prefilled ".txt" both answers that for them and leaves half
+    /// the field outside the selection, so the first thing typed lands inside
+    /// a name nobody asked for.
     static func proposedName(isFolder: Bool) -> String {
-        isFolder ? "untitled folder" : "untitled.txt"
+        isFolder ? "untitled folder" : "untitled"
+    }
+
+    /// The part of a prefilled name a field should open with selected.
+    ///
+    /// All of it when the field is proposing the name, because there is
+    /// nothing in a proposal the reader wants to keep. Everything before the
+    /// extension when it is renaming a real file, the way Finder does it —
+    /// the suffix there is a fact about the file rather than a guess.
+    static func selectedRange(
+        in name: String,
+        isFolder: Bool,
+        isCreating: Bool
+    ) -> Range<String.Index>? {
+        guard !isCreating else { return name.startIndex..<name.endIndex }
+
+        let length = isFolder
+            ? (name as NSString).length
+            : (name as NSString).deletingPathExtension.count
+        return Range(NSRange(location: 0, length: length), in: name)
     }
 
     private static func validate(name: String) -> Bool {

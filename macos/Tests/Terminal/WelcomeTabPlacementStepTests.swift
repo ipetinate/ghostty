@@ -8,8 +8,8 @@ import Testing
 struct WelcomeTabPlacementStepTests {
     private static let scratchSuite = "WelcomeTabPlacementStepTests"
 
-    @Test func theTourRunsHeroBasicsLayoutAgents() {
-        #expect(WelcomeView.Step.allCases == [.hero, .basics, .layout, .agents])
+    @Test func theTourRunsHeroBasicsLayoutThemeAgents() {
+        #expect(WelcomeView.Step.allCases == [.hero, .basics, .layout, .theme, .agents])
     }
 
     /// The choice comes before the agents step, which is the one that installs

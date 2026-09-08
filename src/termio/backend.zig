@@ -110,6 +110,14 @@ pub const Backend = union(Kind) {
             .exec => |*exec| exec.getProcessInfo(info),
         };
     }
+
+    /// Whether a process other than the one the backend started owns the
+    /// terminal. See `termio.Exec.Subprocess.hasForegroundProcess`.
+    pub fn hasForegroundProcess(self: *Backend) bool {
+        return switch (self.*) {
+            .exec => |*exec| exec.hasForegroundProcess(),
+        };
+    }
 };
 
 /// Termio thread data. See termio.ThreadData for docs.

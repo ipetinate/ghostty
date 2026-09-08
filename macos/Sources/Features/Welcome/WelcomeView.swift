@@ -48,6 +48,10 @@ struct WelcomeView: View {
             case .agents: return "Your agents"
             }
         }
+
+        /// The step behind this one, or nil for the first. Read by the bottom
+        /// bar to decide whether there is a Back button at all.
+        var previous: Step? { Step(rawValue: rawValue - 1) }
     }
 
     @State private var step: Step = .hero
@@ -328,8 +332,22 @@ struct WelcomeView: View {
         }
     }
 
-    @ViewBuilder
     private var buttons: some View {
+        HStack(spacing: 8) {
+            if let previous = step.previous {
+                Button("Back") { advance(to: previous) }
+                    .keyboardShortcut("[", modifiers: .command)
+            }
+            forward
+        }
+    }
+
+    /// Going back never undoes what a step did. Every step here writes either
+    /// a preference the next launch reads or a theme already applied, and each
+    /// of those is idempotent, so leaving and returning costs a reader
+    /// nothing and hides nothing they had chosen.
+    @ViewBuilder
+    private var forward: some View {
         switch step {
         case .hero:
             Button("Start") { advance(to: .basics) }
@@ -351,11 +369,9 @@ struct WelcomeView: View {
             }
             .keyboardShortcut(.defaultAction)
         case .agents:
-            HStack(spacing: 8) {
-                Button("Skip", action: close)
-                Button("Finish", action: finish)
-                    .keyboardShortcut(.defaultAction)
-            }
+            Button("Skip", action: close)
+            Button("Finish", action: finish)
+                .keyboardShortcut(.defaultAction)
         }
     }
 

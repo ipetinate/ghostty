@@ -31,6 +31,30 @@ struct WelcomeTabPlacementStepTests {
         #expect(Set(titles).count == titles.count)
     }
 
+    /// Every step but the first has one behind it, so the bottom bar draws a
+    /// Back button everywhere except the hero — where there is nothing to go
+    /// back to and a disabled button would be the only thing to look at.
+    @Test func everyStepPastTheFirstHasOneBehindIt() {
+        #expect(WelcomeView.Step.hero.previous == nil)
+        #expect(WelcomeView.Step.basics.previous == .hero)
+        #expect(WelcomeView.Step.layout.previous == .basics)
+        #expect(WelcomeView.Step.theme.previous == .layout)
+        #expect(WelcomeView.Step.agents.previous == .theme)
+    }
+
+    /// Walking the whole tour backwards reaches the hero and stops, which is
+    /// what keeps a reader pressing Back from falling off the end.
+    @Test func walkingBackwardsEndsAtTheHero() {
+        var step = WelcomeView.Step.agents
+        var visited: [WelcomeView.Step] = [step]
+        while let previous = step.previous {
+            step = previous
+            visited.append(step)
+        }
+        #expect(step == .hero)
+        #expect(visited.count == WelcomeView.Step.allCases.count)
+    }
+
     /// What a card writes is what a window reads back. The card sets the
     /// placement's raw value under `SidebarTabBarPlacement.defaultsKey`, and
     /// `SidebarWidthRule.placement` is the read `TerminalController` makes when

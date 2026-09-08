@@ -132,7 +132,7 @@ final class FileIconProvider: ObservableObject {
 
     func icon(forFile fileName: String) -> FileIcon {
         if let theme = active,
-           let id = theme.iconID(forFile: fileName),
+           let id = theme.iconID(forFile: fileName, on: background),
            let image = image(for: id, in: theme) {
             return .image(image)
         }
@@ -141,11 +141,26 @@ final class FileIconProvider: ObservableObject {
 
     func icon(forFolder folderName: String, expanded: Bool, isRoot: Bool = false) -> FileIcon {
         if let theme = active,
-           let id = theme.iconID(forFolder: folderName, expanded: expanded, isRoot: isRoot),
+           let id = theme.iconID(forFolder: folderName, expanded: expanded, isRoot: isRoot, on: background),
            let image = image(for: id, in: theme) {
             return .image(image)
         }
         return .symbol(name: expanded ? "folder.fill" : "folder", color: .secondary)
+    }
+
+    /// Which set of the theme's tables to read, asked per lookup.
+    ///
+    /// The terminal's own background, not the system appearance: the
+    /// explorer is painted by the theme, so a light theme inside a dark
+    /// system is a light sidebar and wants the light artwork. This is the
+    /// same question `ExtensionViewerTheme` asks to tell its page which
+    /// scheme it is in.
+    ///
+    /// Nothing is cached against it. A light override names a *different*
+    /// icon id — Material's are suffixed `_light` — and `imageCache` is
+    /// keyed by id, so a theme change needs no eviction here.
+    private var background: IconTheme.Background {
+        ThemePalette.shared.background?.isLightColor == true ? .light : .dark
     }
 
     private func image(for id: String, in theme: IconTheme) -> NSImage? {

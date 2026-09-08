@@ -31,11 +31,53 @@ struct IconTheme: Equatable {
     let folderNames: [String: String]
     let folderNamesExpanded: [String: String]
     let rootFolderNames: [String: String]
+    let rootFolderNamesExpanded: [String: String]
 
     let defaultFile: String?
     let defaultFolder: String?
     let defaultFolderExpanded: String?
     let defaultRootFolder: String?
+    let defaultRootFolderExpanded: String?
+
+    /// The theme's `light` section: the same tables again, consulted first
+    /// when the icons are being drawn on a light background.
+    ///
+    /// **An override, not a replacement.** A key the section omits falls
+    /// through to the table above it, per lookup rather than per theme —
+    /// which is what keeps the precedence intact: an exact file name still
+    /// beats an extension, whichever of the two tables answered. Material
+    /// Icon Theme 5.38.1 names 263 overrides this way and 54 icon ids that
+    /// appear nowhere else, so without it those files draw the dark artwork
+    /// and those 54 drawings are unreachable.
+    let light: Overrides?
+
+    /// One `light` section, or the absence of one.
+    struct Overrides: Equatable {
+        var fileExtensions: [String: String] = [:]
+        var fileNames: [String: String] = [:]
+        var languageIds: [String: String] = [:]
+        var folderNames: [String: String] = [:]
+        var folderNamesExpanded: [String: String] = [:]
+        var rootFolderNames: [String: String] = [:]
+        var rootFolderNamesExpanded: [String: String] = [:]
+
+        var isEmpty: Bool {
+            fileExtensions.isEmpty && fileNames.isEmpty && languageIds.isEmpty
+                && folderNames.isEmpty && folderNamesExpanded.isEmpty
+                && rootFolderNames.isEmpty && rootFolderNamesExpanded.isEmpty
+        }
+    }
+
+    /// Which background the icons are about to be drawn on.
+    ///
+    /// Not the system appearance: the explorer is painted by the terminal's
+    /// own theme, and a reader on a light theme inside a dark system is
+    /// looking at a light sidebar. `ThemePalette.background.isLightColor` is
+    /// the same answer the extension viewer already asks for.
+    enum Background: Equatable {
+        case dark
+        case light
+    }
 
     var contributedBy: String?
 
@@ -60,18 +102,19 @@ struct IconTheme: Equatable {
     /// that gap closes by trying the extension *as* a language id — which
     /// is exactly right for `vue`, `php` and `razor` — and the rest by the
     /// small table below.
-    func iconID(forFile fileName: String) -> String? {
+    func iconID(forFile fileName: String, on background: Background = .dark) -> String? {
+        let overrides = background == .light ? light : nil
         let lowered = fileName.lowercased()
-        if let id = fileNames[lowered] { return id }
+        if let id = overrides?.fileNames[lowered] ?? fileNames[lowered] { return id }
 
         let candidates = Self.extensionCandidates(for: lowered)
         for candidate in candidates {
-            if let id = fileExtensions[candidate] { return id }
+            if let id = overrides?.fileExtensions[candidate] ?? fileExtensions[candidate] { return id }
         }
         for candidate in candidates {
-            if let id = languageIds[candidate] { return id }
+            if let id = overrides?.languageIds[candidate] ?? languageIds[candidate] { return id }
             if let language = Self.languageIDsByExtension[candidate],
-               let id = languageIds[language] {
+               let id = overrides?.languageIds[language] ?? languageIds[language] {
                 return id
             }
         }
@@ -105,16 +148,34 @@ struct IconTheme: Equatable {
     /// The icon id for a directory. `isRoot` picks the theme's root-folder
     /// icon when it defines one, which is how themes mark the workspace
     /// root differently from the folders inside it.
-    func iconID(forFolder folderName: String, expanded: Bool, isRoot: Bool = false) -> String? {
+    ///
+    /// **Open before closed, at every step.** The root branch used to
+    /// answer with `defaultRootFolder` before `expanded` was ever read, so
+    /// a theme naming an open root — Material names `folder-root-open` —
+    /// could not use it: the closed icon stayed on an expanded root. Reading
+    /// the key was not enough to fix that; the order had to change.
+    func iconID(
+        forFolder folderName: String,
+        expanded: Bool,
+        isRoot: Bool = false,
+        on background: Background = .dark
+    ) -> String? {
+        let overrides = background == .light ? light : nil
         let lowered = folderName.lowercased()
 
         if isRoot {
-            if let id = rootFolderNames[lowered] { return id }
+            if expanded, let id = overrides?.rootFolderNamesExpanded[lowered] ?? rootFolderNamesExpanded[lowered] {
+                return id
+            }
+            if let id = overrides?.rootFolderNames[lowered] ?? rootFolderNames[lowered] { return id }
+            if expanded, let id = defaultRootFolderExpanded { return id }
             if let id = defaultRootFolder { return id }
         }
 
-        if expanded, let id = folderNamesExpanded[lowered] { return id }
-        if let id = folderNames[lowered] { return id }
+        if expanded, let id = overrides?.folderNamesExpanded[lowered] ?? folderNamesExpanded[lowered] {
+            return id
+        }
+        if let id = overrides?.folderNames[lowered] ?? folderNames[lowered] { return id }
 
         if expanded, let id = defaultFolderExpanded { return id }
         return defaultFolder
@@ -210,12 +271,36 @@ struct IconTheme: Equatable {
             folderNames: lowercasedKeys(json["folderNames"]),
             folderNamesExpanded: lowercasedKeys(json["folderNamesExpanded"]),
             rootFolderNames: lowercasedKeys(json["rootFolderNames"]),
+            rootFolderNamesExpanded: lowercasedKeys(json["rootFolderNamesExpanded"]),
             defaultFile: json["file"] as? String,
             defaultFolder: json["folder"] as? String,
             defaultFolderExpanded: json["folderExpanded"] as? String,
             defaultRootFolder: json["rootFolder"] as? String,
+            defaultRootFolderExpanded: json["rootFolderExpanded"] as? String,
+            light: overrides(json["light"]),
             contributedBy: contributedBy
         )
+    }
+
+    /// The `light` section, or nil when the theme has none worth carrying.
+    ///
+    /// An empty section reads as absent so the lookups can skip it with one
+    /// comparison instead of seven. Material Icon Theme's `highContrast`
+    /// section is exactly that shape in 5.38.1 — both of its tables are
+    /// empty — which is why nothing here reads it: there is a key, and
+    /// there is nothing in it.
+    private static func overrides(_ value: Any?) -> Overrides? {
+        guard let json = value as? [String: Any] else { return nil }
+        let parsed = Overrides(
+            fileExtensions: lowercasedKeys(json["fileExtensions"]),
+            fileNames: lowercasedKeys(json["fileNames"]),
+            languageIds: lowercasedKeys(json["languageIds"]),
+            folderNames: lowercasedKeys(json["folderNames"]),
+            folderNamesExpanded: lowercasedKeys(json["folderNamesExpanded"]),
+            rootFolderNames: lowercasedKeys(json["rootFolderNames"]),
+            rootFolderNamesExpanded: lowercasedKeys(json["rootFolderNamesExpanded"])
+        )
+        return parsed.isEmpty ? nil : parsed
     }
 
     /// Lookups are all done on lowercased names, so the tables are folded

@@ -12,9 +12,9 @@ struct FileExplorerFilterButton: Equatable {
     /// The filter glyph, worn while the panel is closed.
     static let closedSymbol = "line.3.horizontal.decrease"
 
-    /// The way back, worn while the panel is open. Bare rather than
-    /// circled, the same as `magnifyingglass` in the field beside it.
-    static let openSymbol = "chevron.down"
+    /// The way back, worn while the panel is open. It reads as "fold this
+    /// away": the panel is below the button, so up is where it goes.
+    static let openSymbol = "chevron.up"
 
     let symbol: String
 

@@ -279,20 +279,43 @@ struct FileExplorerView: View {
         )
     }
 
-    /// The filter panel: one labelled row per filter, stacked, and nothing
-    /// at all while it is closed.
+    /// The filter panel: one labelled row per filter, stacked on a card
+    /// that points back at the button, and nothing at all while it is
+    /// closed.
     ///
     /// A stack rather than a field with a title bolted on, so the next
     /// filter is a row here and not a redesign. Excludes is the only one
     /// today, and it earns no special place for that.
     private var filters: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             filterRow("Excludes", inForce: model.excludes.patterns.count) {
                 excludes
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 6)
+        .padding(.top, FileExplorerFilterPanelShape.pointerHeight + 8)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 10)
+        .background(filterCard)
+        .padding(.leading, 8)
+        .padding(.trailing, 6)
+        .padding(.bottom, 8)
+    }
+
+    /// The card behind the filters, wearing the sidebar's own card fill and
+    /// border so it reads as a surface on top of the panel rather than as
+    /// more of it.
+    ///
+    /// The pointer is aimed at the middle of the filter button, which the
+    /// card can name without measuring anything: the two share a trailing
+    /// edge, so the middle of the button is half a chip in from it.
+    private var filterCard: some View {
+        let shape = FileExplorerFilterPanelShape(
+            pointerInset: SidebarIconChipMetrics.width / 2
+        )
+
+        return shape
+            .fill(Color.secondary.opacity(0.08))
+            .overlay(shape.stroke(Color.secondary.opacity(0.16), lineWidth: 1))
     }
 
     /// One filter: its name, how many of it are in force, and its control.
@@ -301,7 +324,7 @@ struct FileExplorerView: View {
         inForce: Int,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
                 Text(title)
                     .font(palette.font(size: 10, weight: .semibold))
@@ -327,7 +350,7 @@ struct FileExplorerView: View {
     /// so `(build|dist` and `*.{ts` say what is wrong by being absent, and
     /// nothing has to be explained in prose next to an input.
     private var excludes: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             TextField("node_modules, *.log, (build|dist)/**", text: $model.excludeText)
                 .textFieldStyle(.plain)
                 .font(palette.font(size: 11))

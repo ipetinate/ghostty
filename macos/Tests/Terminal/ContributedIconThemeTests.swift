@@ -156,4 +156,177 @@ struct ContributedIconThemeTests {
         #expect(theme.name == "set")
         #expect(theme.contributedBy == nil)
     }
+
+    // MARK: One name, one entry
+
+    @Test func aNameAlreadyInstalledIsNotTakenWhateverTheCase() throws {
+        let root = try makeRoot(directory: "acme.lua", iconThemes: ["set"])
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+
+        let catalog = LanguageCatalog.resolve(
+            manifests: [manifest(
+                root: root,
+                id: "acme.lua",
+                name: "Lua",
+                iconThemes: #"{ "name": "Symbols", "path": "icons/set" }"#
+            )],
+            promotions: []
+        )
+
+        #expect(FileIconProvider.contributedThemes(catalog.iconThemes, excluding: ["symbols"]).isEmpty)
+    }
+
+    @Test func aDirectoryAndAnExtensionNamingOneThemeAreListedOnce() throws {
+        let bundled = try makeThemeDirectories(["symbols"])
+        let root = try makeRoot(directory: "acme.icons", iconThemes: ["set"])
+        defer {
+            try? FileManager.default.removeItem(at: bundled)
+            try? FileManager.default.removeItem(at: root.deletingLastPathComponent())
+        }
+
+        let catalog = LanguageCatalog.resolve(
+            manifests: [manifest(
+                root: root,
+                id: "acme.icons",
+                name: "Symbols Icons",
+                iconThemes: #"{ "name": "Symbols", "path": "icons/set" }"#
+            )],
+            promotions: []
+        )
+
+        let themes = FileIconProvider.themes(inDirectories: [bundled], contributed: catalog.iconThemes)
+        #expect(themes.map(\.name) == ["symbols"])
+        #expect(themes.first?.contributedBy == nil)
+    }
+
+    @Test func twoDirectoriesNamingOneThemeAreListedOnceUnderTheNearestOne() throws {
+        let bundled = try makeThemeDirectories(["symbols"])
+        let user = try makeThemeDirectories(["Symbols"])
+        defer {
+            try? FileManager.default.removeItem(at: bundled)
+            try? FileManager.default.removeItem(at: user)
+        }
+
+        let themes = FileIconProvider.themes(inDirectories: [bundled, user], contributed: [])
+        #expect(themes.map(\.name) == ["symbols"])
+    }
+
+    @Test func twoThemesWithDifferentNamesAreBothListed() throws {
+        let bundled = try makeThemeDirectories(["symbols"])
+        let root = try makeRoot(directory: "acme.icons", iconThemes: ["set"])
+        defer {
+            try? FileManager.default.removeItem(at: bundled)
+            try? FileManager.default.removeItem(at: root.deletingLastPathComponent())
+        }
+
+        let catalog = LanguageCatalog.resolve(
+            manifests: [manifest(
+                root: root,
+                id: "acme.icons",
+                name: "Symbols Starter",
+                iconThemes: #"{ "name": "Symbols Starter", "path": "icons/set" }"#
+            )],
+            promotions: []
+        )
+
+        let themes = FileIconProvider.themes(inDirectories: [bundled], contributed: catalog.iconThemes)
+        #expect(themes.map(\.displayName) == ["Symbols", "Symbols Starter"])
+    }
+
+    // MARK: What a pack looks like in a picker
+
+    @Test func aPacksArtworkIsItsOwnPlainFileIcon() throws {
+        let container = try makeThemeDirectories(
+            ["pack"],
+            json: #"{ "iconDefinitions": { "doc": { "iconPath": "./doc.svg" }, "dir": { "iconPath": "./dir.svg" } }, "file": "doc", "folder": "dir" }"#,
+            icons: ["doc.svg", "dir.svg"]
+        )
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let theme = try #require(IconTheme.load(directory: container.appendingPathComponent("pack")))
+        #expect(theme.artworkURL?.lastPathComponent == "doc.svg")
+    }
+
+    @Test func aPackNamingNoPlainFileFallsBackToItsFolderIcon() throws {
+        let container = try makeThemeDirectories(
+            ["pack"],
+            json: #"{ "iconDefinitions": { "dir": { "iconPath": "./dir.svg" } }, "folder": "dir" }"#,
+            icons: ["dir.svg"]
+        )
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let theme = try #require(IconTheme.load(directory: container.appendingPathComponent("pack")))
+        #expect(theme.artworkURL?.lastPathComponent == "dir.svg")
+    }
+
+    @Test func artworkTheThemeNamesButNeverShippedIsSkipped() throws {
+        let container = try makeThemeDirectories(
+            ["pack"],
+            json: #"{ "iconDefinitions": { "doc": { "iconPath": "./doc.svg" }, "dir": { "iconPath": "./dir.svg" } }, "file": "doc", "folder": "dir" }"#,
+            icons: ["dir.svg"]
+        )
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let theme = try #require(IconTheme.load(directory: container.appendingPathComponent("pack")))
+        #expect(theme.artworkURL?.lastPathComponent == "dir.svg")
+    }
+
+    @Test func aPackWithNoArtworkOfItsOwnWearsTheExtensionsIcon() throws {
+        let root = try makeRoot(directory: "acme.icons", iconThemes: ["set"])
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        let media = root.appendingPathComponent("media", isDirectory: true)
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        try Data([0]).write(to: media.appendingPathComponent("icon.png"))
+
+        let catalog = LanguageCatalog.resolve(
+            manifests: [manifest(
+                root: root,
+                id: "acme.icons",
+                name: "Acme Icons",
+                iconThemes: #"{ "name": "Acme", "path": "icons/set" }"#
+            )],
+            promotions: []
+        )
+
+        let theme = try #require(FileIconProvider.contributedThemes(catalog.iconThemes, excluding: []).first)
+        #expect(theme.artworkURL == media.appendingPathComponent("icon.png"))
+    }
+
+    @Test func aPackWithNeitherHasNoArtwork() throws {
+        let container = try makeThemeDirectories(
+            ["pack"],
+            json: #"{ "iconDefinitions": { "doc": { "iconPath": "./doc.svg" } } }"#,
+            icons: ["doc.svg"]
+        )
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let theme = try #require(IconTheme.load(directory: container.appendingPathComponent("pack")))
+        #expect(theme.artworkURL == nil)
+    }
+
+    // MARK: Fixtures
+
+    /// One container holding a theme directory per name, the shape the app
+    /// bundle and the reader's own `icon-themes` directory both have.
+    private func makeThemeDirectories(
+        _ names: [String],
+        json: String = #"{ "iconDefinitions": { "doc": { "iconPath": "./doc.svg" } }, "file": "doc" }"#,
+        icons: [String] = ["doc.svg"]
+    ) throws -> URL {
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("phantom-icon-theme-dirs-" + UUID().uuidString)
+        for name in names {
+            let dir = container.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try json.write(
+                to: dir.appendingPathComponent("icon-theme.json"),
+                atomically: true,
+                encoding: .utf8
+            )
+            for icon in icons {
+                try "<svg/>".write(to: dir.appendingPathComponent(icon), atomically: true, encoding: .utf8)
+            }
+        }
+        return container
+    }
 }

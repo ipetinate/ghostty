@@ -81,7 +81,7 @@ struct FileExplorerSettingsSection: View {
     /// old artwork.
     private var iconTheme: Binding<String> {
         Binding(
-            get: { icons.selectedName },
+            get: { icons.selectedThemeName },
             set: { icons.select($0) }
         )
     }
@@ -91,14 +91,19 @@ struct FileExplorerSettingsSection: View {
     /// directory is deleted, and nothing on screen says why.
     private var iconThemeRows: [IconThemeRow] {
         var rows = icons.themes.map { theme in
-            let title = theme.contributedBy.map { "\(theme.name) — \($0)" } ?? theme.name.capitalized
+            /// Credited only when the extension is not already saying the
+            /// theme's name: Material Icon Theme ships one theme and calls
+            /// both by that name, and the row read `Material Icon Theme —
+            /// Material Icon Theme`.
+            let credit = theme.contributedBy.flatMap { $0 == theme.displayName ? nil : $0 }
+            let title = credit.map { "\(theme.displayName) — \($0)" } ?? theme.displayName
             return IconThemeRow(
                 name: theme.name,
                 label: theme.isSupported ? title : title + " (No Artwork)"
             )
         }
 
-        let selected = icons.selectedName
+        let selected = icons.selectedThemeName
         if selected != FileIconProvider.symbolsOnly, !rows.contains(where: { $0.name == selected }) {
             rows.append(IconThemeRow(name: selected, label: selected.capitalized + " (Not Installed)"))
         }

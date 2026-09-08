@@ -81,10 +81,57 @@ struct IconTheme: Equatable {
 
     var contributedBy: String?
 
+    /// The artwork of the extension that carries this theme, for a theme
+    /// that names none of its own. Set by `FileIconProvider` after the
+    /// load, because it is a fact about the extension rather than about
+    /// the `icon-theme.json` this type parses.
+    var contributedArtwork: URL?
+
     /// Whether this theme resolved any SVG at all. A font-based theme
     /// parses cleanly but can't draw anything, and the picker needs to say
     /// so rather than silently showing blank rows.
     var isSupported: Bool { !definitions.isEmpty }
+
+    /// What to call the theme on screen.
+    ///
+    /// A contributed theme is named by its manifest, which already spells
+    /// the name the way its author wants it read — capitalizing it would
+    /// turn `VSCode Icons` into `Vscode Icons`. A theme found as a
+    /// directory has only that directory's name, `symbols`, so that one is
+    /// capitalized.
+    var displayName: String { contributedBy == nil ? name.capitalized : name }
+
+    /// `name`, folded for comparison.
+    ///
+    /// Two themes whose names differ only in case are one theme to the
+    /// reader — `symbols` in the app bundle and `Symbols` contributed by
+    /// an extension are the same pack — so every comparison of a theme
+    /// name goes through this: the deduplication that keeps one of them
+    /// out of the picker, and the match that resolves the persisted
+    /// selection back to a theme.
+    static func folded(_ name: String) -> String { name.lowercased() }
+
+    var foldedName: String { Self.folded(name) }
+
+    /// Artwork that stands for the whole pack in a picker.
+    ///
+    /// The pack's own plain file and folder icons come first: they are
+    /// what every row in the explorer falls back to, so they are the most
+    /// honest preview of what picking the pack does. A pack that names
+    /// neither — a starter theme with eight definitions and no `file` key
+    /// — has only the artwork of the extension carrying it.
+    ///
+    /// The file has to be there, not merely named: themes name ids they
+    /// never shipped, and a picker drawing nothing for the first candidate
+    /// would never reach the second.
+    var artworkURL: URL? {
+        let manager = FileManager.default
+        for id in [defaultFile, defaultFolder, defaultRootFolder].compactMap({ $0 }) {
+            guard let url = iconURL(for: id), manager.fileExists(atPath: url.path) else { continue }
+            return url
+        }
+        return contributedArtwork
+    }
 
     // MARK: Resolution
 

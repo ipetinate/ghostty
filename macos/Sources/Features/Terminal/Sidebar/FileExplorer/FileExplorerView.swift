@@ -149,13 +149,17 @@ struct FileExplorerView: View {
 
                 if !icons.themes.isEmpty {
                     Menu("Icon Theme") {
-                        Button("SF Symbols") {
+                        Button {
                             icons.select(FileIconProvider.symbolsOnly)
+                        } label: {
+                            Label("SF Symbols", systemImage: "textformat")
                         }
                         Divider()
                         ForEach(icons.themes, id: \.name) { theme in
-                            Button(theme.name.capitalized) { icons.select(theme.name) }
-                                .disabled(!theme.isSupported)
+                            Button { icons.select(theme.name) } label: {
+                                IconThemeMenuLabel(title: theme.displayName, artwork: icons.artwork(for: theme))
+                            }
+                            .disabled(!theme.isSupported)
                         }
                     }
                 }
@@ -758,6 +762,25 @@ struct FileExplorerView: View {
             pwd: tab?.pwd
         ))
         model.reveal(tab?.pwd)
+    }
+}
+
+/// One entry of the Icon Theme menu: the pack's name beside artwork the
+/// pack itself draws, so the menu shows what picking it does.
+///
+/// A pack with no artwork gets no icon rather than a placeholder one. The
+/// only packs that reach that branch are the font-based ones, which the
+/// menu already draws disabled.
+private struct IconThemeMenuLabel: View {
+    let title: String
+    let artwork: NSImage?
+
+    var body: some View {
+        if let artwork {
+            Label { Text(verbatim: title) } icon: { Image(nsImage: artwork) }
+        } else {
+            Text(verbatim: title)
+        }
     }
 }
 

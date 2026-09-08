@@ -13,7 +13,9 @@ struct EditorTabCommandTests {
         canReturnToMainPane: Bool = true,
         isPinned: Bool = false,
         canMoveLeft: Bool = true,
-        canMoveRight: Bool = true
+        canMoveRight: Bool = true,
+        canOpenWithView: Bool = true,
+        isDrawnByView: Bool = false
     ) -> EditorTabCommand.Availability {
         EditorTabCommand.Availability(
             hasSiblings: hasSiblings,
@@ -21,8 +23,16 @@ struct EditorTabCommandTests {
             canReturnToMainPane: canReturnToMainPane,
             isPinned: isPinned,
             canMoveLeft: canMoveLeft,
-            canMoveRight: canMoveRight)
+            canMoveRight: canMoveRight,
+            canOpenWithView: canOpenWithView,
+            isDrawnByView: isDrawnByView)
     }
+
+    /// The commands that are one half of an exclusive pair, and so can never
+    /// appear in the same menu as their sibling. Each pair has its own test
+    /// below; this set is what keeps the everything-else sweep honest about
+    /// them instead of asserting a menu that cannot exist.
+    private static let exclusiveHalves: Set<EditorTabCommand> = [.unpin, .openAsText]
 
     @Test func everyCommandIsNamed() {
         for command in EditorTabCommand.allCases {
@@ -69,9 +79,29 @@ struct EditorTabCommandTests {
     /// this menu that is never offered whole: a tab is pinned or it is not.
     @Test func aTabWithEverythingAvailableIsOfferedEverythingElse() {
         let menu = EditorTabCommand.menu(availability())
-        for command in EditorTabCommand.allCases where command != .unpin {
+        for command in EditorTabCommand.allCases where !Self.exclusiveHalves.contains(command) {
             #expect(menu.contains(.command(command)), "\(command.title) is missing")
         }
+    }
+
+    /// A file is either being drawn by an extension or it is not, so the two
+    /// halves of the switch are never offered together — offering both would
+    /// name the state the reader is already in.
+    @Test func onlyOneHalfOfTheViewPairIsEverOffered() {
+        let asText = EditorTabCommand.menu(availability(canOpenWithView: true, isDrawnByView: false))
+        #expect(asText.contains(.command(.openWithView)))
+        #expect(!asText.contains(.command(.openAsText)))
+
+        let asView = EditorTabCommand.menu(availability(canOpenWithView: false, isDrawnByView: true))
+        #expect(asView.contains(.command(.openAsText)))
+        #expect(!asView.contains(.command(.openWithView)))
+    }
+
+    /// A file no extension claims gets neither, which is every file today.
+    @Test func aFileNoExtensionClaimsIsOfferedNoSwitch() {
+        let menu = EditorTabCommand.menu(availability(canOpenWithView: false, isDrawnByView: false))
+        #expect(!menu.contains(.command(.openWithView)))
+        #expect(!menu.contains(.command(.openAsText)))
     }
 
     @Test func onlyOneHalfOfThePinPairIsEverOffered() {

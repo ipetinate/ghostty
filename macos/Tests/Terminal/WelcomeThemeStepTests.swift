@@ -27,8 +27,8 @@ struct WelcomeThemeStepTests {
         ExtensionIndex(generatedAt: nil, repository: nil, extensions: ids.map(entry))
     }
 
-    /// The catalogue with every card in it, which is what the registry will
-    /// look like once Alucard is published.
+    /// The catalogue with every card in it, which is what the registry has
+    /// carried since Alucard was published.
     private static var fullIndex: ExtensionIndex {
         index(WelcomeThemeStep.choices.map(\.id))
     }
@@ -40,6 +40,7 @@ struct WelcomeThemeStepTests {
     private static var dracula: WelcomeThemeStep.Choice { choice("phantom.dracula") }
     private static var alucard: WelcomeThemeStep.Choice { choice("phantom.alucard") }
     private static var nord: WelcomeThemeStep.Choice { choice("phantom.theme-nord") }
+    private static var nordLight: WelcomeThemeStep.Choice { choice("phantom.theme-nord-light") }
 
     // MARK: Where the step sits
 
@@ -103,10 +104,13 @@ struct WelcomeThemeStepTests {
 
     // MARK: A theme the registry does not list
 
-    /// Alucard is published after this step was written, so the id here outruns
-    /// the index. The card is drawn, says why it cannot be had, and refuses
-    /// the press — the one thing it must not do is look pressed and do
-    /// nothing.
+    /// A card whose id the catalogue does not carry. The card is still drawn,
+    /// says why it cannot be had, and refuses the press — the one thing it
+    /// must not do is look pressed and do nothing.
+    ///
+    /// This was Alucard's real situation while the step was written and the
+    /// registry had not published it yet. The catalogue carries it now, so the
+    /// case is held by the fixture rather than by the world.
     @Test func aThemeTheIndexDoesNotListSaysSoAndCannotBePressed() {
         let facts = WelcomeThemeStep.Facts(index: Self.index(["phantom.dracula"]))
         let state = WelcomeThemeStep.state(of: Self.alucard, from: facts)
@@ -119,10 +123,18 @@ struct WelcomeThemeStepTests {
 
     /// Being unlisted is a fact about one card and not about the step: the
     /// other three are still offered, and the tour still goes on.
+    ///
+    /// The catalogue here holds every card but Alucard, which is the whole
+    /// point — an earlier version of this test listed only Dracula and then
+    /// asserted Nord was offered, so it was asserting that an absent card is
+    /// present. A card the registry does not carry is `.unlisted`.
     @Test func anUnlistedCardLeavesTheOtherThreeAlone() {
-        let facts = WelcomeThemeStep.Facts(index: Self.index(["phantom.dracula"]))
+        let listed = WelcomeThemeStep.choices.map(\.id).filter { $0 != Self.alucard.id }
+        let facts = WelcomeThemeStep.Facts(index: Self.index(listed))
 
+        #expect(WelcomeThemeStep.state(of: Self.alucard, from: facts) == .unlisted)
         #expect(WelcomeThemeStep.state(of: Self.nord, from: facts) == .offered)
+        #expect(WelcomeThemeStep.state(of: Self.nordLight, from: facts) == .offered)
         #expect(WelcomeThemeStep.state(of: Self.dracula, from: facts)
             == .chosen(isInstalled: false))
     }

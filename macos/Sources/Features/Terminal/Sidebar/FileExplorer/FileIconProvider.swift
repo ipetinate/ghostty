@@ -130,10 +130,31 @@ final class FileIconProvider: ObservableObject {
 
     // MARK: Icon resolution
 
-    func icon(forFile fileName: String) -> FileIcon {
-        if let theme = active,
-           let id = theme.iconID(forFile: fileName, on: background),
-           let image = image(for: id, in: theme) {
+    /// `path` is optional because five of the seven callers hold only a
+    /// name — a git status line, a search hit. It buys the two answers a
+    /// theme cannot reach on its own, both of them from the project's own
+    /// dependencies: a `.tsx` in a Solid project wearing Solid's icon, and
+    /// a `user.service.ts` in a NestJS project *not* wearing Angular's. See
+    /// `WorkspaceFramework`.
+    func icon(forFile fileName: String, at path: String? = nil) -> FileIcon {
+        guard let theme = active else { return Self.symbolFallback(forFile: fileName) }
+        let framework = path.flatMap { WorkspaceFramework.of(path: $0) }
+
+        /// The framework's own icon, when the file's suffix is one a
+        /// framework may speak for and the theme has artwork by that name.
+        /// The theme's tables are not consulted here, so nothing in this
+        /// type knows what any particular theme calls React's icon.
+        if WorkspaceFramework.claims(fileName: fileName), let framework,
+           theme.definitions[framework.iconID] != nil,
+           let image = image(for: framework.iconID, in: theme) {
+            return .image(image)
+        }
+
+        if let id = theme.iconID(
+            forFile: fileName,
+            on: background,
+            rejecting: path == nil ? [] : WorkspaceFramework.rejected(by: framework)
+        ), let image = image(for: id, in: theme) {
             return .image(image)
         }
         return Self.symbolFallback(forFile: fileName)

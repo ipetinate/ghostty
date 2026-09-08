@@ -102,23 +102,49 @@ struct IconTheme: Equatable {
     /// that gap closes by trying the extension *as* a language id — which
     /// is exactly right for `vue`, `php` and `razor` — and the rest by the
     /// small table below.
-    func iconID(forFile fileName: String, on background: Background = .dark) -> String? {
+    /// `rejecting` withholds one framework's artwork from a project that is
+    /// not built with it, and it has to be checked **inside** the walk over
+    /// candidates rather than after it. `user.service.ts` matches
+    /// `service.ts` before it matches `ts`: refusing the first answer is
+    /// only useful if the second one is still reachable, which is what
+    /// carrying on through the loop buys.
+    func iconID(
+        forFile fileName: String,
+        on background: Background = .dark,
+        rejecting rejected: Set<WorkspaceFramework> = []
+    ) -> String? {
         let overrides = background == .light ? light : nil
         let lowered = fileName.lowercased()
-        if let id = overrides?.fileNames[lowered] ?? fileNames[lowered] { return id }
+        if let id = overrides?.fileNames[lowered] ?? fileNames[lowered],
+           allows(id, rejecting: rejected) {
+            return id
+        }
 
         let candidates = Self.extensionCandidates(for: lowered)
         for candidate in candidates {
-            if let id = overrides?.fileExtensions[candidate] ?? fileExtensions[candidate] { return id }
+            if let id = overrides?.fileExtensions[candidate] ?? fileExtensions[candidate],
+               allows(id, rejecting: rejected) {
+                return id
+            }
         }
         for candidate in candidates {
-            if let id = overrides?.languageIds[candidate] ?? languageIds[candidate] { return id }
+            if let id = overrides?.languageIds[candidate] ?? languageIds[candidate],
+               allows(id, rejecting: rejected) {
+                return id
+            }
             if let language = Self.languageIDsByExtension[candidate],
-               let id = overrides?.languageIds[language] ?? languageIds[language] {
+               let id = overrides?.languageIds[language] ?? languageIds[language],
+               allows(id, rejecting: rejected) {
                 return id
             }
         }
         return defaultFile
+    }
+
+    /// Whether this icon may be drawn for this project.
+    private func allows(_ id: String, rejecting rejected: Set<WorkspaceFramework>) -> Bool {
+        guard let brand = WorkspaceFramework.brands(iconID: id) else { return true }
+        return !rejected.contains(brand)
     }
 
     /// Extensions whose VS Code language id isn't just the extension.

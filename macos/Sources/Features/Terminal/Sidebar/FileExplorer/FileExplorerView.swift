@@ -1095,7 +1095,7 @@ private struct FileExplorerRow: View {
     private var icon: FileIcon {
         row.node.isDirectory
             ? icons.icon(forFolder: row.node.name, expanded: isExpanded)
-            : icons.icon(forFile: row.node.name)
+            : icons.icon(forFile: row.node.name, at: row.node.path)
     }
 
     /// One filled row, and it is the file open in the focused tab.

@@ -216,6 +216,47 @@ struct IconThemeTests {
         #expect(subject.iconID(forFolder: "src", expanded: true) == "folder-src-open")
     }
 
+    // MARK: Artwork a project may not wear
+
+    /// `user.service.ts` matches `service.ts` before it matches `ts`, so
+    /// refusing the first answer is only useful if the walk carries on to
+    /// the second. That is the whole rule, and it is why the check lives
+    /// inside the loop.
+    @Test func aRejectedBrandFallsThroughToThePlainSuffix() {
+        let subject = theme(
+            definitions: ["angular-service": "./a.svg", "typescript": "./t.svg"],
+            fileExtensions: ["service.ts": "angular-service", "ts": "typescript"],
+            defaultFile: nil
+        )
+        #expect(subject.iconID(forFile: "user.service.ts") == "angular-service")
+        #expect(subject.iconID(forFile: "user.service.ts", rejecting: [WorkspaceFramework.angular]) == "typescript")
+    }
+
+    /// The project that *is* Angular keeps it.
+    @Test func aBrandTheProjectOwnsIsKept() {
+        let subject = theme(
+            fileExtensions: ["service.ts": "angular-service", "ts": "typescript"]
+        )
+        #expect(subject.iconID(forFile: "user.service.ts", rejecting: [WorkspaceFramework.solid]) == "angular-service")
+    }
+
+    /// With nothing else to fall through to, the theme's default file icon
+    /// answers — never a blank.
+    @Test func aRejectedBrandWithNoFallbackTakesTheDefault() {
+        let subject = theme(fileExtensions: ["service.ts": "angular-service"])
+        #expect(subject.iconID(forFile: "user.service.ts", rejecting: [WorkspaceFramework.angular]) == "fallback")
+    }
+
+    @Test func anExactNameCarryingABrandIsRefusedToo() {
+        let subject = theme(
+            fileExtensions: ["json": "json"],
+            fileNames: ["angular.json": "angular"]
+        )
+        #expect(subject.iconID(forFile: "angular.json") == "angular")
+        let rejected: Set<WorkspaceFramework> = [.angular]
+        #expect(subject.iconID(forFile: "angular.json", rejecting: rejected) == "json")
+    }
+
     // MARK: An open root
 
     /// The root branch used to answer with `defaultRootFolder` before

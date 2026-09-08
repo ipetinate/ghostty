@@ -431,7 +431,7 @@ struct FileExplorerView: View {
     private var tree: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: FileExplorerRow.rowGap) {
                     if let matches = model.matches, matches.isEmpty, !model.isSearching {
                         Text("No files match \"\(model.filter)\"")
                             .font(palette.font(size: 11))
@@ -988,12 +988,12 @@ private struct FileExplorerRow: View {
             .padding(.vertical, 3)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(background)
+                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                    .fill(fill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(selectionRing, lineWidth: 1)
+                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                    .strokeBorder(ring, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1030,18 +1030,27 @@ private struct FileExplorerRow: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(accent.opacity(0.45))
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .fill(Self.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(ringColor, lineWidth: 1)
         )
     }
 
-    /// Puts the field into "type to replace the base name" state: focus it
-    /// and select everything up to the extension, the way Finder does.
+    /// Opens the field on the part of the name the reader is being asked for:
+    /// the whole of a proposal, everything before the extension of a real
+    /// file. See `FileExplorerFilesystem.selectedRange(in:isFolder:isCreating:)`.
     private func startEditing() {
         draftName = row.node.name
         fieldFocused = true
         DispatchQueue.main.async {
-            draftSelection = Self.baseNameRange(in: draftName, isFolder: row.node.isDirectory)
+            draftSelection = FileExplorerFilesystem.selectedRange(
+                in: draftName,
+                isFolder: row.node.isDirectory,
+                isCreating: isCreateField
+            )
         }
     }
 
@@ -1192,61 +1201,57 @@ private struct FileExplorerRow: View {
             : icons.icon(forFile: row.node.name, at: row.node.path)
     }
 
-    /// One filled row, and it is the file open in the focused tab.
+    /// The neutral surface the sidebar's cards are drawn on, and the radius
+    /// they carry. A row is the smallest of those cards, so it takes the same
+    /// two values.
+    private static let surface = Color.secondary.opacity(0.08)
+
+    static let cornerRadius: CGFloat = 6
+
+    /// The gap between rows, so the list reads as items rather than as one
+    /// block with lines drawn on it. Small: the tree is a hierarchy, and air
+    /// between siblings past a point loosens what the indent is holding
+    /// together.
+    static let rowGap: CGFloat = 2
+
+    /// The ring the selection and the open name field are both drawn with.
+    private var ringColor: Color { accent.opacity(0.55) }
+
+    /// What the row is painted with: the sidebar's neutral surface under the
+    /// pointer, a tint of the accent under the open file, nothing otherwise.
     ///
-    /// There used to be three fills at three strengths — the clicked row, the
-    /// open file, and the terminal's directory — and two of them could land on
-    /// different rows at once. Reading that took working out which shade meant
-    /// what, which is a puzzle nobody asked for in a file list: the question a
-    /// tree answers is "where am I", and there is one answer.
-    ///
-    /// The other two states did not go away, they stopped being fills.
-    /// Selection is drawn as an outline, because it is a *different* fact —
-    /// what Return renames and Delete trashes — and the terminal's directory
-    /// keeps the bolder text it already had.
-    private var background: Color {
+    /// The open file's tint used to be `0.45`, a block of colour loud enough
+    /// that a name field beside it read as a second selection. It only has to
+    /// beat the neutral surface, not the ring.
+    private var fill: Color {
         switch emphasis.fill {
-        case .open: accent.opacity(0.45)
-        case .hover: accent.opacity(0.12)
+        case .open: accent.opacity(0.18)
+        case .hover: Self.surface
         case .none: .clear
         }
+    }
+
+    /// The selection, as a ring rather than a fill.
+    ///
+    /// Selection cannot simply be dropped — Return renames it, Delete moves it
+    /// to the trash, and a new file lands beside it, so a tree with no
+    /// selection is a tree where those three commands have nothing to act on.
+    /// A ring is how it says so without a block of colour.
+    private var ring: Color {
+        emphasis.showsSelectionRing ? ringColor : .clear
     }
 
     private var emphasis: FileExplorerRowEmphasis {
         .resolve(
             isOpenInEditor: isOpenInEditor,
             isSelected: isSelected,
-            isHovered: isHovered
+            isHovered: isHovered,
+            isNaming: editing != nil
         )
-    }
-
-    /// The selection, as a ring rather than a fill.
-    ///
-    /// It cannot simply be dropped: Return renames it, Delete moves it to the
-    /// trash, and a new file lands beside it — three commands read
-    /// `model.selection`, so a tree with no selection is a tree where those
-    /// three have nothing to act on. What it must stop doing is competing with
-    /// the open file for the same visual language, which is what put two
-    /// highlights on screen.
-    ///
-    /// Nothing is drawn when the selection *is* the open file, the common case
-    /// after a click: a ring around the filled row would be a second mark for
-    /// one fact.
-    private var selectionRing: Color {
-        emphasis.showsSelectionRing ? accent.opacity(0.55) : .clear
     }
 
     private var indent: CGFloat {
         CGFloat(row.depth) * 12
-    }
-
-    /// The range to select when a name field opens: the whole name for a
-    /// folder, everything before the extension for a file, so typing
-    /// replaces just the meaningful part.
-    private static func baseNameRange(in name: String, isFolder: Bool) -> Range<String.Index>? {
-        let length = isFolder ? (name as NSString).length : (name as NSString).deletingPathExtension.count
-        let nsRange = NSRange(location: 0, length: length)
-        return Range(nsRange, in: name)
     }
 }
 

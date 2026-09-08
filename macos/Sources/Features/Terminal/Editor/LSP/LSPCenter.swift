@@ -133,6 +133,39 @@ final class LSPCenter: ObservableObject {
     /// and an array scan. See `LSPCompletionCapability`.
     private var completionSupport: [Key: LSPCompletionCapability] = [:]
 
+    /// The diagnostic half, parsed at `initialize` beside the completion
+    /// one.
+    ///
+    /// Cached rather than walked because it is the question asked before
+    /// every open, every flushed change and every refresh — and because a
+    /// server whose answer is "I pull" reports **nothing at all** until it
+    /// is asked. See `LSPDiagnosticCapability`.
+    private var diagnosticSupport: [Key: LSPDiagnosticCapability] = [:]
+
+    /// The last result id each server gave for each document, from its own
+    /// `textDocument/diagnostic` report.
+    ///
+    /// Sent back as `previousResultId` on the next pull, which is what lets
+    /// a server answer `unchanged` and skip the work. Per server for the
+    /// same reason the diagnostics are: the token is one server's handle on
+    /// its own computation, and handing it to another is asking about a
+    /// result that server never produced.
+    ///
+    /// Absent is a legal state rather than a gap to fill:
+    /// `vscode-eslint-language-server` sends no `resultId`, so every pull to
+    /// it is a first pull.
+    private var diagnosticResultIDs: [String: [Key: String]] = [:]
+
+    /// The `textDocument/diagnostic` pull in flight per document.
+    ///
+    /// At most one, and a new one supersedes it. A pull is about the text
+    /// the server has now, so two of them racing means the older answer can
+    /// land last and write a report about text nobody is looking at any
+    /// more. Cancelling also sends `$/cancelRequest`, which is the polite
+    /// half — a server that lints on demand should not lint a version the
+    /// client has already replaced.
+    private var diagnosticPulls: [String: Task<Void, Never>] = [:]
+
     /// The server's recent stderr, kept after the process exits or fails to
     /// start — that is precisely when it is worth reading. Cleared when a
     /// fresh attempt starts, so a crash from three runs ago doesn't linger
@@ -538,6 +571,13 @@ final class LSPCenter: ObservableObject {
                         "text": .string(text),
                     ],
                 ])
+
+                /// The first pull, and the only thing that puts a problem on
+                /// screen for a server that never pushes. After the
+                /// introduction rather than beside it: a server asked about a
+                /// document it has not been given answers an empty report,
+                /// which is indistinguishable from a clean file.
+                await MainActor.run { self?.pullDiagnostics(for: path) }
             }
         }
     }
@@ -617,6 +657,17 @@ final class LSPCenter: ObservableObject {
                 "contentChanges": [["text": .string(text)]],
             ])
         }
+
+        /// **The debounce for the pull, and there is deliberately only one
+        /// timer in this file.** A pull has to happen on every change or a
+        /// server that pushes nothing goes stale, and a second timer beside
+        /// `changeTasks` would be a second answer to "has the reader
+        /// stopped typing" — two answers that drift, so a pull can be sent
+        /// about text the server has not been given yet. Here it cannot: the
+        /// `didChange` above has just gone out, with the version the answer
+        /// will be about.
+        pullDiagnostics(for: path)
+        pullDiagnosticsAcrossFiles(after: path)
     }
 
     /// Sends the pending change for one document *now*, and stops the
@@ -631,6 +682,223 @@ final class LSPCenter: ObservableObject {
     private func flushNow(path: String) {
         changeTasks.removeValue(forKey: path)?.cancel()
         flushChange(path: path)
+    }
+
+    // MARK: Pulled diagnostics
+
+    /// Asks the servers that pull for this document's problems, replacing
+    /// whatever pull was in flight for it.
+    ///
+    /// Only the servers that declared `diagnosticProvider` are asked, so a
+    /// server that pushes is untouched by every line of this and keeps
+    /// exactly the behaviour it had. See `LSPDiagnosticCapability` for what
+    /// happens to the other kind without this: nothing, silently.
+    ///
+    /// Nothing is awaited by the caller, and no caller is waiting. A report
+    /// lands in the same store the push writes into, and the editor redraws
+    /// from that store — so a pull is a background errand from the moment it
+    /// is started to the moment the underlines change.
+    ///
+    /// **One pull per document at a time.** A pull is a question about the
+    /// text the server has right now; two of them racing means the older
+    /// answer can arrive last and describe text nobody is looking at any
+    /// more. Cancelling sends `$/cancelRequest` as well, which spares a
+    /// server that lints on demand from finishing a lint of a version its
+    /// client has already replaced.
+    private func pullDiagnostics(for path: String) {
+        guard openDocuments.contains(path) else { return }
+
+        let pulling = keys(forPath: path).filter { diagnosticSupport[$0]?.isDeclared == true }
+        guard !pulling.isEmpty else { return }
+
+        diagnosticPulls.removeValue(forKey: path)?.cancel()
+        diagnosticPulls[path] = Task { [weak self] in
+            for key in pulling {
+                guard !Task.isCancelled else { return }
+                await self?.requestDiagnostics(path: path, from: key)
+            }
+        }
+    }
+
+    /// Re-pulls the *other* open documents a server serves, when that
+    /// server said an edit in one file can change another file's problems.
+    ///
+    /// This is what `diagnosticProvider.interFileDependencies` is for. For
+    /// such a server the file worth re-asking about is often not the one
+    /// being typed in: deleting an export breaks the modules that imported
+    /// it, and nothing about those files changed, so nothing else in this
+    /// class would ever ask again.
+    ///
+    /// Skipped entirely for a server that declared `false` — the ESLint
+    /// server does, its rules seeing one file at a time — which keeps a
+    /// per-keystroke sweep of every open document off the common path.
+    private func pullDiagnosticsAcrossFiles(after path: String) {
+        let spreading = Set(keys(forPath: path).filter {
+            diagnosticSupport[$0]?.interFileDependencies == true
+        })
+        guard !spreading.isEmpty else { return }
+
+        for other in openDocuments where other != path {
+            guard keys(forPath: other).contains(where: spreading.contains) else { continue }
+            pullDiagnostics(for: other)
+        }
+    }
+
+    /// Asks one server about every document it serves, from scratch.
+    ///
+    /// The answer to `workspace/diagnostic/refresh`. A server sends it after
+    /// throwing away what it knew: `vscode-eslint-language-server` 4.10.0
+    /// calls it from one function, and that function has just cleared every
+    /// cached setting, rule severity and formatter it holds.
+    ///
+    /// **Reachable, and not yet reached by that particular server.** Its two
+    /// triggers are `workspace/didChangeConfiguration` — which it listens
+    /// for only from a client that claimed `didChangeConfiguration`
+    /// dynamic registration — and `workspace/didChangeWatchedFiles`, which
+    /// is how a client says `eslint.config.js` changed on disk. This app
+    /// sends neither notification today, so the refresh below was measured
+    /// by asking the real server over stdio from a client that does. The
+    /// handler is here because the request is the server's only way to say
+    /// "my rules moved", and a client that answers it wrongly leaves stale
+    /// problems on screen for the rest of the session.
+    ///
+    /// **The result ids go first.** A refresh is the server saying its
+    /// previous answers are void; keeping the token that names one of them
+    /// would let the next pull ask "still the same as last time?" about a
+    /// computation the server has just thrown away, and an `unchanged`
+    /// reply to that question would preserve on screen exactly the
+    /// diagnostics the refresh was sent to replace.
+    private func pullDiagnosticsAgain(from key: Key) {
+        for path in diagnosticResultIDs.keys {
+            diagnosticResultIDs[path]?.removeValue(forKey: key)
+        }
+
+        for path in openDocuments where keys(forPath: path).contains(key) {
+            pullDiagnostics(for: path)
+        }
+    }
+
+    /// One `textDocument/diagnostic` round trip, and what becomes of the
+    /// answer.
+    ///
+    /// `identifier` is echoed from the capability rather than invented: it
+    /// is how a server that computes several kinds of report tells them
+    /// apart, and how it matches a `previousResultId` to the computation
+    /// that issued it. `previousResultId` is sent only when the server gave
+    /// one — see `diagnosticResultIDs`.
+    private func requestDiagnostics(path: String, from key: Key) async {
+        guard let server = servers[key] else { return }
+        let support = diagnosticSupport[key] ?? .none
+
+        var params: [String: LSPValue] = [
+            "textDocument": ["uri": .string(Self.uri(path))],
+        ]
+        if let identifier = support.identifier {
+            params["identifier"] = .string(identifier)
+        }
+        if let previous = diagnosticResultIDs[path]?[key] {
+            params["previousResultId"] = .string(previous)
+        }
+
+        let name = Self.name(of: path)
+        let started = Date()
+        Self.logger.debug(
+            """
+            → diagnostic \(name) server=\(key.command, privacy: .public) \
+            previous=\(params["previousResultId"] != nil, privacy: .public)
+            """
+        )
+
+        do {
+            let result = try await server.request(
+                "textDocument/diagnostic",
+                params: .object(params),
+                timeout: LSPTimeout.diagnostic
+            )
+            noteRequestSucceeded(for: key)
+
+            /// An answer this client cannot read is left alone rather than
+            /// treated as an empty file. The failure mode of guessing here
+            /// is every underline in the document disappearing on the
+            /// strength of a field nobody parsed.
+            guard let report = LSPDiagnosticReport(result) else {
+                Self.logger.debug("← diagnostic \(name) unreadable report")
+                return
+            }
+
+            record(report, for: path, from: key)
+            Self.logger.debug(
+                """
+                ← diagnostic \(name) \
+                kind=\(report.document.isUnchanged ? "unchanged" : "full", privacy: .public) \
+                items=\(report.document.items.count, privacy: .public) \
+                related=\(report.related.count, privacy: .public) \
+                in \(Self.milliseconds(since: started), privacy: .public)ms
+                """
+            )
+        } catch {
+            noteRequestFailed(error, for: key)
+            Self.logger.debug(
+                "← diagnostic \(name) \(Self.failure(from: error).summary, privacy: .public)"
+            )
+        }
+    }
+
+    /// A whole report, the file it was about and the files it mentioned.
+    ///
+    /// The related documents go through the same door as the file that was
+    /// asked about, which is the point of storing problems per path in the
+    /// first place: a report about `a.ts` that carries `b.ts`'s new errors
+    /// updates `b.ts`, and the editor showing `b.ts` redraws without
+    /// anything having asked on its behalf.
+    private func record(_ report: LSPDiagnosticReport, for path: String, from key: Key) {
+        record(report.document, for: path, from: key)
+        for (uri, document) in report.related {
+            record(document, for: URL(string: uri)?.path ?? uri, from: key)
+        }
+    }
+
+    /// One file's half of a report.
+    ///
+    /// **An `unchanged` report writes no diagnostics, and that is the whole
+    /// of what it means.** The server is saying its last answer still
+    /// holds, so the store already has the right contents and touching it
+    /// would replace them with the nothing that arrived. Only the result id
+    /// moves, which is what keeps the next pull cheap too.
+    private func record(
+        _ document: LSPDiagnosticReport.Document,
+        for path: String,
+        from key: Key
+    ) {
+        if let resultId = document.resultId {
+            diagnosticResultIDs[path, default: [:]][key] = resultId
+        }
+        guard !document.isUnchanged else { return }
+
+        record(rawDiagnostics: document.items, for: path, from: key)
+    }
+
+    /// The single writer into the diagnostic store, for a push and a pull
+    /// alike.
+    ///
+    /// Both kinds of server end here on purpose. The store is keyed by path
+    /// **and** server, so a pulled report replaces only what that server
+    /// last said about that file — the underlines, the problem count and
+    /// `EditorPaneView`'s banner all read the merged view and cannot tell
+    /// which direction an item arrived from, which is the correct amount for
+    /// them to know.
+    ///
+    /// The raw items are kept beside the parsed ones for the reason
+    /// `rawDiagnosticsByServer` gives: a quick fix is matched to a
+    /// diagnostic by fields `LSPDiagnostic` drops. That matters more for a
+    /// pulled report than for a pushed one, because on the ESLint server a
+    /// pull is also what *creates* the quick fixes — its code actions come
+    /// out of a problem cache that only a diagnostic computation fills, so
+    /// before this existed `textDocument/codeAction` answered `[]`.
+    private func record(rawDiagnostics raw: [LSPValue], for path: String, from key: Key) {
+        diagnosticsByServer[path, default: [:]][key] = raw.compactMap(LSPDiagnostic.init)
+        rawDiagnosticsByServer[path, default: [:]][key] = raw
+        republishDiagnostics(for: path)
     }
 
     /// Abandons the completion request in flight for a document, if any.
@@ -685,6 +953,14 @@ final class LSPCenter: ObservableObject {
         diagnostics.removeValue(forKey: path)
         diagnosticsByServer.removeValue(forKey: path)
         rawDiagnosticsByServer.removeValue(forKey: path)
+        diagnosticPulls.removeValue(forKey: path)?.cancel()
+
+        /// The result id goes with the diagnostics it described. Kept, it
+        /// would be sent as `previousResultId` after the document is opened
+        /// again — inviting an `unchanged` report against a store this very
+        /// method has just emptied, which is a file that shows no problems
+        /// until something else happens to it.
+        diagnosticResultIDs.removeValue(forKey: path)
 
         for key in keys {
             try? servers[key]?.notify("textDocument/didClose", params: [
@@ -1376,16 +1652,30 @@ final class LSPCenter: ObservableObject {
     ///   that range. Used to pick which of a server's **own** unparsed
     ///   diagnostics travel with the request — see `rawDiagnosticsByServer`,
     ///   which is the field quick fixes live or die on.
+    /// - Parameter only: The kinds the caller will use, or empty for the
+    ///   whole menu. Sent as `context.only`, which is not advice a server
+    ///   may take or leave: measured, `vscode-eslint-language-server` 4.10.0
+    ///   computes its whole-file fix **only** when that field names
+    ///   `source.fixAll` or `source.fixAll.eslint`, and answers with
+    ///   per-problem quick fixes otherwise. See
+    ///   `LSPCodeAction.context(diagnostics:only:)` for why an empty list is
+    ///   omitted rather than sent.
     func codeActions(
         path: String,
         range: LSPRange,
-        diagnostics: [LSPDiagnostic]
+        diagnostics: [LSPDiagnostic],
+        only: [String] = []
     ) async -> [LSPCodeAction] {
         let live = await runningServers(forPath: path)
         guard !live.isEmpty else { return [] }
 
         let name = Self.name(of: path)
-        Self.logger.debug("→ codeAction \(name) servers=\(live.count, privacy: .public)")
+        Self.logger.debug(
+            """
+            → codeAction \(name) servers=\(live.count, privacy: .public) \
+            only=\(only.joined(separator: ","), privacy: .public)
+            """
+        )
 
         let started = Date()
         var lists: [[LSPCodeAction]] = []
@@ -1402,7 +1692,8 @@ final class LSPCenter: ObservableObject {
                 "textDocument": ["uri": .string(Self.uri(path))],
                 "range": range.value,
                 "context": LSPCodeAction.context(
-                    diagnostics: rawDiagnostics(for: path, from: key, matching: diagnostics)
+                    diagnostics: rawDiagnostics(for: path, from: key, matching: diagnostics),
+                    only: only
                 ),
             ]
 
@@ -1555,15 +1846,20 @@ final class LSPCenter: ObservableObject {
         }
     }
 
-    /// Answers a request the *server* made, for the one request this app has
-    /// something to say about.
+    /// Answers a request the *server* made, for the few requests this app
+    /// has something to say about.
     ///
     /// Everything else falls through to the transport's own housekeeping
     /// answers. A server request that goes unanswered is a hang, not a
     /// dropped message — see `LSPProcess.answer(_:)`.
+    ///
+    /// - Parameter key: Which server is asking. Needed by
+    ///   `workspace/diagnostic/refresh`, whose whole content is "ask me
+    ///   again" and which is worth nothing without knowing who to ask.
     private func answerServerRequest(
         _ request: LSPRequest,
-        from definition: LSPServerDefinition
+        from definition: LSPServerDefinition,
+        key: Key
     ) async -> Result<LSPValue, LSPResponseError> {
         if request.method == "workspace/configuration" {
             return .success(Self.configuration(
@@ -1571,6 +1867,22 @@ final class LSPCenter: ObservableObject {
                 settings: definition.settingsJSON
             ))
         }
+
+        /// The server saying its previous answers are all stale — a
+        /// configuration file changed, a plugin reloaded, the rules moved.
+        /// It carries no parameters and no file names: **every** document
+        /// this server holds has to be asked again.
+        ///
+        /// Answered here and re-pulled off this call, not inside it. The
+        /// server is waiting for this reply, and a pull awaited before
+        /// answering would be a question sent to a process that is blocked
+        /// on us — the same rule the `tsserver` relay follows, for the same
+        /// reason.
+        if request.method == "workspace/diagnostic/refresh" {
+            Task { [weak self] in self?.pullDiagnosticsAgain(from: key) }
+            return .success(.null)
+        }
+
         guard request.method == "workspace/applyEdit" else {
             return LSPProcess.defaultAnswer(to: request)
         }
@@ -2038,7 +2350,7 @@ final class LSPCenter: ObservableObject {
             extraArguments: launch.arguments,
             requestHandler: { [weak self] request in
                 guard let self else { return LSPProcess.defaultAnswer(to: request) }
-                return await self.answerServerRequest(request, from: definition)
+                return await self.answerServerRequest(request, from: definition, key: key)
             }
         )
         do {
@@ -2050,6 +2362,7 @@ final class LSPCenter: ObservableObject {
             )
             serverCapabilities[key] = result["capabilities"]
             completionSupport[key] = LSPCompletionCapability(result["capabilities"])
+            diagnosticSupport[key] = LSPDiagnosticCapability(result["capabilities"])
         } catch {
             serverLogs[key] = process.recentLog
             status[key] = .failedToStart(reason: (error as? LSPProcessError)?.reason ?? String(describing: error))
@@ -2273,11 +2586,11 @@ final class LSPCenter: ObservableObject {
         switch notification.method {
         case "textDocument/publishDiagnostics":
             guard let uri = notification.params?["uri"]?.stringValue else { return }
-            let raw = notification.params?["diagnostics"]?.arrayValue ?? []
-            let path = URL(string: uri)?.path ?? uri
-            diagnosticsByServer[path, default: [:]][key] = raw.compactMap(LSPDiagnostic.init)
-            rawDiagnosticsByServer[path, default: [:]][key] = raw
-            republishDiagnostics(for: path)
+            record(
+                rawDiagnostics: notification.params?["diagnostics"]?.arrayValue ?? [],
+                for: URL(string: uri)?.path ?? uri,
+                from: key
+            )
 
         /// Where a server says the thing that answers "why are there no
         /// completions": `typescript-language-server` reports "tsserver
@@ -2544,7 +2857,16 @@ final class LSPCenter: ObservableObject {
         servers.removeValue(forKey: key)
         serverCapabilities.removeValue(forKey: key)
         completionSupport.removeValue(forKey: key)
+        diagnosticSupport.removeValue(forKey: key)
         progress.removeValue(forKey: key)
+
+        /// A result id names a computation inside a process that no longer
+        /// exists. Its replacement will not recognise the token, and a
+        /// server handed one it cannot match is entitled to answer
+        /// `unchanged` about a report it never made.
+        for path in diagnosticResultIDs.keys {
+            diagnosticResultIDs[path]?.removeValue(forKey: key)
+        }
 
         /// A server the app stopped on purpose did not crash, and recording it
         /// as crashed would leave the reader reading a fault that was their
@@ -3248,6 +3570,7 @@ extension LSPCenter {
             "textDocument": [
                 "completion": completionCapabilities,
                 "codeAction": codeActionCapabilities,
+                "diagnostic": diagnosticCapabilities,
             ],
             "workspace": [
                 /// Claimed because it is now answered — see
@@ -3258,9 +3581,39 @@ extension LSPCenter {
                 /// dropped.
                 "applyEdit": true,
                 "executeCommand": ["dynamicRegistration": false],
+                /// Claimed because `workspace/diagnostic/refresh` is
+                /// answered *and acted on* — see
+                /// `pullDiagnosticsAgain(from:)`. A client that claims this
+                /// and then only answers is worse than one that never
+                /// claimed it: the server stops looking for another way to
+                /// tell anybody its rules changed.
+                "diagnostics": ["refreshSupport": true],
             ],
             "window": ["workDoneProgress": true],
         ])
+
+    /// The pull-diagnostics half.
+    ///
+    /// Two fields, and both are claims this file has to keep.
+    ///
+    /// `dynamicRegistration` is `false` for the reason every other block
+    /// here says `false`: this client acknowledges
+    /// `client/registerCapability` without recording it, so a server that
+    /// waited to register its diagnostic provider dynamically would be
+    /// registered with nobody. What it declares at `initialize` is what gets
+    /// read — see `LSPDiagnosticCapability`.
+    ///
+    /// `relatedDocumentSupport` is `true` because the extra reports are
+    /// stored — see `record(_:for:from:)`, which sends each related
+    /// document through the same door as the file that was asked about.
+    /// Claiming it while dropping them would be the quieter failure of the
+    /// two: a server whose rules span files would answer the pull about the
+    /// file you edited with the errors that edit created elsewhere, and
+    /// those files would keep the underlines they had before.
+    nonisolated static let diagnosticCapabilities: LSPValue = [
+        "dynamicRegistration": false,
+        "relatedDocumentSupport": true,
+    ]
 
     /// The code-action half.
     ///

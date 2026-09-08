@@ -40,16 +40,20 @@ struct WelcomeThemeStepTests {
     private static var dracula: WelcomeThemeStep.Choice { choice("phantom.dracula") }
     private static var alucard: WelcomeThemeStep.Choice { choice("phantom.alucard") }
     private static var nord: WelcomeThemeStep.Choice { choice("phantom.theme-nord") }
+    private static var nordLight: WelcomeThemeStep.Choice { choice("phantom.theme-nord-light") }
 
     // MARK: Where the step sits
 
     /// Between the placement step and the agents: the second of the two
     /// questions about what this window looks like, and still ahead of the one
     /// step that installs things on the machine and has a plan to tick.
+    ///
+    /// The title names both of the questions the step asks, because the icon
+    /// packs sit on this screen rather than on a sixth one.
     @Test func theThemeStepSitsBetweenThePlacementAndTheAgents() {
         #expect(WelcomeView.Step.theme.rawValue > WelcomeView.Step.layout.rawValue)
         #expect(WelcomeView.Step.theme.rawValue < WelcomeView.Step.agents.rawValue)
-        #expect(WelcomeView.Step.theme.title == "Your theme")
+        #expect(WelcomeView.Step.theme.title == "Your theme and icons")
     }
 
     // MARK: The four cards
@@ -119,10 +123,18 @@ struct WelcomeThemeStepTests {
 
     /// Being unlisted is a fact about one card and not about the step: the
     /// other three are still offered, and the tour still goes on.
+    ///
+    /// The catalogue therefore has to hold those three. Built with one entry
+    /// instead, every other card is unlisted too, and the assertions below
+    /// read the state of a second missing entry rather than of a listed one —
+    /// which is what this test did while claiming the opposite.
     @Test func anUnlistedCardLeavesTheOtherThreeAlone() {
-        let facts = WelcomeThemeStep.Facts(index: Self.index(["phantom.dracula"]))
+        let listed = WelcomeThemeStep.choices.map(\.id).filter { $0 != Self.alucard.id }
+        let facts = WelcomeThemeStep.Facts(index: Self.index(listed))
 
+        #expect(WelcomeThemeStep.state(of: Self.alucard, from: facts) == .unlisted)
         #expect(WelcomeThemeStep.state(of: Self.nord, from: facts) == .offered)
+        #expect(WelcomeThemeStep.state(of: Self.nordLight, from: facts) == .offered)
         #expect(WelcomeThemeStep.state(of: Self.dracula, from: facts)
             == .chosen(isInstalled: false))
     }
@@ -346,15 +358,16 @@ struct WelcomeThemeStepTests {
 
     // MARK: The step's own arithmetic
 
-    /// The sentence, the two group labels, the gaps and the two rows of cards
-    /// have to come to no more than the window leaves a step.
+    /// The sentence, the three group labels, the gaps, the two rows of theme
+    /// cards and the row of icon packs have to come to no more than the window
+    /// leaves a step.
     @Test func theCardsFitTheWindowTheyWereMeasuredFor() {
         let available = WelcomeWindowController.size.height - WelcomeView.chromeHeight
         let used = WelcomeThemeStep.sentenceHeight
-            + WelcomeThemeStep.spacing
-            + (WelcomeThemeStep.groupTitleHeight + WelcomeThemeStep.titleGap) * 2
-            + WelcomeThemeStep.spacing
+            + WelcomeThemeStep.spacing * 3
+            + (WelcomeThemeStep.groupTitleHeight + WelcomeThemeStep.titleGap) * 3
             + WelcomeThemeStep.cardHeight * 2
+            + WelcomeIconPacks.cardHeight
 
         #expect(WelcomeThemeStep.cardHeight > 0)
         #expect(used <= available)

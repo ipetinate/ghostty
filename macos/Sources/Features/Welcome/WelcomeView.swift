@@ -44,7 +44,7 @@ struct WelcomeView: View {
             case .hero: return nil
             case .basics: return "What this app does"
             case .layout: return "Where the tabs go"
-            case .theme: return "Your theme"
+            case .theme: return "Your theme and icons"
             case .agents: return "Your agents"
             }
         }
@@ -87,6 +87,11 @@ struct WelcomeView: View {
     /// button in this window's bottom bar, and going on is what installs the
     /// theme. See `WelcomeThemeSelection`.
     @StateObject private var themeSelection = WelcomeThemeSelection()
+
+    /// That step's other choice, held here for the same reason. Two models
+    /// rather than one because they install two unrelated extensions and
+    /// either can fail on its own — see `WelcomeIconPackSelection`.
+    @StateObject private var iconPackSelection = WelcomeIconPackSelection()
 
     private var accent: Color { palette.accent ?? .accentColor }
 
@@ -194,7 +199,7 @@ struct WelcomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
         case .theme:
-            WelcomeThemeStep(selection: themeSelection)
+            WelcomeThemeStep(selection: themeSelection, packs: iconPackSelection)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
         case .agents:
@@ -359,12 +364,18 @@ struct WelcomeView: View {
             Button("Next") { advance(to: .theme) }
                 .keyboardShortcut(.defaultAction)
         case .theme:
-            /// Going on is what installs the chosen theme, and it does not
-            /// wait for it: a reader on a slow line must still be able to
-            /// leave, and the step is honest about a download that fails
-            /// afterwards because it writes nothing until one succeeds.
+            /// Going on is what installs the chosen theme and the chosen icon
+            /// pack, and it does not wait for either: a reader on a slow line
+            /// must still be able to leave, and the step is honest about a
+            /// download that fails afterwards because it writes nothing until
+            /// one succeeds.
+            ///
+            /// Two calls rather than one, in the order the step reads: each
+            /// answers only for its own choice, and one that has nothing left
+            /// to do returns without touching the network.
             Button("Next") {
                 themeSelection.goOn()
+                iconPackSelection.goOn()
                 advance(to: .agents)
             }
             .keyboardShortcut(.defaultAction)

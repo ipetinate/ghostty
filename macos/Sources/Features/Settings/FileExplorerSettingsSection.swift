@@ -36,11 +36,11 @@ struct FileExplorerSettingsSection: View {
             Toggle("Show Hidden Files", isOn: $showsHiddenFiles)
                 .toggleStyle(.switch)
 
-            /// No empty state, because there is no empty: a theme ships in
-            /// the app bundle and `FileIconProvider` selects it by default,
-            /// so the list always holds at least one entry besides the
-            /// fallback. Guarding for none would draw a state nobody can
-            /// reach.
+            /// No empty state, because there is no empty: the fallback row
+            /// is written here rather than read off the installed themes, so
+            /// a machine with no pack — which is every fresh install, since
+            /// the bundle ships none — still draws a picker showing the
+            /// answer it is on.
             Picker("Icon Theme", selection: iconTheme) {
                 Text("No Theme (SF Symbols)").tag(FileIconProvider.symbolsOnly)
                 ForEach(iconThemeRows, id: \.name) { row in
@@ -64,8 +64,9 @@ struct FileExplorerSettingsSection: View {
 
             SF Symbols is the built-in table rather than a theme, and it \
             is what every theme falls back to for a file it has no icon \
-            for. Symbols — the theme Phantom ships with and selects by \
-            default — is a separate thing with a similar name.
+            for. Phantom bundles no icon theme, so it is also what a fresh \
+            install draws. Symbols Icons is an extension with a similar \
+            name — install it, or Material Icon Theme, under Extensions.
             """)
                 .font(.caption)
                 .foregroundStyle(.secondary)

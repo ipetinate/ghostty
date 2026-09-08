@@ -16,10 +16,16 @@ enum FileIcon: Equatable {
 /// themes.
 ///
 /// Themes come from three places, mirroring how `ThemeCatalog` handles color
-/// themes: the one bundled with the app, anything the user drops in
+/// themes: the app bundle, anything the user drops in
 /// `~/.config/phantom/icon-themes/<name>/`, and the directories installed
 /// extensions contribute. Any SVG-based VS Code icon theme works — copy the
 /// extension's folder in, no install step.
+///
+/// **The bundle ships none of them.** A fresh install therefore has no theme
+/// to select and draws SF Symbols, and every pack is an extension the reader
+/// asks for — in the welcome window's `WelcomeIconPacks` or in Settings. The
+/// app used to bundle one, which cost 2.3 MB in every download and made the
+/// registry offer an Install button for a pack already in use.
 ///
 /// With no theme selected the explorer still looks like an explorer: the
 /// `symbolFallback` table below maps the common extensions onto SF Symbols
@@ -61,7 +67,11 @@ final class FileIconProvider: ObservableObject {
 
     // MARK: Catalog
 
-    /// The directory inside the app bundle holding themes we ship.
+    /// The directory inside the app bundle holding themes we ship, mirroring
+    /// `LanguageResolver.bundledExtensionsDir`.
+    ///
+    /// Nothing ships there. The path is read anyway so that shipping a pack
+    /// later is a resource change and not a code change.
     static var bundledThemesDir: URL? {
         Bundle.main.resourceURL?.appendingPathComponent("icon-themes", isDirectory: true)
     }
@@ -78,12 +88,14 @@ final class FileIconProvider: ObservableObject {
     /// Every installed theme, at most one per name, in display order.
     ///
     /// One name, one entry, folded — and the deduplication has to span all
-    /// three sources rather than only the contributed one. The theme in the
-    /// app bundle is a directory called `symbols`; the extension that
-    /// packages that same theme declares it as `Symbols`. Compared raw,
+    /// three sources rather than only the contributed one. The theme the app
+    /// bundle used to hold was a directory called `symbols`; the extension
+    /// that packages that same theme declares it as `Symbols`. Compared raw,
     /// those are two names, so the picker listed the pack twice under one
     /// label and which of the two the persisted selection resolved to was
-    /// decided by nothing the reader could see.
+    /// decided by nothing the reader could see. The bundled copy is gone and
+    /// that pair cannot collide again, but any two packs can — a reader's own
+    /// directory against an extension's — so the fold stays.
     ///
     /// The nearest source wins: the app bundle, then the reader's own
     /// directory, then the extensions. Directory listings arrive in no
@@ -177,20 +189,26 @@ final class FileIconProvider: ObservableObject {
     /// The selection under the name the installed theme goes by, which is
     /// what a picker has to tag its rows with.
     ///
-    /// The two differ whenever a reader picked a theme before the picker
-    /// stopped listing one pack twice: the entry they clicked was the
-    /// extension's `Symbols` and the theme that survives is the bundle's
-    /// `symbols`. Answering with the stored spelling would leave the
-    /// picker showing no selection at all, for a theme that is installed
-    /// and active.
+    /// The two differ whenever the stored spelling and the installed pack's
+    /// own differ in case, which is what a reader who selected the bundled
+    /// `symbols` and later installed the extension's `Symbols` has.
+    /// Answering with the stored spelling would leave the picker showing no
+    /// selection at all, for a theme that is installed and active.
     var selectedThemeName: String {
         let folded = IconTheme.folded(selectedName)
         return themes.first { $0.foldedName == folded }?.name ?? selectedName
     }
 
-    /// Symbols ships with the app and is what the explorer is designed
-    /// against, so a fresh install gets it without having to pick anything.
-    static let defaultThemeName = "symbols"
+    /// No pack, because the bundle ships none: a fresh install draws the
+    /// `symbolFallback` table until the reader asks for a pack.
+    ///
+    /// A reader who selected the bundled `symbols` before it was removed
+    /// still has that name stored, and `applySelection` drops it for want of
+    /// a theme by that name — so they see SF Symbols too, and the picker in
+    /// Settings keeps a row saying the pack is not installed. Installing
+    /// `phantom.symbols-icons` gives the icons back under the selection they
+    /// already have, because `Symbols` folds onto `symbols`.
+    static let defaultThemeName = symbolsOnly
 
     private func applySelection() {
         let name = IconTheme.folded(selectedName)

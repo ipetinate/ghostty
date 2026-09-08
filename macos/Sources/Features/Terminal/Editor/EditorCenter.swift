@@ -683,6 +683,39 @@ final class EditorCenter: ObservableObject {
         requestClose(path)
     }
 
+    /// Closes whatever the cell in focus is showing, answering whether there
+    /// was anything of the editor's to close.
+    ///
+    /// The question is *what is in front of the reader*, not what kind of
+    /// page it is. Every tab the grid can hold is a `.file` or a `.review` —
+    /// a media file, an extension and a theme all arrive as the first — so a
+    /// fourth kind of page is closed by this the day it is added, and the
+    /// `switch` stops compiling if it needs an answer of its own instead.
+    /// That is the difference from asking "is a file open": a rule about
+    /// focus stays right when the pane grows a page nobody has written yet.
+    ///
+    /// `false` is the terminal's own answer, and it is what hands the key
+    /// back: the surface closes itself through `close_surface`, with the
+    /// running-process confirmation `confirm-close-surface` governs, and the
+    /// window answers after that.
+    ///
+    /// One tab per call, deliberately. ``EditorTabSet/close(_:)`` moves the
+    /// selection to the neighbour, so pressing the key again closes the next
+    /// one — which is the whole of "let me close them one by one".
+    @discardableResult
+    func closeFocusedTab() -> Bool {
+        switch tabs.selection {
+        case .terminal:
+            return false
+        case .file(let path):
+            requestClose(path)
+            return true
+        case .review(let id):
+            closeReview(id)
+            return true
+        }
+    }
+
     /// The cell the terminal lives in, which is what "the main pane" means.
     ///
     /// Named for the reader rather than for the tree: a grid has cells, and

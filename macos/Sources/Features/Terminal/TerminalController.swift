@@ -2701,6 +2701,20 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ghostty.newTab(surface: surface)
     }
 
+    /// The editor's page first, the terminal second.
+    ///
+    /// The same rule ``SidebarSplitView/routeCloseTab(_:)`` applies to the
+    /// key, stated once more on the path a *click* on File ▸ Close takes.
+    /// Without it the two disagree: the item is the shortcut's own menu
+    /// entry, and it would go on closing a terminal the reader is not
+    /// looking at, because ``BaseTerminalController/focusedSurface`` keeps
+    /// the last surface that had focus rather than dropping to nil when the
+    /// pane takes it.
+    override func close(_ sender: Any) {
+        guard !editorCenter.closeFocusedTab() else { return }
+        super.close(sender)
+    }
+
     @IBAction func closeTab(_ sender: Any?) {
         guard let window = window else { return }
         guard window.tabGroup?.windows.count ?? 0 > 1 else {

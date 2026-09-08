@@ -190,8 +190,33 @@ final class SidebarSplitView: NSSplitView {
         return NSApp.sendAction(selector, to: responder, from: nil)
     }
 
+    /// Close File Tab, whatever page the cell in focus is showing.
+    ///
+    /// Consulted before the view tree and before the main menu, and that is
+    /// the whole of the fix. The terminal surface keeps first responder while
+    /// it is hidden behind a file, an extension page or a review — focus
+    /// moves into the pane only once the reader clicks *into* it — so the key
+    /// went to a terminal they could not see, and from there to the window,
+    /// which took every tab with it. `CodeNSTextView` answered for the one
+    /// case where the caret really was in the editor, which is why a plain
+    /// source file behaved and every other kind of page did not.
+    ///
+    /// The reader's own binding, read from ``PhantomShortcutStore``, so this
+    /// answers exactly the keys `Close File Tab` answers in Settings —
+    /// including none at all, when they have cleared it.
+    private func routeCloseTab(_ event: NSEvent) -> Bool {
+        guard let center = editorCenter,
+              let shortcut = PhantomShortcut(event: event),
+              PhantomShortcutStore.shared.shortcuts(for: .closeTab).contains(shortcut)
+        else { return false }
+
+        return center.closeFocusedTab()
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if routeEditingCommand(event) { return true }
+
+        if routeCloseTab(event) { return true }
 
         if let center = editorCenter,
            let zone = EditorCommands.divideZone(

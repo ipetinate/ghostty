@@ -176,6 +176,14 @@ struct LanguageCatalog: Equatable {
     struct ContributedIconTheme: Equatable, Sendable, Identifiable {
         let listIdentity: String
         let extensionName: String
+
+        /// The extension's own directory, not the icon theme's: a theme
+        /// naming no artwork of its own is previewed with the packaged
+        /// `media/icon.png`, which sits beside the manifest rather than
+        /// inside the theme. `path` may name a nested directory, so the
+        /// root cannot be recovered from `iconTheme.directoryURL`.
+        let extensionRoot: URL
+
         let iconTheme: IconThemeContribution
 
         var id: String { listIdentity + "#iconTheme:" + iconTheme.name }
@@ -504,6 +512,7 @@ struct LanguageCatalog: Equatable {
             return ContributedIconTheme(
                 listIdentity: manifest.listIdentity,
                 extensionName: manifest.name,
+                extensionRoot: manifest.root,
                 iconTheme: iconTheme
             )
         }

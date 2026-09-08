@@ -2651,10 +2651,22 @@ sidebar: bool = false,
 
 /// Confirms that a surface should be closed before closing it.
 ///
-/// This defaults to `true`. If set to `false`, surfaces will close without
-/// any confirmation. This can also be set to `always`, which will always
-/// confirm closing a surface, even if shell integration says a process isn't
-/// running.
+/// Valid values are:
+///
+///   * `true` (default) - Confirm while something is still running in the
+///     surface. Two signals answer that question: the terminal has a
+///     foreground process other than the shell itself, or shell integration
+///     reports that the cursor is not at a prompt. Either one asks for
+///     confirmation, so a full-screen program that redraws over the shell's
+///     prompt mark still counts as running.
+///
+///   * `false` - Never confirm. Surfaces close immediately.
+///
+///   * `always` - Confirm even when neither signal above reports anything
+///     running.
+///
+/// A surface whose child process has already exited never confirms,
+/// whatever this is set to.
 @"confirm-close-surface": ConfirmCloseSurface = .true,
 
 /// Whether or not to quit after the last surface is closed.

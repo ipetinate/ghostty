@@ -190,8 +190,33 @@ final class SidebarSplitView: NSSplitView {
         return NSApp.sendAction(selector, to: responder, from: nil)
     }
 
+    /// Close File Tab, whatever page the cell in focus is showing.
+    ///
+    /// Asked before the code view and before the terminal surface, which is
+    /// the whole of the fix. Selecting a tab takes nothing away from the
+    /// surface, so it stays first responder behind the page on screen and
+    /// ``Ghostty/SurfaceView/performKeyEquivalent(with:)`` answered the key
+    /// with `close_surface` — closing a terminal the reader could not see
+    /// and, for a root surface, the window's every tab with it.
+    /// `CodeNSTextView` answered only for a caret in the code itself, which
+    /// is why a source file behaved and no other kind of page did.
+    ///
+    /// The reader's own binding, read from ``PhantomShortcutStore``, so this
+    /// answers exactly the keys `Close File Tab` answers in Settings —
+    /// including none at all, when they have cleared it.
+    private func routeCloseTab(_ event: NSEvent) -> Bool {
+        guard let center = editorCenter,
+              let shortcut = PhantomShortcut(event: event),
+              PhantomShortcutStore.shared.shortcuts(for: .closeTab).contains(shortcut)
+        else { return false }
+
+        return center.closeFocusedTab()
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if routeEditingCommand(event) { return true }
+
+        if routeCloseTab(event) { return true }
 
         if let center = editorCenter,
            let zone = EditorCommands.divideZone(

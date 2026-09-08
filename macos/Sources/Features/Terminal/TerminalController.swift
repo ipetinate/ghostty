@@ -2701,6 +2701,21 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ghostty.newTab(surface: surface)
     }
 
+    /// The editor's page first, the terminal second.
+    ///
+    /// The rule ``SidebarSplitView/routeCloseTab(_:)`` states for the key,
+    /// stated again on the path a click on File ▸ Close takes. Without it the
+    /// two disagree: ``BaseTerminalController/focusedSurface`` keeps the last
+    /// surface that had focus rather than dropping to nil when a page covers
+    /// it, so the item closed a terminal the reader was not looking at.
+    ///
+    /// `super` keeps the running-process question: it asks the surface to
+    /// close itself, and `confirm-close-surface` answers for it.
+    override func close(_ sender: Any) {
+        guard !editorCenter.closeFocusedTab() else { return }
+        super.close(sender)
+    }
+
     @IBAction func closeTab(_ sender: Any?) {
         guard let window = window else { return }
         guard window.tabGroup?.windows.count ?? 0 > 1 else {

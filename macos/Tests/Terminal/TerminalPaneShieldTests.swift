@@ -29,6 +29,10 @@ struct TerminalPaneShieldTests {
         #expect(frame.height == 0)
     }
 
+    @Test func theShieldIsGoneBeforeTheTerminalIsReadable() {
+        #expect(TerminalController.firstFrameShieldHold <= 0.2)
+    }
+
     @Test func aNegativeInsetIsIgnored() {
         let frame = TerminalController.firstFrameShieldFrame(
             paneBounds: NSRect(x: 0, y: 0, width: 400, height: 300),

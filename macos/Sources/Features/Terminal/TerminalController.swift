@@ -908,8 +908,17 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         shield.layer?.backgroundColor = terminalWindow.preferredBackgroundColor?.cgColor
         container.addSubview(shield)
 
-        dropShield(shield, attempt: 0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.firstFrameShieldHold) {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.12
+                shield.animator().alphaValue = 0
+            }, completionHandler: {
+                shield.removeFromSuperview()
+            })
+        }
     }
+
+    static let firstFrameShieldHold: TimeInterval = 0.15
 
     static func firstFrameShieldFrame(
         paneBounds: NSRect,
@@ -921,27 +930,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             width: paneBounds.width,
             height: max(0, paneBounds.height - max(0, safeAreaTopInset))
         )
-    }
-
-    private func dropShield(_ shield: NSView, attempt: Int) {
-        guard attempt < 60, !surfacesHavePresentedAFrame else {
-            if surfacesHavePresentedAFrame {
-                shield.removeFromSuperview()
-            } else {
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.12
-                    shield.animator().alphaValue = 0
-                }, completionHandler: {
-                    shield.removeFromSuperview()
-                })
-            }
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self, weak shield] in
-            guard let self, let shield, shield.superview != nil else { return }
-            self.dropShield(shield, attempt: attempt + 1)
-        }
     }
 
     private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {

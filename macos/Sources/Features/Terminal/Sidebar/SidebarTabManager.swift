@@ -594,6 +594,37 @@ final class SidebarTabManager: ObservableObject {
         return WorktreePath.repoName(mainCheckout: mainCheckout)
     }
 
+    struct PathFacts: Equatable {
+        let root: String?
+        let branch: String?
+        let inManagedWorktree: Bool
+        let worktreeRepo: String?
+    }
+
+    static func uniqueStatusTargets(
+        _ facts: [PathFacts]
+    ) -> [(root: String, branch: String?)] {
+        var seen: Set<String> = []
+        var targets: [(root: String, branch: String?)] = []
+        for entry in facts {
+            guard let root = entry.root else { continue }
+            guard seen.insert(root + "\u{0}" + (entry.branch ?? "")).inserted else { continue }
+            targets.append((root: root, branch: entry.branch))
+        }
+        return targets
+    }
+
+    static func pathFacts(for pwd: String?) -> PathFacts {
+        let git = gitInfo(for: pwd)
+        return PathFacts(
+            root: git?.root,
+            branch: git?.branch,
+            inManagedWorktree: GitWorktreeMembership.contains(
+                pwd: pwd,
+                root: WorktreeSettings.managedRoot),
+            worktreeRepo: worktreeRepo(forRepoRoot: git?.root, pwd: pwd))
+    }
+
     /// Surface publishers update the model directly — no list refresh.
     private func subscribe(_ model: SidebarTabModel, to surface: Ghostty.SurfaceView?) {
         guard let surface, model.surfaceCancellables.isEmpty else { return }
@@ -658,15 +689,24 @@ final class SidebarTabManager: ObservableObject {
     private func refreshMetadata() {
         guard isSidebarVisible else { return }
 
+        var factsByPath: [String: PathFacts] = [:]
+
         for model in models {
-            let git = Self.gitInfo(for: model.pwd)
-            model.setGit(branch: git?.branch, root: git?.root)
-            model.setInManagedWorktree(
-                GitWorktreeMembership.contains(pwd: model.pwd, root: WorktreeSettings.managedRoot),
-                repo: Self.worktreeRepo(forRepoRoot: git?.root, pwd: model.pwd))
-            if let git {
-                GitStatusCenter.shared.requestRefresh(root: git.root, branch: git.branch)
+            let key = model.pwd ?? ""
+            let facts: PathFacts
+            if let cached = factsByPath[key] {
+                facts = cached
+            } else {
+                facts = Self.pathFacts(for: model.pwd)
+                factsByPath[key] = facts
             }
+
+            model.setGit(branch: facts.branch, root: facts.root)
+            model.setInManagedWorktree(facts.inManagedWorktree, repo: facts.worktreeRepo)
+        }
+
+        for target in Self.uniqueStatusTargets(Array(factsByPath.values)) {
+            GitStatusCenter.shared.requestRefresh(root: target.root, branch: target.branch)
         }
 
         for tabWindow in groupWindows {

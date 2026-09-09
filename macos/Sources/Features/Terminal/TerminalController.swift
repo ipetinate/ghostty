@@ -899,19 +899,48 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         didShieldFirstPresentation = true
         guard !surfacesHavePresentedAFrame else { return }
 
-        let shield = NSView(frame: container.bounds)
+        let shield = NSView(frame: Self.firstFrameShieldFrame(
+            paneBounds: container.bounds,
+            safeAreaTopInset: container.safeAreaInsets.top
+        ))
         shield.autoresizingMask = [.width, .height]
         shield.wantsLayer = true
         shield.layer?.backgroundColor = terminalWindow.preferredBackgroundColor?.cgColor
         container.addSubview(shield)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.12
-                shield.animator().alphaValue = 0
-            }, completionHandler: {
+        dropShield(shield, attempt: 0)
+    }
+
+    static func firstFrameShieldFrame(
+        paneBounds: NSRect,
+        safeAreaTopInset: CGFloat
+    ) -> NSRect {
+        NSRect(
+            x: 0,
+            y: 0,
+            width: paneBounds.width,
+            height: max(0, paneBounds.height - max(0, safeAreaTopInset))
+        )
+    }
+
+    private func dropShield(_ shield: NSView, attempt: Int) {
+        guard attempt < 60, !surfacesHavePresentedAFrame else {
+            if surfacesHavePresentedAFrame {
                 shield.removeFromSuperview()
-            })
+            } else {
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.12
+                    shield.animator().alphaValue = 0
+                }, completionHandler: {
+                    shield.removeFromSuperview()
+                })
+            }
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self, weak shield] in
+            guard let self, let shield, shield.superview != nil else { return }
+            self.dropShield(shield, attempt: attempt + 1)
         }
     }
 

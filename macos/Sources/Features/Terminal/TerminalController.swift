@@ -891,6 +891,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     private func shieldFirstPresentationFlash() {
         guard !didShieldFirstPresentation,
+              !ghostty.config.backgroundBlur.isGlassStyle,
               let terminalWindow = window as? TerminalWindow,
               let container = sidebarSplitView?.arrangedSubviews.last
         else { return }
@@ -1856,7 +1857,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         syncSidebarBackground()
 
-        return splitView
+        return WindowGlassBackdrop.install(behind: splitView, config: config)
     }
 
     /// Creates a terminal tab that starts inside the given group.

@@ -891,7 +891,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     private func shieldFirstPresentationFlash() {
         guard !didShieldFirstPresentation,
-              !ghostty.config.backgroundBlur.isGlassStyle,
+              !WindowGlassBackdrop.isActive(ghostty.config.backgroundBlur),
               let terminalWindow = window as? TerminalWindow,
               let container = sidebarSplitView?.arrangedSubviews.last
         else { return }

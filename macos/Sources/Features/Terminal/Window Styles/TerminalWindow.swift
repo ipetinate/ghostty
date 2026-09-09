@@ -703,7 +703,7 @@ class TerminalWindow: NSWindow {
         // Also check if the user has overridden transparency to be fully opaque.
         switch Self.backgroundTreatment(
             backgroundOpacity: surfaceConfig.backgroundOpacity,
-            isGlassStyle: surfaceConfig.backgroundBlur.isGlassStyle,
+            isGlassStyle: WindowGlassBackdrop.isActive(surfaceConfig.backgroundBlur),
             isFullscreen: styleMask.contains(.fullScreen),
             forceOpaque: terminalController?.isBackgroundOpaque ?? false,
             isVisible: isVisible

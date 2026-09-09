@@ -15,21 +15,37 @@ import SwiftUI
 /// lookup finds the container among the split view's arranged subviews, and
 /// with the sidebar the terminal lives inside the editor grid instead.
 enum WindowGlassBackdrop {
-    static func make(config: Ghostty.Config) -> NSView? {
-        let variant: BackportGlass
-        switch config.backgroundBlur {
-        case .macosGlassRegular: variant = .regular
-        case .macosGlassClear: variant = .clear
-        default: return nil
+    /// Whether this window draws on the material rather than on a blurred
+    /// window. Every window that asked for blur does, where the system has
+    /// the material: the material is what blur was reaching for.
+    static func isActive(_ blur: Ghostty.Config.BackgroundBlur) -> Bool {
+#if compiler(>=6.2)
+        guard #available(macOS 26.0, *) else { return false }
+        return blur.isEnabled
+#else
+        return false
+#endif
+    }
+
+    /// `clear` only when it was asked for by name. A plain radius is asking
+    /// for something frosted, which is `regular`.
+    private static func variant(for blur: Ghostty.Config.BackgroundBlur) -> BackportGlass {
+        switch blur {
+        case .macosGlassClear: return .clear
+        default: return .regular
         }
+    }
+
+    static func make(config: Ghostty.Config) -> NSView? {
+        guard isActive(config.backgroundBlur) else { return nil }
 
 #if compiler(>=6.2)
         guard #available(macOS 26.0, *) else { return nil }
-        let view = NSHostingView(rootView: Surface(glass: variant.official))
+        let view = NSHostingView(rootView: Surface(
+            glass: variant(for: config.backgroundBlur).official))
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
 #else
-        _ = variant
         return nil
 #endif
     }

@@ -304,10 +304,9 @@ struct SidebarView: View {
             ScrollView {
                 let content = resolved
 
-                VStack(spacing: SidebarMetrics.itemSpacing) {
+                LazyVStack(spacing: SidebarMetrics.itemSpacing) {
                     ForEach(content.sections) { section in
                         groupSection(section)
-                            .transition(.opacity)
                     }
 
                     // Same spacing as between groups: every item in the
@@ -323,7 +322,6 @@ struct SidebarView: View {
                             editorCenter: editorCenter,
                             onNewWorktreeTab: layout.onNewWorktreeTab
                         )
-                        .transition(.opacity)
                     }
                 }
                 .padding(8)

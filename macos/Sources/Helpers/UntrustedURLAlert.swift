@@ -81,7 +81,7 @@ enum UntrustedURLAlert {
         ))
         scrollView.borderType = .bezelBorder
         scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
+        scrollView.useThinScrollers(weight: .content)
 
         let textView = NSTextView(frame: scrollView.contentView.bounds)
         textView.isEditable = false

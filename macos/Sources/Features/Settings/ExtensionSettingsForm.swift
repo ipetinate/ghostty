@@ -81,6 +81,7 @@ struct ExtensionSettingsForm: View {
             }
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle(title)
         .task {
             lsp.refreshInstalledCommands()
@@ -134,6 +135,7 @@ struct ExtensionSettingsForm: View {
                 Text(verbatim: extensionID)
                     .textSelection(.enabled)
             }
+            .background(alignment: .top) { OverlayScrollers() }
 
             if !version.isEmpty {
                 LabeledContent("Version") {

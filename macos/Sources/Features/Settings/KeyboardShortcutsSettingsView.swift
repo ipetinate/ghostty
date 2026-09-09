@@ -69,7 +69,10 @@ struct KeyboardShortcutsSettingsView: View {
         let config = configGroups
 
         return Form {
-            Section { searchField }
+            Section {
+                searchField
+                    .background(alignment: .top) { OverlayScrollers() }
+            }
 
             commandSections
             fixedSection
@@ -83,6 +86,7 @@ struct KeyboardShortcutsSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
         .navigationTitle("Keyboard Shortcuts")
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyConfigDidChange)) { _ in
             configRevision += 1

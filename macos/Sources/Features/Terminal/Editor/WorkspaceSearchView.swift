@@ -116,7 +116,9 @@ struct WorkspaceSearchView: View {
                     }
                 }
                 .padding(6)
+                .background(alignment: .top) { OverlayScrollers() }
             }
+            .scrollIndicators(.hidden)
         }
     }
 }

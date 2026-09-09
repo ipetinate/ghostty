@@ -294,7 +294,9 @@ private struct CommandTable: View {
                         }
                     }
                     .padding(10)
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
+                .scrollIndicators(.hidden)
                 .frame(maxHeight: 200)
                 .onChange(of: selectedIndex) { _ in
                     guard let selectedIndex,

@@ -369,8 +369,9 @@ struct WorktreePopover: View {
                             row(worktree)
                         }
                     }
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
-                .scrollIndicators(.automatic)
+                .scrollIndicators(.hidden)
             }
         }
     }
@@ -394,8 +395,9 @@ struct WorktreePopover: View {
                             section(item)
                         }
                     }
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
-                .scrollIndicators(.automatic)
+                .scrollIndicators(.hidden)
             }
         }
     }

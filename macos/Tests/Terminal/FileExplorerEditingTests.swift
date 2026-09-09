@@ -196,6 +196,77 @@ struct FileExplorerEditingTests {
         #expect(FileManager.default.fileExists(atPath: base.appendingPathComponent("notes.txt").path))
     }
 
+    /// A field the reader emptied is not a request for a file called nothing:
+    /// nothing is written, and nothing is explained either, because nothing
+    /// was asked for.
+    @Test func committingABlankNameCreatesNothingAndSaysNothing() async throws {
+        let base = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let model = await rooted(at: base)
+        model.beginCreate(in: base.path, isFolder: false)
+        await settle(model)
+        let result = model.commitCreate(parent: base.path, isFolder: false, name: "   ")
+
+        #expect(throws: (any Error).self) { try result.get() }
+        #expect(model.editing == nil, "the field closed rather than staying open on nothing")
+        #expect(model.errorMessage == nil, "a blank field is a cancel, not a refusal")
+
+        let written = try FileManager.default.contentsOfDirectory(atPath: base.path)
+        #expect(written.isEmpty)
+    }
+
+    @Test func renamingToABlankNameLeavesTheFileAlone() async throws {
+        let base = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let file = base.appendingPathComponent("notes.md")
+        try Data().write(to: file)
+
+        let model = await rooted(at: base)
+        model.beginRename(path: file.path)
+        let result = model.commitRename(path: file.path, to: " ")
+
+        #expect(throws: (any Error).self) { try result.get() }
+        #expect(model.errorMessage == nil)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    /// The one refusal the reader has to see: a name already taken. The file
+    /// on disk is never overwritten, and the message says which name it was.
+    @Test func creatingOverAnExistingNameIsRefusedOutLoud() async throws {
+        let base = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let taken = base.appendingPathComponent("server.ts")
+        try Data("export {}".utf8).write(to: taken)
+
+        let model = await rooted(at: base)
+        model.beginCreate(in: base.path, isFolder: false)
+        await settle(model)
+        let result = model.commitCreate(parent: base.path, isFolder: false, name: "server.ts")
+
+        #expect(throws: (any Error).self) { try result.get() }
+        #expect(model.errorMessage?.contains("server.ts") == true)
+
+        let kept = try Data(contentsOf: taken)
+        #expect(kept == Data("export {}".utf8), "the file was overwritten")
+    }
+
+    /// A create proposes a name with no extension, so what the reader types
+    /// decides the kind of file rather than landing inside a ".txt".
+    @Test func theProposedNameCarriesNoExtension() async throws {
+        let base = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let model = await rooted(at: base)
+        model.beginCreate(in: base.path, isFolder: false)
+        await settle(model)
+
+        let placeholder = model.rows.first { $0.isCreatePlaceholder }
+        #expect(placeholder?.node.name == "untitled")
+    }
+
     /// The traversal again, through the model this time — the layer the
     /// typed name actually arrives at.
     @Test func committingANameThatClimbsOutOfTheFolderCreatesNothing() async throws {

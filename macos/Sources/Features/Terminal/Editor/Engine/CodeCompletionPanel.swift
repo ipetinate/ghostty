@@ -168,8 +168,7 @@ final class CodeCompletionPanel: NSPanel, NSTableViewDataSource, NSTableViewDele
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.scrollerStyle = .overlay
-        scrollView.autohidesScrollers = true
+        scrollView.useThinScrollers(weight: .chrome)
         scrollView.verticalScrollElasticity = .none
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 

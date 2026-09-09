@@ -110,10 +110,12 @@ struct GitRepoView: View {
                             .frame(minHeight: viewport.size.height, alignment: .top)
                             .background(alignment: .top) { OverlayScrollers() }
                     }
-                    /// Automatic, matching the file tree: the bar appears
-                    /// while scrolling and fades, which is the only clue the
-                    /// reader gets that there is more list below.
-                    .scrollIndicators(.automatic)
+                    /// Hidden, matching the file tree: the modifier does not
+                    /// reach the overlay scroller `OverlayScrollers`
+                    /// installs, so the bar still appears while scrolling and
+                    /// fades after. Asking for an indicator only has SwiftUI
+                    /// reserve the band a legacy one takes.
+                    .scrollIndicators(.hidden)
                 }
 
             case .section(let name, let isExpanded, let onToggle):

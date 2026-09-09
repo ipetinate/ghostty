@@ -169,6 +169,7 @@ struct ExtensionsPanelView: View {
             /// always show.
             .background(alignment: .topTrailing) { OverlayScrollers() }
         }
+        .scrollIndicators(.hidden)
     }
 
     @ViewBuilder

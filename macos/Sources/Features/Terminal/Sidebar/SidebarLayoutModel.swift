@@ -190,8 +190,51 @@ final class SidebarSplitView: NSSplitView {
         return NSApp.sendAction(selector, to: responder, from: nil)
     }
 
+    /// ⌘S, when a contributed view is drawing the focused tab.
+    ///
+    /// Asked before the code view and before the terminal surface, and only
+    /// for a tab an extension draws: a page has no `NSTextView` to hold the
+    /// caret, so nothing else in the responder chain would answer the key on
+    /// its behalf. A code view still answers for a caret in the code, and
+    /// the terminal still answers when no page is in front.
+    private func routeContributedSave(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "s",
+              let center = editorCenter
+        else { return false }
+
+        return center.requestContributedSave()
+    }
+
+    /// Close File Tab, whatever page the cell in focus is showing.
+    ///
+    /// Asked before the code view and before the terminal surface, which is
+    /// the whole of the fix. Selecting a tab takes nothing away from the
+    /// surface, so it stays first responder behind the page on screen and
+    /// ``Ghostty/SurfaceView/performKeyEquivalent(with:)`` answered the key
+    /// with `close_surface` — closing a terminal the reader could not see
+    /// and, for a root surface, the window's every tab with it.
+    /// `CodeNSTextView` answered only for a caret in the code itself, which
+    /// is why a source file behaved and no other kind of page did.
+    ///
+    /// The reader's own binding, read from ``PhantomShortcutStore``, so this
+    /// answers exactly the keys `Close File Tab` answers in Settings —
+    /// including none at all, when they have cleared it.
+    private func routeCloseTab(_ event: NSEvent) -> Bool {
+        guard let center = editorCenter,
+              let shortcut = PhantomShortcut(event: event),
+              PhantomShortcutStore.shared.shortcuts(for: .closeTab).contains(shortcut)
+        else { return false }
+
+        return center.closeFocusedTab()
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if routeContributedSave(event) { return true }
+
         if routeEditingCommand(event) { return true }
+
+        if routeCloseTab(event) { return true }
 
         if let center = editorCenter,
            let zone = EditorCommands.divideZone(

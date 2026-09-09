@@ -882,14 +882,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// until then the near-transparent window shows raw desktop blur — a
     /// visible flash when clicking a tab that was never displayed.
     ///
-    /// A pane whose layer already holds a frame is left alone. The shield is
-    /// the window's background colour at the configured opacity, so over
-    /// content it reads as the terminal dimming for a quarter of a second.
+    /// Every window gets one, once, unconditionally: `layer.contents` cannot
+    /// say whether a surface has drawn, so there is nothing to test against.
+    /// The shield is the window's background colour at the configured
+    /// opacity, so over content it reads as the terminal dimming for a
+    /// quarter of a second.
     private var didShieldFirstPresentation = false
-
-    private var surfacesHavePresentedAFrame: Bool {
-        surfaceTree.contains { $0.layer?.contents != nil }
-    }
 
     private func shieldFirstPresentationFlash() {
         guard !didShieldFirstPresentation,
@@ -897,15 +895,17 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
               let container = sidebarSplitView?.arrangedSubviews.last
         else { return }
         didShieldFirstPresentation = true
-        guard !surfacesHavePresentedAFrame else { return }
 
-        let shield = NSView(frame: container.bounds)
+        let shield = NSView(frame: Self.firstFrameShieldFrame(
+            paneBounds: container.bounds,
+            safeAreaTopInset: container.safeAreaInsets.top
+        ))
         shield.autoresizingMask = [.width, .height]
         shield.wantsLayer = true
         shield.layer?.backgroundColor = terminalWindow.preferredBackgroundColor?.cgColor
         container.addSubview(shield)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.firstFrameShieldHold) {
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.12
                 shield.animator().alphaValue = 0
@@ -913,6 +913,20 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 shield.removeFromSuperview()
             })
         }
+    }
+
+    static let firstFrameShieldHold: TimeInterval = 0.15
+
+    static func firstFrameShieldFrame(
+        paneBounds: NSRect,
+        safeAreaTopInset: CGFloat
+    ) -> NSRect {
+        NSRect(
+            x: 0,
+            y: 0,
+            width: paneBounds.width,
+            height: max(0, paneBounds.height - max(0, safeAreaTopInset))
+        )
     }
 
     private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
@@ -1586,12 +1600,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ).interfaceFont())
         sidebarHosting.translatesAutoresizingMaskIntoConstraints = false
         sidebarHosting.wantsLayer = true
-        self.sidebarBackgroundView = sidebarHosting
 
         // The pane wraps the hosting view so a glass layer can slot in
         // underneath when the glass effect is active.
         let sidebarPane = NSView()
         sidebarPane.translatesAutoresizingMaskIntoConstraints = false
+        sidebarPane.wantsLayer = true
+        self.sidebarBackgroundView = sidebarPane
         sidebarPane.addSubview(sidebarHosting)
         NSLayoutConstraint.activate([
             sidebarHosting.topAnchor.constraint(equalTo: sidebarPane.topAnchor),
@@ -1663,7 +1678,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 }
             }
 
-        // The sidebar's hosting view paints the titlebar strip on its half
+        // The sidebar's pane paints the titlebar strip on its half
         // because its layer runs the full height of the pane. The terminal's
         // content stops below the titlebar and paints nothing up there, so
         // this fills exactly that band — one coat on each half, and nothing
@@ -1839,6 +1854,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self?.applySharedSidebarWidth()
         }
 
+        syncSidebarBackground()
+
         return splitView
     }
 
@@ -2005,6 +2022,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     func openExtensionInEditor(_ document: ExtensionDocument) {
         editorCenter.openExtension(document)
+    }
+
+    /// Opens a file drawn by one of an extension's editor views.
+    func openFileWithView(_ url: URL, viewID: String) -> Bool {
+        editorCenter.openWith(url, viewID: viewID)
     }
 
     /// Opens a file as the branch review sees it: its diff against the base
@@ -2701,6 +2723,21 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ghostty.newTab(surface: surface)
     }
 
+    /// The editor's page first, the terminal second.
+    ///
+    /// The rule ``SidebarSplitView/routeCloseTab(_:)`` states for the key,
+    /// stated again on the path a click on File ▸ Close takes. Without it the
+    /// two disagree: ``BaseTerminalController/focusedSurface`` keeps the last
+    /// surface that had focus rather than dropping to nil when a page covers
+    /// it, so the item closed a terminal the reader was not looking at.
+    ///
+    /// `super` keeps the running-process question: it asks the surface to
+    /// close itself, and `confirm-close-surface` answers for it.
+    override func close(_ sender: Any) {
+        guard !editorCenter.closeFocusedTab() else { return }
+        super.close(sender)
+    }
+
     @IBAction func closeTab(_ sender: Any?) {
         guard let window = window else { return }
         guard window.tabGroup?.windows.count ?? 0 > 1 else {
@@ -2914,8 +2951,30 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         editorTerminalDirectoryCancellable = surface.$pwd
             .removeDuplicates()
             .sink { [weak self] pwd in
-                self?.editorTerminalDirectory.path = (pwd?.isEmpty ?? true) ? nil : pwd
+                guard let self else { return }
+                let reported = (pwd?.isEmpty ?? true) ? nil : pwd
+                editorTerminalDirectory.path = reported ?? fallbackTerminalPwd
             }
+    }
+
+    /// A directory for the pane when the focused surface has not reported
+    /// one, read from the selected sidebar tab.
+    ///
+    /// The same two-source shape ``workingDirectoryForPaths`` uses, and it
+    /// exists because of what a nil costs a contributed view: the view's
+    /// filesystem methods are bounded to this folder, so a nil is the whole
+    /// feature refusing rather than a banner staying down. A surface that
+    /// has never sent OSC 7 — a shell without the integration, or one that
+    /// is not the focused surface yet — used to produce exactly that.
+    ///
+    /// Not a guess. The selected tab is this window's terminal, and its
+    /// `pwd` is that surface's own working directory read from the sidebar's
+    /// model rather than from the surface.
+    private var fallbackTerminalPwd: String? {
+        guard let pwd = sidebarTabManager?.models.first(where: { $0.isSelected })?.pwd,
+              !pwd.isEmpty
+        else { return nil }
+        return pwd
     }
 
     private func syncAppearanceOnPropertyChange(_ surface: Ghostty.SurfaceView?) {

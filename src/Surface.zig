@@ -960,12 +960,33 @@ pub fn needsConfirmQuit(self: *Surface) bool {
     return switch (self.config.confirm_close_surface) {
         .always => true,
         .false => false,
-        .true => true: {
-            self.renderer_state.mutex.lockUncancelable(global.io());
-            defer self.renderer_state.mutex.unlock(global.io());
-            break :true !self.io.terminal.cursorIsAtPrompt();
-        },
+        .true => confirmsClose(
+            self.cursorIsAtPrompt(),
+            self.io.hasForegroundProcess(),
+        ),
     };
+}
+
+/// Whether `confirm-close-surface = true` asks the question.
+///
+/// Two reasons, either of which is enough, kept as a pure function so both
+/// can be asserted without a pty.
+///
+/// The prompt mark alone was the whole answer and it is not sufficient.
+/// `Terminal.cursorIsAtPrompt` reads the shell integration mark on the
+/// cursor's row, and a full-screen program that redraws over that row leaves
+/// the mark where the shell wrote it — so a running agent passed for an idle
+/// shell and the terminal closed without a word. The foreground process
+/// group answers directly and does not depend on shell integration.
+fn confirmsClose(cursor_at_prompt: bool, foreground_process: bool) bool {
+    return !cursor_at_prompt or foreground_process;
+}
+
+/// Whether the cursor sits on a row the shell marked as a prompt.
+fn cursorIsAtPrompt(self: *Surface) bool {
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    defer self.renderer_state.mutex.unlock(global.io());
+    return self.io.terminal.cursorIsAtPrompt();
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
@@ -6549,6 +6570,53 @@ fn presentSurface(self: *Surface) !void {
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Surface, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.io.getProcessInfo(info);
+}
+
+test "confirmsClose asks while a program owns the terminal" {
+    const testing = std.testing;
+
+    // A shell waiting at its own prompt. The terminal is idle and closing
+    // it costs nothing, which is the case that must stay silent.
+    try testing.expect(!confirmsClose(true, false));
+
+    // The reported case: the cursor still sits on the row the shell marked
+    // as a prompt, because the program redrew over it, and the foreground
+    // process group belongs to the program.
+    try testing.expect(confirmsClose(true, true));
+
+    // No prompt mark under the cursor. The older of the two reasons, and
+    // still enough on its own.
+    try testing.expect(confirmsClose(false, false));
+    try testing.expect(confirmsClose(false, true));
+}
+
+test "needsConfirmQuit honors confirm-close-surface" {
+    const testing = std.testing;
+
+    const surface = try testing.allocator.create(Surface);
+    defer testing.allocator.destroy(surface);
+    surface.readonly = false;
+    surface.child_exited = false;
+
+    // Neither of these reads the terminal or the pty, which is what lets
+    // them be asserted on a surface that has neither.
+    surface.config.confirm_close_surface = .false;
+    try testing.expect(!surface.needsConfirmQuit());
+
+    surface.config.confirm_close_surface = .always;
+    try testing.expect(surface.needsConfirmQuit());
+
+    // Read-only comes before the setting.
+    surface.readonly = true;
+    surface.config.confirm_close_surface = .false;
+    try testing.expect(surface.needsConfirmQuit());
+
+    // So does a child that has already exited: there is no process left to
+    // ask about.
+    surface.readonly = false;
+    surface.child_exited = true;
+    surface.config.confirm_close_surface = .always;
+    try testing.expect(!surface.needsConfirmQuit());
 }
 
 test "queueIo frees allocated writes in readonly mode" {

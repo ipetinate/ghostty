@@ -60,6 +60,7 @@ struct EditorPaneTabBar: View {
                     selection: cell.selection,
                     needsDirectory: { cell.needsDirectory(for: $0) },
                     isDivergent: { divergent.contains($0.path) },
+                    drawingViewID: { center.documents[$0.path]?.contributedView },
                     onSelect: { center.select($0) },
                     onClose: { center.requestClose($0) },
                     onCommand: perform,
@@ -112,6 +113,11 @@ struct EditorPaneTabBar: View {
             center.splitOut(.file(tab.path), zone: zone)
         case .moveToMainPane:
             center.moveToMainPane(.file(tab.path))
+        case .openWithView:
+            guard let descriptor = center.viewClaiming(path: tab.path) else { return }
+            center.setContributedView(descriptor.id, for: tab.path)
+        case .openAsText:
+            center.setContributedView(nil, for: tab.path)
         }
     }
 

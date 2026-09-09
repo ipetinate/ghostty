@@ -169,7 +169,7 @@ struct WelcomeSidebarPreview: View {
     /// half reads as a rendering fault rather than as a scrollable row. The
     /// column gets the same three, because two cards showing different
     /// panels would be comparing two things at once.
-    static let panes: [SidebarPane] = [.terminals, .files, .git]
+    static let panes: [SidebarPaneItem] = [SidebarPaneItem(.terminals), SidebarPaneItem(.files), SidebarPaneItem(.git)]
 
     /// The sidebar's content width in the picture, before the activity bar's
     /// column is added to it. Half the real default, which is what makes the
@@ -275,12 +275,12 @@ struct WelcomeSidebarPreview: View {
     private var sidebar: some View {
         HStack(alignment: .top, spacing: 0) {
             if placement == .side {
-                SidebarActivityBar(selection: $selection, panes: Self.panes)
+                SidebarActivityBar(selection: $selection, items: Self.panes)
             }
 
             VStack(spacing: 0) {
                 if placement == .top {
-                    SidebarPaneTabBar(selection: $selection, panes: Self.panes)
+                    SidebarPaneTabBar(selection: $selection, items: Self.panes)
                 }
 
                 list

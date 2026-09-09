@@ -15,6 +15,10 @@ struct EditorTabBar: View {
     /// Asked rather than derived here: the answer needs the terminal's
     /// working directory and the filesystem, and this row knows neither.
     let isDivergent: (EditorTab) -> Bool
+
+    /// The contributed view drawing this tab's file, or nil. Answered by the
+    /// centre, which is what holds the documents.
+    var drawingViewID: (EditorTab) -> String? = { _ in nil }
     let onSelect: (String) -> Void
     let onClose: (String) -> Void
 
@@ -115,6 +119,7 @@ struct EditorTabBar: View {
                         isSelected: selection == .file(tab.id),
                         showsDirectory: needsDirectory(tab),
                         isDivergent: isDivergent(tab),
+                        drawingViewID: drawingViewID(tab),
                         availability: availability(tab),
                         onSelect: { onSelect(tab.id) },
                         onClose: { onClose(tab.id) },
@@ -286,6 +291,10 @@ private struct EditorTabItem: View {
     let showsDirectory: Bool
     let isDivergent: Bool
 
+    /// Set when a contributed view is drawing this file. A file tab keeps
+    /// its file icon otherwise.
+    let drawingViewID: String?
+
     /// What this tab can be asked to do, which depends on where it is in the
     /// grid. Resolved by the centre, which is what knows.
     let availability: EditorTabCommand.Availability
@@ -306,6 +315,10 @@ private struct EditorTabItem: View {
     /// remembers paths — so an extension tab used to show the id its path is
     /// built from, `phantom.tailwind`, rather than the extension's name.
     private var label: String {
+        /// A claimed file keeps its own name. The view drawing it changes
+        /// who renders the pane, not what the file is called — the same
+        /// thing `EditorPresentation` does.
+        if drawingViewID != nil { return tab.name }
         guard let extensionID else { return tab.name }
         return tab.title ?? ExtensionStore.shared.displayName(forExtension: extensionID) ?? tab.name
     }
@@ -314,11 +327,27 @@ private struct EditorTabItem: View {
     /// ordinary file.
     private var extensionID: String? { ExtensionDocument.extensionID(fromPath: tab.path) }
 
+    /// The contributed view drawing this tab's file, or nil.
+    ///
+    /// Resolved through the registry rather than read off the tab, because
+    /// the icon is a file the package ships and an extension uninstalled
+    /// while its tab is open has neither icon nor directory any more.
+    private var contributedView: ExtensionViewDescriptor? {
+        guard let drawingViewID else { return nil }
+        return ExtensionViewRegistry.shared.descriptor(id: drawingViewID)
+    }
+
     /// An extension tab wears the extension's own icon, the same artwork the
     /// store draws, and falls back to the puzzle mark until the image is
     /// decoded. Read from the cache rather than awaited, because this is also
     /// what the drag preview renders and an `ImageRenderer` runs no tasks.
     private var tabIcon: FileIcon {
+        if let contributedView {
+            if let image = ExtensionArtworkFiles.shared.image(at: contributedView.icon) {
+                return .image(image)
+            }
+            return .symbol(name: ExtensionArtwork.fallbackSymbol, color: .secondary)
+        }
         if let extensionID {
             if let source = ExtensionStore.shared.iconSource(forExtension: extensionID),
                let image = ExtensionIconCache.shared.image(forKey: source.key) {
@@ -336,7 +365,9 @@ private struct EditorTabItem: View {
             /// AppKit view and takes every click under it, so laid over the
             /// whole tab it would swallow the one button in here.
             HStack(spacing: 5) {
-                if let extensionID {
+                if let contributedView {
+                    ExtensionArtwork(url: contributedView.icon, size: 13)
+                } else if let extensionID {
                     ExtensionTabMark(extensionID: extensionID, size: 13)
                 } else {
                     FileIconView(icon: tabIcon, size: 13)

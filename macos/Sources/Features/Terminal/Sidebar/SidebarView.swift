@@ -137,9 +137,8 @@ struct SidebarView: View {
         // The padding is the titlebar strip in fullscreen, where the window
         // stops reserving it and the traffic lights would otherwise land on
         // the pane switcher; it is zero everywhere else. Padding rather than
-        // a shorter hosting view, because that view's layer is what paints
-        // the strip on the sidebar's half — moved down, the strip would go
-        // back to showing the bare window.
+        // a shorter hosting view, because the pane's layer behind this view
+        // is what paints the strip on the sidebar's half.
         expanded
             .padding(.top, layout.titlebarInset)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -158,8 +157,8 @@ struct SidebarView: View {
     /// SwiftUI has no way to observe.
     @ObservedObject private var visibility: SidebarPaneVisibility = .shared
 
-    private var enabledPanes: [SidebarPane] {
-        visibility.enabled
+    private var paneItems: [SidebarPaneItem] {
+        visibility.items
     }
 
     /// Falls back to terminals when the selected panel has been switched
@@ -167,8 +166,13 @@ struct SidebarView: View {
     /// because turning the last extra panel off also hides the tab bar —
     /// and a correction that lives in the bar would never run, leaving the
     /// sidebar stuck on a panel with no way back to the terminals.
+    ///
+    /// A contributed `sidebar` entry passes, and `paneContent` draws it. An
+    /// `editor` entry never reaches the bars at all, so a session file
+    /// naming one falls back to the terminals.
     private var visiblePane: SidebarPane {
-        enabledPanes.contains(layout.selectedPane) ? layout.selectedPane : .terminals
+        let pane = layout.selectedPane
+        return paneItems.contains { $0.pane == pane } ? pane : .terminals
     }
 
     @AppStorage(SidebarTabBarPlacement.defaultsKey)
@@ -180,13 +184,13 @@ struct SidebarView: View {
 
     private var expanded: some View {
         HStack(alignment: .top, spacing: 0) {
-            if enabledPanes.count > 1, tabBarPlacement == .side {
-                SidebarActivityBar(selection: $layout.selectedPane, panes: enabledPanes)
+            if visibility.showsTabBar, tabBarPlacement == .side {
+                SidebarActivityBar(selection: $layout.selectedPane, items: paneItems)
             }
 
             VStack(spacing: 0) {
-                if enabledPanes.count > 1, tabBarPlacement == .top {
-                    SidebarPaneTabBar(selection: $layout.selectedPane, panes: enabledPanes)
+                if visibility.showsTabBar, tabBarPlacement == .top {
+                    SidebarPaneTabBar(selection: $layout.selectedPane, items: paneItems)
                 }
 
                 paneContent
@@ -194,8 +198,36 @@ struct SidebarView: View {
         }
     }
 
+    /// The extensions' contributed panels, for the one branch of
+    /// `paneContent` that draws one.
+    @ObservedObject private var extensionViews: ExtensionViewRegistry = .shared
+
     @ViewBuilder
     private var paneContent: some View {
+        if let id = visiblePane.contributedViewID, let descriptor = extensionViews.descriptor(id: id) {
+            ExtensionViewPanel(descriptor: descriptor, workspace: contributedViewWorkspace)
+        } else {
+            builtInPaneContent
+        }
+    }
+
+    /// The folder a contributed panel's filesystem methods are bounded to:
+    /// the repository the followed terminal is in, or that terminal's own
+    /// folder.
+    ///
+    /// The repository the tab already resolved is preferred over walking for
+    /// one, because the tab keeps that answer current and the walk is a
+    /// filesystem probe on every layout pass.
+    private var contributedViewWorkspace: URL? {
+        guard let tab = tabManager.models.first(where: { $0.isSelected }) else { return nil }
+        if let repository = tab.repoRoot, !repository.isEmpty {
+            return URL(fileURLWithPath: repository, isDirectory: true)
+        }
+        return ExtensionViewFileScope.workspaceRoot(forDirectory: tab.pwd)
+    }
+
+    @ViewBuilder
+    private var builtInPaneContent: some View {
         switch visiblePane {
         case .terminals:
             terminalList
@@ -231,6 +263,8 @@ struct SidebarView: View {
             )
         case .extensions:
             ExtensionsPanelView()
+        default:
+            terminalList
         }
     }
 
@@ -270,10 +304,9 @@ struct SidebarView: View {
             ScrollView {
                 let content = resolved
 
-                VStack(spacing: SidebarMetrics.itemSpacing) {
+                LazyVStack(spacing: SidebarMetrics.itemSpacing) {
                     ForEach(content.sections) { section in
                         groupSection(section)
-                            .transition(.opacity)
                     }
 
                     // Same spacing as between groups: every item in the
@@ -289,16 +322,15 @@ struct SidebarView: View {
                             editorCenter: editorCenter,
                             onNewWorktreeTab: layout.onNewWorktreeTab
                         )
-                        .transition(.opacity)
                     }
                 }
                 .padding(8)
                 .animation(listAnimation, value: content.sections.map(\.id))
                 .animation(listAnimation, value: store.tabOrder)
                 .animation(listAnimation, value: tabManager.models.map(\.id))
-                .background(alignment: .top) { OverlayScrollers() }
+                .background(alignment: .top) { InvisibleScrollers() }
             }
-            .scrollIndicators(.automatic)
+            .scrollIndicators(.never)
             .onDrop(of: [.plainText], isTargeted: nil) { providers in
                 appendDroppedToUngrouped(providers)
             }
@@ -386,7 +418,9 @@ struct SidebarTitlebarChrome: View {
     }
 
     private var visiblePane: SidebarPane {
-        visibility.isEnabled(layout.selectedPane) ? layout.selectedPane : .terminals
+        let pane = layout.selectedPane
+        guard pane.contributedViewID == nil else { return .terminals }
+        return visibility.isEnabled(pane) ? pane : .terminals
     }
 
     var body: some View {
@@ -539,7 +573,7 @@ struct SidebarTitlebarChrome: View {
                 case .git: GitPanelRefresh.shared.request()
                 case .worktrees: WorktreePanelRefresh.shared.request()
                 case .extensions: Task { await ExtensionStore.shared.refresh() }
-                case .terminals: break
+                default: break
                 }
             }
         }
@@ -2668,7 +2702,9 @@ private struct SidebarIconBrowser: View {
                         }
                     }
                     .padding(10)
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
+                .scrollIndicators(.hidden)
             }
 
             Divider()
@@ -2890,6 +2926,7 @@ private struct SidebarTabEditor: View {
                     }
 
                     SidebarColorRows(color: $color, colorHex: $colorHex)
+                        .background(alignment: .top) { OverlayScrollers() }
                 } footer: {
                     Text("Leave the name empty to keep the terminal's own title.")
                         .font(palette.captionFont)
@@ -2901,6 +2938,7 @@ private struct SidebarTabEditor: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollIndicators(.hidden)
 
             Divider()
 
@@ -3041,9 +3079,11 @@ private struct SidebarGroupEditor: View {
                     Text("Project groups automatically claim tabs whose working directory is inside the project root.")
                         .font(palette.captionFont)
                         .foregroundStyle(.secondary)
+                        .background(alignment: .top) { OverlayScrollers() }
                 }
             }
             .formStyle(.grouped)
+            .scrollIndicators(.hidden)
 
             Divider()
 

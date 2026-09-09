@@ -79,9 +79,10 @@ struct WorktreeMigrationConfirm: View {
                             row(outcome)
                         }
                     }
+                    .background(alignment: .top) { OverlayScrollers() }
                 }
                 .frame(maxHeight: listMaximumHeight)
-                .scrollIndicators(.automatic)
+                .scrollIndicators(.hidden)
             }
 
             footer

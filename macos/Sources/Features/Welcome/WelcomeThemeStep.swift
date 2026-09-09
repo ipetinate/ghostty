@@ -34,11 +34,14 @@ enum WelcomeThemeState: Equatable {
     case failed(String)
 }
 
-/// The fourth step: the colours the reader works in.
+/// The fourth step: the colours the reader works in, and the icons their file
+/// explorer draws with.
 ///
-/// Four cards — two dark, two light — and a press is the choice, the same
-/// gesture `WelcomeTabPlacementStep` uses and for the same reason: an Apply
-/// button under a grid of pictures is a second thing to find before the
+/// Four theme cards — two dark, two light — and then the icon packs, in
+/// ``WelcomeIconPacks``. Two questions on one screen because they are one
+/// question asked twice: what this window looks like. A press is the choice,
+/// the same gesture `WelcomeTabPlacementStep` uses and for the same reason: an
+/// Apply button under a grid of pictures is a second thing to find before the
 /// picture means anything.
 ///
 /// **What is not the same is what a press costs.** This build ships no theme
@@ -72,6 +75,7 @@ enum WelcomeThemeState: Equatable {
 /// `WelcomeBasicsStep` states.
 struct WelcomeThemeStep: View {
     @ObservedObject var selection: WelcomeThemeSelection
+    @ObservedObject var packs: WelcomeIconPackSelection
 
     @ObservedObject private var store: ExtensionStore = .shared
     @ObservedObject private var config: GuiConfigStore = .shared
@@ -142,9 +146,8 @@ struct WelcomeThemeStep: View {
 
     /// Two sentences: what a press does, and what it costs.
     static let sentence = """
-        Press a card and every window takes that theme at once. Each one is an \
-        extension, so it is downloaded first — you can go on without choosing, \
-        and Settings holds several hundred more.
+        Press a card for a theme, and one below for the file explorer's icons. \
+        Both are extensions, downloaded when you go on — and both are optional.
         """
 
     static let spacing: CGFloat = 14
@@ -164,15 +167,21 @@ struct WelcomeThemeStep: View {
     /// palette.
     static let swatchSize: CGFloat = 84
 
-    /// Two rows of cards fill what the step is left, the way the other two
-    /// list steps' cards do.
+    /// Two rows of theme cards fill what the step is left once the icon packs
+    /// have taken their row, the way the other two list steps' cards do.
+    ///
+    /// Three groups now, so three titles and three gaps under the sentence —
+    /// and `WelcomeIconPacks.cardHeight` comes off the top, because that row
+    /// is a fixed height and these two take what is left rather than the
+    /// other way round. A pack card carries no palette and no sentence, so it
+    /// is the one of the three that has a height of its own.
     static var cardHeight: CGFloat {
         let available = WelcomeWindowController.size.height
             - WelcomeView.chromeHeight
             - sentenceHeight
-            - spacing
-            - (groupTitleHeight + titleGap) * 2
-            - spacing
+            - spacing * 3
+            - (groupTitleHeight + titleGap) * 3
+            - WelcomeIconPacks.cardHeight
         return (available / 2).rounded(.down)
     }
 
@@ -189,6 +198,7 @@ struct WelcomeThemeStep: View {
 
             group(.dark)
             group(.light)
+            WelcomeIconPacks(selection: packs)
         }
         /// The step asks for the catalogue rather than assuming somebody else
         /// has: on a first launch nothing else has fetched it, because the
@@ -261,7 +271,7 @@ struct WelcomeThemeStep: View {
 
                     Spacer(minLength: 4)
 
-                    report(state)
+                    WelcomeExtensionReport(state: state, line: Self.line(state))
                 }
                 /// The column takes the card's whole height, so the spacer
                 /// above pushes the report to the bottom edge. Without it the
@@ -340,42 +350,6 @@ struct WelcomeThemeStep: View {
                         .foregroundStyle(.tertiary))
         }
     }
-
-    /// What has happened to this card, and — on a failure — how to have
-    /// another go at it.
-    private func report(_ state: WelcomeThemeState) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                if case .working = state {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.7)
-                        .frame(width: 10, height: 10)
-                }
-
-                Text(Self.line(state))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Self.isFailure(state) ? failure : Color.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Spacer(minLength: 0)
-            }
-
-            if Self.isFailure(state) {
-                Text(Self.retry)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// The theme's own red where there is one, so a failure warms to the
-    /// palette the reader chose rather than to the one SwiftUI ships. The
-    /// version chips in the store take their colours the same way.
-    private var failure: Color { palette.danger ?? .red }
 
     // MARK: What a card says
 

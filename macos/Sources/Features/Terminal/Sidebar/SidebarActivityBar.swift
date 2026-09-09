@@ -3,7 +3,7 @@ import SwiftUI
 struct SidebarActivityBar: View {
     @Binding var selection: SidebarPane
 
-    let panes: [SidebarPane]
+    let items: [SidebarPaneItem]
 
     @ObservedObject private var palette: ThemePalette = .shared
 
@@ -11,8 +11,8 @@ struct SidebarActivityBar: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            ForEach(panes) { pane in
-                chip(for: pane)
+            ForEach(items) { item in
+                chip(for: item)
             }
             Spacer(minLength: 0)
             settings
@@ -45,20 +45,20 @@ struct SidebarActivityBar: View {
         .padding(.bottom, 8)
     }
 
-    private func chip(for pane: SidebarPane) -> some View {
-        let isSelected = selection == pane
+    private func chip(for item: SidebarPaneItem) -> some View {
+        let isSelected = selection == item.pane
 
         return Button {
-            guard selection != pane else { return }
-            withAnimation(.easeOut(duration: 0.12)) { selection = pane }
+            guard selection != item.pane else { return }
+            withAnimation(.easeOut(duration: 0.12)) { selection = item.pane }
         } label: {
-            SidebarPaneIcon(pane: pane, size: SidebarActivityBarMetrics.iconSize)
+            SidebarPaneIcon(item: item, size: SidebarActivityBarMetrics.iconSize)
                 .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 .frame(width: SidebarActivityBarMetrics.width, height: SidebarActivityBarMetrics.height)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(pane.title)
+        .help(item.title)
         .background(
             RoundedRectangle(cornerRadius: SidebarIconChipMetrics.cornerRadius)
                 .fill(isSelected ? accent.opacity(0.22) : Color.clear)

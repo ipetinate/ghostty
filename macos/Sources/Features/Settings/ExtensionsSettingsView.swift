@@ -25,6 +25,8 @@ struct ExtensionsSettingsView: View {
     /// reader where it is in the list.
     @State private var rowToReveal: String?
 
+    @AppStorage(ExtensionViewHTTP.allowsPrivateNetworkKey) private var allowsPrivateNetwork = false
+
     var body: some View {
         NavigationStack(path: $path) {
             list
@@ -44,6 +46,7 @@ struct ExtensionsSettingsView: View {
                         .padding(.vertical, 6)
                     headerRow
                         .padding(.vertical, 4)
+                        .background(alignment: .top) { OverlayScrollers() }
                     if store.index != nil, let error = store.lastRefreshError {
                         Text(verbatim: error)
                             .font(.caption)
@@ -52,9 +55,11 @@ struct ExtensionsSettingsView: View {
                 }
 
                 registryContent(sections)
+                viewSection
                 folderSection
             }
             .formStyle(.grouped)
+            .scrollIndicators(.hidden)
             .navigationTitle("Extensions")
             .onAppear {
                 load()
@@ -347,6 +352,34 @@ struct ExtensionsSettingsView: View {
     private func message(_ text: String) -> some View {
         Text(verbatim: text)
             .foregroundStyle(.secondary)
+    }
+
+    // MARK: Contributed views
+
+    /// The one decision about `http.request` that is the reader's to make.
+    ///
+    /// Off by default and stated in full, because switching it on is what
+    /// lets an extension from a store talk to whatever is listening on this
+    /// machine — a database, a dev server, a container's admin port — for as
+    /// long as its window is open. It is also what an HTTP client is for
+    /// when the API being developed is on `localhost`, which is why the
+    /// answer is a switch rather than a refusal.
+    ///
+    /// What it does **not** unlock: the link-local metadata range
+    /// (`169.254.0.0/16`, `fd00:ec2::254`), a `.internal` name, and every
+    /// reserved range. Those are refused with this on, by every extension,
+    /// always. See `ExtensionViewHTTP`.
+    private var viewSection: some View {
+        Section {
+            Toggle("Let Views Reach This Machine", isOn: $allowsPrivateNetwork)
+                .toggleStyle(.switch)
+        } header: {
+            Text("Extension Views")
+        } footer: {
+            Text("An extension's view runs in a sandboxed page that cannot open a socket, read a file or start a process. It asks Phantom to do each of those, and Phantom refuses anything the extension did not declare in its manifest. Files are limited to the folder of the terminal the sidebar follows and to the extension's own directory. Off, a view's HTTP requests reach the public internet only — localhost, your private network and your machine's own ports are refused. On, they are allowed, which is what an HTTP client needs to call an API you are running locally. Cloud metadata endpoints and reserved addresses stay refused either way.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: Folder

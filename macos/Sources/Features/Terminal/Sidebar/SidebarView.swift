@@ -137,9 +137,8 @@ struct SidebarView: View {
         // The padding is the titlebar strip in fullscreen, where the window
         // stops reserving it and the traffic lights would otherwise land on
         // the pane switcher; it is zero everywhere else. Padding rather than
-        // a shorter hosting view, because that view's layer is what paints
-        // the strip on the sidebar's half — moved down, the strip would go
-        // back to showing the bare window.
+        // a shorter hosting view, because the pane's layer behind this view
+        // is what paints the strip on the sidebar's half.
         expanded
             .padding(.top, layout.titlebarInset)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -1586,12 +1586,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ).interfaceFont())
         sidebarHosting.translatesAutoresizingMaskIntoConstraints = false
         sidebarHosting.wantsLayer = true
-        self.sidebarBackgroundView = sidebarHosting
 
         // The pane wraps the hosting view so a glass layer can slot in
         // underneath when the glass effect is active.
         let sidebarPane = NSView()
         sidebarPane.translatesAutoresizingMaskIntoConstraints = false
+        sidebarPane.wantsLayer = true
+        self.sidebarBackgroundView = sidebarPane
         sidebarPane.addSubview(sidebarHosting)
         NSLayoutConstraint.activate([
             sidebarHosting.topAnchor.constraint(equalTo: sidebarPane.topAnchor),
@@ -1663,7 +1664,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 }
             }
 
-        // The sidebar's hosting view paints the titlebar strip on its half
+        // The sidebar's pane paints the titlebar strip on its half
         // because its layer runs the full height of the pane. The terminal's
         // content stops below the titlebar and paints nothing up there, so
         // this fills exactly that band — one coat on each half, and nothing
@@ -1838,6 +1839,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         DispatchQueue.main.async { [weak self] in
             self?.applySharedSidebarWidth()
         }
+
+        syncSidebarBackground()
 
         return splitView
     }

@@ -1056,8 +1056,15 @@ final class PhantomSessionStore {
         // hop would land the rows one turn after the reveal below, letting
         // the first visible frame carry a one-row sidebar.
         DispatchQueue.main.async {
-            for controller in restored {
-                controller.sidebarTabManager?.refresh()
+            let front = selected
+            front?.sidebarTabManager?.refresh()
+
+            for (offset, controller) in restored.filter({ $0 !== front }).enumerated() {
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + Double(offset) * 0.016
+                ) {
+                    controller.sidebarTabManager?.refresh()
+                }
             }
         }
 

@@ -760,8 +760,13 @@ struct FileExplorerView: View {
     private func commitCreate(parent: String, isFolder: Bool, name: String) {
         guard model.isEditing(.create(parent: parent, isFolder: isFolder)) else { return }
 
-        model.commitCreate(parent: parent, isFolder: isFolder, name: name)
-        treeFocused = true
+        let result = model.commitCreate(parent: parent, isFolder: isFolder, name: name)
+        guard let created = FileExplorerModel.fileToOpen(after: result, isFolder: isFolder) else {
+            treeFocused = true
+            return
+        }
+
+        openFile(created)
     }
 
     /// One row, built in a function of its own.

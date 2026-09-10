@@ -216,6 +216,43 @@ struct FileExplorerEditingTests {
         #expect(written.isEmpty)
     }
 
+    @Test func aCreatedFileIsHandedBackToBeOpened() async throws {
+        let base = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let model = await rooted(at: base)
+        model.beginCreate(in: base.path, isFolder: false)
+        await settle(model)
+        let result = model.commitCreate(parent: base.path, isFolder: false, name: "notes.txt")
+
+        let opened = FileExplorerModel.fileToOpen(after: result, isFolder: false)
+        #expect(opened?.lastPathComponent == "notes.txt")
+    }
+
+    @Test func aCreatedFolderIsNotOpened() async throws {
+        let base = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let model = await rooted(at: base)
+        model.beginCreate(in: base.path, isFolder: true)
+        await settle(model)
+        let result = model.commitCreate(parent: base.path, isFolder: true, name: "src")
+
+        #expect(FileExplorerModel.fileToOpen(after: result, isFolder: true) == nil)
+    }
+
+    @Test func aCreateThatWroteNothingOpensNothing() async throws {
+        let base = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let model = await rooted(at: base)
+        model.beginCreate(in: base.path, isFolder: false)
+        await settle(model)
+        let result = model.commitCreate(parent: base.path, isFolder: false, name: "  ")
+
+        #expect(FileExplorerModel.fileToOpen(after: result, isFolder: false) == nil)
+    }
+
     @Test func renamingToABlankNameLeavesTheFileAlone() async throws {
         let base = try tempDirectory()
         defer { try? FileManager.default.removeItem(at: base) }

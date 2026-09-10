@@ -494,8 +494,14 @@ final class PhantomSessionStore {
     static func shouldWrite(
         stateCount: Int,
         over existing: SavedSession,
-        mayShrink: Bool
+        mayShrink: Bool,
+        mayEmpty: Bool = false
     ) -> Bool {
+        if stateCount == 0, mayEmpty {
+            if case .unreadable = existing { return false }
+            return true
+        }
+
         if !mayShrink,
            case .readable(let count, _) = existing,
            stateCount < count {
@@ -572,7 +578,7 @@ final class PhantomSessionStore {
 
     /// Synchronous, authoritative save. Used at termination and when the
     /// debounced save fires.
-    func saveNow() {
+    func saveNow(askedToQuit: Bool = false) {
         guard !isRestoring, !Self.isRunningTests else { return }
 
         // Windows sharing a tab group are tabs of one window; record the
@@ -625,7 +631,8 @@ final class PhantomSessionStore {
         guard Self.shouldWrite(
             stateCount: states.count,
             over: savedSession(),
-            mayShrink: !isQuitting
+            mayShrink: !isQuitting,
+            mayEmpty: askedToQuit
         ) else { return }
 
         do {

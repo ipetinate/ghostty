@@ -150,6 +150,30 @@ struct PhantomSessionStoreTests {
             mayShrink: true))
     }
 
+    @Test func quittingWithNothingOpenClearsTheSession() {
+        #expect(PhantomSessionStore.shouldWrite(
+            stateCount: 0,
+            over: .readable(count: 2, isVersioned: true),
+            mayShrink: true,
+            mayEmpty: true))
+    }
+
+    @Test func quittingWithNothingOpenStillLeavesAnUnreadableFileAlone() {
+        #expect(!PhantomSessionStore.shouldWrite(
+            stateCount: 0,
+            over: .unreadable,
+            mayShrink: true,
+            mayEmpty: true))
+    }
+
+    @Test func theQuitSaveStillRefusesToShrinkAFullSession() {
+        #expect(!PhantomSessionStore.shouldWrite(
+            stateCount: 2,
+            over: .readable(count: 3, isVersioned: true),
+            mayShrink: false,
+            mayEmpty: true))
+    }
+
     // MARK: Deciding Whether To Write While Quitting
 
     /// The data loss this term exists for, measured: quitting through Review

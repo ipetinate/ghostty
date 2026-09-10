@@ -569,7 +569,7 @@ class AppDelegate: NSObject,
         /// smaller, which is what `quitBegan` goes on to enforce. Recording it
         /// here rather than relying on the last debounced save is what keeps a
         /// window closed a moment before quitting from coming back.
-        PhantomSessionStore.shared.saveNow()
+        PhantomSessionStore.shared.saveNow(askedToQuit: true)
         PhantomSessionStore.shared.quitBegan()
 
         let windows = NSApplication.shared.windows

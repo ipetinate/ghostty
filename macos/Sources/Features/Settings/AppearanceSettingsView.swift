@@ -328,10 +328,12 @@ private struct AppearanceStylePanel: View {
         guard !style.isEmpty else { return nil }
 
         let image = NSImage(
-            size: NSSize(width: 12, height: 13),
+            size: NSSize(width: 9, height: 13),
             flipped: false
         ) { _ in
-            let cell = NSRect(x: 1, y: 1, width: 10, height: 11)
+            /// A character cell is about twice as tall as it is wide, and the
+            /// block drawn in a square read as a bullet rather than a cursor.
+            let cell = NSRect(x: 1, y: 1, width: 7, height: 11)
             NSColor.black.setFill()
             NSColor.black.setStroke()
 
@@ -339,8 +341,8 @@ private struct AppearanceStylePanel: View {
             case "block":
                 cell.fill()
             case "block_hollow":
-                let outline = NSBezierPath(rect: cell.insetBy(dx: 0.75, dy: 0.75))
-                outline.lineWidth = 1.5
+                let outline = NSBezierPath(rect: cell.insetBy(dx: 0.6, dy: 0.6))
+                outline.lineWidth = 1.2
                 outline.stroke()
             case "bar":
                 NSRect(x: cell.minX, y: cell.minY, width: 2, height: cell.height).fill()
@@ -436,7 +438,14 @@ private struct AppearanceStylePanel: View {
                         Text(style.label)
                     } icon: {
                         if let image = Self.cursorIcon(for: style.value) {
+                            /// `NSImage.isTemplate` is an AppKit contract that
+                            /// SwiftUI's `Image` does not read, so the filled
+                            /// shapes came out in the black they were drawn in
+                            /// and vanished against a dark menu. Asking for the
+                            /// template rendering here is what hands them to
+                            /// the label's own colour.
                             Image(nsImage: image)
+                                .renderingMode(.template)
                         }
                     }
                     .tag(style.value)

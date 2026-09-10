@@ -2138,15 +2138,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// carries over to this one.
     @objc private func sidebarWindowDidBecomeKey(_ notification: Notification) {
         applySharedSidebarWidth()
-
-        WindowBreadcrumbs.note(
-            "pane paint: window=\(window?.windowNumber ?? -1) "
-            + "backdrop=\(glassBackdrop != nil) "
-            + "shieldSpent=\(didShieldFirstPresentation) "
-            + "blur=\(ghostty.config.backgroundBlur.isEnabled) "
-            + "coat=\((window as? TerminalWindow)?.preferredBackgroundColor?.hexString ?? "nil") "
-            + "cells=\(editorCenter.paneBackground?.hexString ?? "nil")")
-
         shieldFirstPresentationFlash()
     }
 

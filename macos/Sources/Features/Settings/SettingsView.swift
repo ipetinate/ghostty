@@ -227,6 +227,8 @@ struct GeneralSettingsView: View {
                         ghostty.openConfig()
                     }
                 }
+            } header: {
+                Text("Configuration Files")
             } footer: {
                 Text("Everything changed in this window is stored in \(GuiConfigStore.fileName) (the Phantom settings file), which is included from your main config. Hand-written options in the main config stay untouched. Style options (fonts, colors, blur) live in Appearance.")
                     .font(.caption)

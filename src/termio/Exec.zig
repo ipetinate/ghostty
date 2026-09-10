@@ -1272,8 +1272,9 @@ const Subprocess = struct {
     /// differ exactly while a program runs and match while the shell waits.
     ///
     /// The comparison is against the process this surface actually started,
-    /// so no shell has to be named and a custom `command` is not mistaken
-    /// for one.
+    /// or against its child where macOS wrapped the shell in `login(1)`, so
+    /// no shell has to be named and a custom `command` is not mistaken for
+    /// one.
     ///
     /// False whenever either pid is unknown, and false for a shell that runs
     /// its children in its own process group: this answer only ever adds a
@@ -1292,8 +1293,67 @@ const Subprocess = struct {
         };
 
         const child = std.math.cast(u64, pid) orelse return false;
-        return foreground != child;
+        return foreignForeground(
+            foreground,
+            child,
+            if (self.startsThroughLogin()) parentPid(foreground) else null,
+        );
     }
+
+    fn startsThroughLogin(self: *const Subprocess) bool {
+        if (comptime !builtin.target.os.tag.isDarwin()) return false;
+        return self.args.len > 0 and std.mem.eql(u8, self.args[0], darwin_login);
+    }
+};
+
+fn foreignForeground(foreground: u64, child: u64, foreground_parent: ?u64) bool {
+    if (foreground == child) return false;
+    if (foreground_parent) |parent| if (parent == child) return false;
+    return true;
+}
+
+fn parentPid(pid: u64) ?u64 {
+    if (comptime !builtin.target.os.tag.isDarwin()) return null;
+
+    const target = std.math.cast(i32, pid) orelse return null;
+    var info: darwin.proc_bsdshortinfo = undefined;
+    const read = darwin.proc_pidinfo(
+        target,
+        darwin.PROC_PIDT_SHORTBSDINFO,
+        0,
+        &info,
+        @sizeOf(darwin.proc_bsdshortinfo),
+    );
+    if (read != @sizeOf(darwin.proc_bsdshortinfo)) return null;
+    return info.pbsi_ppid;
+}
+
+const darwin = struct {
+    const PROC_PIDT_SHORTBSDINFO: c_int = 13;
+
+    const proc_bsdshortinfo = extern struct {
+        pbsi_pid: u32,
+        pbsi_ppid: u32,
+        pbsi_pgid: u32,
+        pbsi_status: u32,
+        pbsi_comm: [16]u8,
+        pbsi_flags: u32,
+        pbsi_uid: u32,
+        pbsi_gid: u32,
+        pbsi_ruid: u32,
+        pbsi_rgid: u32,
+        pbsi_svuid: u32,
+        pbsi_svgid: u32,
+        pbsi_rfu: u32,
+    };
+
+    extern "c" fn proc_pidinfo(
+        pid: c_int,
+        flavor: c_int,
+        arg: u64,
+        buffer: ?*anyopaque,
+        buffersize: c_int,
+    ) c_int;
 };
 
 /// The read thread works with a companion gather thread to form a two-stage
@@ -1856,6 +1916,8 @@ pub const ReadThread = struct {
     }
 };
 
+const darwin_login = "/usr/bin/login";
+
 /// Builds the argv array for the process we should exec for the
 /// configured command. This isn't as straightforward as it seems since
 /// we deal with shell-wrapping, macOS login shells, etc.
@@ -1960,7 +2022,7 @@ fn execCommand(
         // macOS.
         //
         // Awesome.
-        try args.append(alloc, "/usr/bin/login");
+        try args.append(alloc, darwin_login);
         if (hush) try args.append(alloc, "-q");
         try args.append(alloc, "-flp");
         try args.append(alloc, username);
@@ -2098,6 +2160,21 @@ pub fn getProcessInfo(self: *Exec, comptime info: ProcessInfo) ?ProcessInfo.Type
 /// `Subprocess.hasForegroundProcess`.
 pub fn hasForegroundProcess(self: *Exec) bool {
     return self.subprocess.hasForegroundProcess();
+}
+
+test "foreignForeground: the shell we started owns the terminal" {
+    const testing = std.testing;
+
+    try testing.expect(!foreignForeground(4242, 4242, null));
+    try testing.expect(foreignForeground(5150, 4242, null));
+}
+
+test "foreignForeground: login forks the shell into its own group" {
+    const testing = std.testing;
+
+    try testing.expect(!foreignForeground(2204, 2187, 2187));
+    try testing.expect(foreignForeground(5555, 2187, 2204));
+    try testing.expect(foreignForeground(5555, 2187, null));
 }
 
 test "execCommand darwin: shell command" {

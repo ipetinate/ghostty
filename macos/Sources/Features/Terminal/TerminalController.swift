@@ -948,6 +948,15 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // Call this last in case it uses any of the properties above.
         window.syncAppearance(surfaceConfig)
         terminalViewContainer?.ghosttyConfigDidChange(ghostty.config, preferredBackgroundColor: window.preferredBackgroundColor)
+
+        /// The panes are painted from the same colour this window was just
+        /// given, so they are repainted here rather than left to whichever
+        /// caller remembers. Every route into this function is a route that
+        /// can change that colour: a theme arriving, a surface reporting its
+        /// own background through OSC 11, focus moving to a split that
+        /// answers differently. Without this the panes kept whatever they
+        /// were last told, which is a window drawing two colours at once.
+        syncSidebarBackground()
     }
 
     /// Adjusts the given frame for the configured window position.

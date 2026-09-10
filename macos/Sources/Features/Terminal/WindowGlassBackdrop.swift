@@ -57,8 +57,8 @@ enum WindowGlassBackdrop {
     /// so a choice already made keeps the surface it was making.
     static var material: Material {
         switch UserDefaults.standard.string(forKey: materialKey) ?? "" {
-        case Material.deep.rawValue, "hud", "fullScreen": return .deep
-        default: return .soft
+        case Material.soft.rawValue, "underWindow", "sidebar": return .soft
+        default: return .deep
         }
     }
 

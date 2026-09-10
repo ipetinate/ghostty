@@ -295,7 +295,7 @@ private struct AppearanceStylePanel: View {
     @State private var backgroundOpacity: Double = 1
     @State private var blurMode: String = "off"
     @State private var blurRadius: Double = 20
-    @State private var backdropMaterial: WindowGlassBackdrop.Material = .soft
+    @State private var backdropMaterial: WindowGlassBackdrop.Material = .deep
     @State private var sidebarWidth: Double = 240
     @State private var dividerMode: String = AppearanceCoordinator.defaultDividerModeRaw
     @State private var dividerColor: Color = .gray

@@ -150,7 +150,7 @@ struct GeneralSettingsView: View {
     @AppStorage(WelcomeShownRecord.showsAtLaunchKey) private var showsWelcomeAtLaunch = false
 
     @State private var restoreWindows = true
-    @State private var updatePolicy = UpdatePolicy.factoryDefault
+    @State private var updatesAutomatically = UpdatePolicy.factoryDefault.checksAutomatically
 
     var body: some View {
         Form {
@@ -192,18 +192,11 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle("Check for Updates Automatically", isOn: Binding(
-                    get: { updatePolicy.checksAutomatically },
-                    set: { setUpdatePolicy(.with(checks: $0, downloads: updatePolicy.downloadsAutomatically)) }
-                ))
-                .toggleStyle(.switch)
-
-                Toggle("Download and Install Updates Automatically", isOn: Binding(
-                    get: { updatePolicy.downloadsAutomatically },
-                    set: { setUpdatePolicy(.with(checks: true, downloads: $0)) }
-                ))
-                .toggleStyle(.switch)
-                .disabled(!updatePolicy.checksAutomatically)
+                Toggle("Update Automatically", isOn: $updatesAutomatically)
+                    .toggleStyle(.switch)
+                    .onChange(of: updatesAutomatically) { value in
+                        setUpdatePolicy(value ? .download : .off)
+                    }
 
                 LabeledContent("Installed Version") {
                     HStack(spacing: 12) {
@@ -217,7 +210,7 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Updates")
             } footer: {
-                Text("Phantom reads its own release feed. With downloading on, an update installs when you quit the app. With it off, Phantom only tells you that a new version is out.")
+                Text("Phantom checks its own release feed in the background, downloads a newer version and installs it the next time you quit. Turn this off and Phantom never looks.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -246,14 +239,13 @@ struct GeneralSettingsView: View {
         .navigationTitle("General")
         .onAppear {
             restoreWindows = (store.string("window-save-state") ?? "always") == "always"
-            updatePolicy = UpdatePolicy.stored(store.string(UpdatePolicy.configKey))
+            updatesAutomatically = UpdatePolicy.stored(store.string(UpdatePolicy.configKey)).checksAutomatically
         }
     }
 
     private func setUpdatePolicy(_ policy: UpdatePolicy) {
-        updatePolicy = policy
         store.set(UpdatePolicy.configKey, policy.rawValue)
-        store.apply(ghostty: ghostty)
+        (NSApp.delegate as? AppDelegate)?.updateController.apply(policy)
     }
 }
 

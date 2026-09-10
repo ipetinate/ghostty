@@ -14,9 +14,8 @@ enum UpdatePolicy: String, CaseIterable {
         return policy
     }
 
-    static func with(checks: Bool, downloads: Bool) -> UpdatePolicy {
-        guard checks else { return .off }
-        return downloads ? .download : .check
+    init(_ autoUpdate: Ghostty.Config.AutoUpdate) {
+        self = UpdatePolicy(rawValue: autoUpdate.rawValue) ?? .off
     }
 
     var checksAutomatically: Bool { self != .off }

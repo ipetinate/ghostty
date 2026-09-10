@@ -21,11 +21,21 @@ struct UpdatePolicyTests {
         #expect(UpdatePolicy.stored("") == .download)
     }
 
-    @Test func theSwitchesDecideTheValue() {
-        #expect(UpdatePolicy.with(checks: false, downloads: false) == .off)
-        #expect(UpdatePolicy.with(checks: false, downloads: true) == .off)
-        #expect(UpdatePolicy.with(checks: true, downloads: false) == .check)
-        #expect(UpdatePolicy.with(checks: true, downloads: true) == .download)
+    @Test func theOneSwitchWritesTheWholeFeatureOrNone() {
+        #expect(UpdatePolicy.download.checksAutomatically)
+        #expect(UpdatePolicy.download.downloadsAutomatically)
+        #expect(!UpdatePolicy.off.checksAutomatically)
+    }
+
+    @Test func aHandWrittenCheckStillReadsAsOn() {
+        #expect(UpdatePolicy.stored("check").checksAutomatically)
+        #expect(!UpdatePolicy.stored("check").downloadsAutomatically)
+    }
+
+    @Test func theCoreValueCarriesStraightOver() {
+        #expect(UpdatePolicy(Ghostty.Config.AutoUpdate.off) == .off)
+        #expect(UpdatePolicy(Ghostty.Config.AutoUpdate.check) == .check)
+        #expect(UpdatePolicy(Ghostty.Config.AutoUpdate.download) == .download)
     }
 
     @Test func offMeansNeitherSwitchIsOn() {

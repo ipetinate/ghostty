@@ -56,6 +56,11 @@ class UpdateController {
         }
     }
 
+    func apply(_ policy: UpdatePolicy) {
+        updater.automaticallyChecksForUpdates = policy.checksAutomatically
+        updater.automaticallyDownloadsUpdates = policy.downloadsAutomatically
+    }
+
     /// Check for updates.
     ///
     /// This is typically connected to a menu item action.

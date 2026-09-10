@@ -1065,13 +1065,9 @@ class AppDelegate: NSObject,
         // defined by our "auto-update" configuration (if set) or fall back to Sparkle
         // user-based defaults.
         if Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool == false {
-            updateController.updater.automaticallyChecksForUpdates = false
-            updateController.updater.automaticallyDownloadsUpdates = false
+            updateController.apply(.off)
         } else if let autoUpdate = config.autoUpdate {
-            updateController.updater.automaticallyChecksForUpdates =
-                autoUpdate == .check || autoUpdate == .download
-            updateController.updater.automaticallyDownloadsUpdates =
-                autoUpdate == .download
+            updateController.apply(.init(autoUpdate))
             /*
              To test `auto-update` easily, uncomment the line below.
              `SUEnableAutomaticChecks` is already absent from Ghostty-Info.plist

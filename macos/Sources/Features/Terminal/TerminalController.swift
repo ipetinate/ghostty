@@ -885,6 +885,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     ///
     /// Every window gets one, once, unconditionally: `layer.contents` cannot
     /// say whether a surface has drawn, so there is nothing to test against.
+    /// The material floor does not replace it. The floor stops the desktop
+    /// showing through; it does not carry the theme colour the terminal
+    /// paints, so a pane whose surface has not drawn shows the floor bare,
+    /// which is lighter than the settled pane. The shield is that colour.
     /// The shield is the window's background colour at the configured
     /// opacity, so over content it reads as the terminal dimming for a
     /// quarter of a second.
@@ -892,7 +896,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     private func shieldFirstPresentationFlash() {
         guard !didShieldFirstPresentation,
-              !WindowGlassBackdrop.isActive(ghostty.config.backgroundBlur),
               let terminalWindow = window as? TerminalWindow,
               let container = sidebarSplitView?.arrangedSubviews.last
         else { return }

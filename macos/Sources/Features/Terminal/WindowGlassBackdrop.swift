@@ -1,57 +1,39 @@
 import AppKit
-import SwiftUI
 
 /// The single material the whole window sits on.
 ///
 /// Both panes keep painting their own coat of the theme colour over it, so the
 /// two halves stay identical and `background-opacity` keeps meaning what it
-/// means. What changes is what that coat sits on: a material that paints from
-/// the first layout, rather than a window that paints nothing until the Metal
-/// surface draws.
+/// means. What changes is what that coat sits on: a view that paints from the
+/// first layout, rather than a window that paints nothing until the Metal
+/// surface draws. A region nobody has painted is what shows the desktop
+/// through a non-opaque window, and a floor removes that region.
 ///
-/// Installed once, behind the content view. The per-pane glass in
-/// `TerminalViewContainer` is what made the boundary between sidebar and
-/// terminal show, and it never reaches a window with the sidebar on: that
-/// lookup finds the container among the split view's arranged subviews, and
-/// with the sidebar the terminal lives inside the editor grid instead.
+/// `.behindWindow` is the part that matters. It is what samples the desktop
+/// behind the window, which is the job the private CGS blur was doing. SwiftUI's
+/// `.glassEffect` cannot do it: that material samples what is behind it inside
+/// the app's own drawing, so over a transparent window it has nothing to work
+/// with and the desktop comes through nearly raw.
 enum WindowGlassBackdrop {
     /// Whether this window draws on the material rather than on a blurred
-    /// window. Every window that asked for blur does, where the system has
-    /// the material: the material is what blur was reaching for.
+    /// window. Every window that asked for blur does.
     static func isActive(_ blur: Ghostty.Config.BackgroundBlur) -> Bool {
-#if compiler(>=6.2)
-        guard #available(macOS 26.0, *) else { return false }
-        return blur.isEnabled
-#else
-        return false
-#endif
-    }
-
-    /// `clear` only when it was asked for by name. A plain radius is asking
-    /// for something frosted, which is `regular`.
-    private static func variant(for blur: Ghostty.Config.BackgroundBlur) -> BackportGlass {
-        switch blur {
-        case .macosGlassClear: return .clear
-        default: return .regular
-        }
+        blur.isEnabled
     }
 
     static func make(config: Ghostty.Config) -> NSView? {
         guard isActive(config.backgroundBlur) else { return nil }
 
-#if compiler(>=6.2)
-        guard #available(macOS 26.0, *) else { return nil }
-        let view = NSHostingView(rootView: Surface(
-            glass: variant(for: config.backgroundBlur).official))
+        let view = NSVisualEffectView()
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.blendingMode = .behindWindow
+        view.material = .underWindowBackground
+        view.state = .followsWindowActiveState
         return view
-#else
-        return nil
-#endif
     }
 
     /// Wraps `content` so the material sits behind it, or hands `content` back
-    /// untouched when this window is not on glass.
+    /// untouched when this window is not on the material.
     static func install(behind content: NSView, config: Ghostty.Config) -> NSView {
         guard let backdrop = make(config: config) else { return content }
 
@@ -72,14 +54,3 @@ enum WindowGlassBackdrop {
         return container
     }
 }
-
-#if compiler(>=6.2)
-@available(macOS 26.0, *)
-private struct Surface: View {
-    let glass: Glass
-
-    var body: some View {
-        Color.clear.glassEffect(glass, in: Rectangle())
-    }
-}
-#endif

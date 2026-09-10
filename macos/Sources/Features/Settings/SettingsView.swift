@@ -90,7 +90,7 @@ struct SettingsRootView: View {
             // ideal of 180 it opened already truncated to "Keyboard
             // Shortc…" — a settings list that hides what it is offering
             // before you have touched anything.
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+            .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 300)
             .settingsSidebarAlwaysVisible()
         } detail: {
             switch selection {

@@ -150,6 +150,7 @@ struct GeneralSettingsView: View {
     @AppStorage(WelcomeShownRecord.showsAtLaunchKey) private var showsWelcomeAtLaunch = false
 
     @State private var restoreWindows = true
+    @State private var updatePolicy = UpdatePolicy.factoryDefault
 
     var body: some View {
         Form {
@@ -191,6 +192,37 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle("Check for Updates Automatically", isOn: Binding(
+                    get: { updatePolicy.checksAutomatically },
+                    set: { setUpdatePolicy(.with(checks: $0, downloads: updatePolicy.downloadsAutomatically)) }
+                ))
+                .toggleStyle(.switch)
+
+                Toggle("Download and Install Updates Automatically", isOn: Binding(
+                    get: { updatePolicy.downloadsAutomatically },
+                    set: { setUpdatePolicy(.with(checks: true, downloads: $0)) }
+                ))
+                .toggleStyle(.switch)
+                .disabled(!updatePolicy.checksAutomatically)
+
+                LabeledContent("Installed Version") {
+                    HStack(spacing: 12) {
+                        Text(Phantom.versionSummary)
+                            .foregroundStyle(.secondary)
+                        Button("Check Now") {
+                            (NSApp.delegate as? AppDelegate)?.updateController.checkForUpdates()
+                        }
+                    }
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Phantom reads its own release feed. With downloading on, an update installs when you quit the app. With it off, Phantom only tells you that a new version is out.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 LabeledContent("Phantom Settings File") {
                     Button("Open in Editor") {
                         NSWorkspace.shared.open(store.guiFileURL)
@@ -214,7 +246,14 @@ struct GeneralSettingsView: View {
         .navigationTitle("General")
         .onAppear {
             restoreWindows = (store.string("window-save-state") ?? "always") == "always"
+            updatePolicy = UpdatePolicy.stored(store.string(UpdatePolicy.configKey))
         }
+    }
+
+    private func setUpdatePolicy(_ policy: UpdatePolicy) {
+        updatePolicy = policy
+        store.set(UpdatePolicy.configKey, policy.rawValue)
+        store.apply(ghostty: ghostty)
     }
 }
 

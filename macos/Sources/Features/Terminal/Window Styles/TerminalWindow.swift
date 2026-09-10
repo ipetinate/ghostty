@@ -38,6 +38,7 @@ class TerminalWindow: NSWindow {
 
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private(set) var derivedConfig: DerivedConfig = .init()
+    private var configObserver: NSObjectProtocol?
 
     /// Sets up our tab context menu
     private var tabMenuObserver: NSObjectProtocol?
@@ -224,6 +225,25 @@ class TerminalWindow: NSWindow {
 
         // Setup our initial config
         derivedConfig = .init(config)
+
+        /// And keep it. A window used to hold the config it was born with for
+        /// the rest of its life, so a theme changed afterwards left this
+        /// window's own colours on the theme the app launched in: the coat the
+        /// panes are painted from falls back to this, the Ventura titlebar
+        /// paints from it directly, and both then disagreed with what the
+        /// terminal was drawing.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .ghosttyConfigDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard notification.object == nil,
+                  let config = notification.userInfo?[
+                    Notification.Name.GhosttyConfigChangeKey
+                  ] as? Ghostty.Config
+            else { return }
+            self?.derivedConfig = .init(config)
+        }
 
         // If there is a hardcoded title in the configuration, we set that
         // immediately. Future `set_title` apprt actions will override this
@@ -807,7 +827,7 @@ class TerminalWindow: NSWindow {
     }
 
     deinit {
-        if let observer = tabMenuObserver {
+        for observer in [tabMenuObserver, configObserver].compactMap({ $0 }) {
             NotificationCenter.default.removeObserver(observer)
         }
     }

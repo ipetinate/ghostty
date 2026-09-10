@@ -24,27 +24,27 @@ enum WindowGlassBackdrop {
     /// Which material the floor is made of. A material has no intensity, so
     /// the blur radius that used to be configurable means nothing here and
     /// this replaces it.
+    /// Two, because there are two results. The system's materials are named
+    /// for the role they play rather than the look they have, and it is free
+    /// to render several of them the same way: under a dark theme the sidebar
+    /// material comes out as the window one and the full-screen material as
+    /// the HUD. Four names for two surfaces reads as an app whose settings do
+    /// nothing.
     enum Material: String, CaseIterable {
-        case underWindow
-        case hud
-        case sidebar
-        case fullScreen
+        case soft
+        case deep
 
         var label: String {
             switch self {
-            case .underWindow: return "Window"
-            case .hud: return "HUD"
-            case .sidebar: return "Sidebar"
-            case .fullScreen: return "Full Screen"
+            case .soft: return "Soft"
+            case .deep: return "Deep"
             }
         }
 
         var official: NSVisualEffectView.Material {
             switch self {
-            case .underWindow: return .underWindowBackground
-            case .hud: return .hudWindow
-            case .sidebar: return .sidebar
-            case .fullScreen: return .fullScreenUI
+            case .soft: return .underWindowBackground
+            case .deep: return .hudWindow
             }
         }
     }
@@ -53,9 +53,13 @@ enum WindowGlassBackdrop {
     /// unknown key in `gui-settings` raises Ghostty's config errors.
     static let materialKey = "WindowBackdropMaterial"
 
+    /// The names this used to store are carried across rather than dropped,
+    /// so a choice already made keeps the surface it was making.
     static var material: Material {
-        Material(rawValue: UserDefaults.standard.string(forKey: materialKey) ?? "")
-            ?? .underWindow
+        switch UserDefaults.standard.string(forKey: materialKey) ?? "" {
+        case Material.deep.rawValue, "hud", "fullScreen": return .deep
+        default: return .soft
+        }
     }
 
     static func make(config: Ghostty.Config) -> NSVisualEffectView? {

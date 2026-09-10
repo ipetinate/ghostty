@@ -21,21 +21,62 @@ enum WindowGlassBackdrop {
         blur.isEnabled
     }
 
-    static func make(config: Ghostty.Config) -> NSView? {
+    /// Which material the floor is made of. A material has no intensity, so
+    /// the blur radius that used to be configurable means nothing here and
+    /// this replaces it.
+    enum Material: String, CaseIterable {
+        case underWindow
+        case hud
+        case sidebar
+        case fullScreen
+
+        var label: String {
+            switch self {
+            case .underWindow: return "Window"
+            case .hud: return "HUD"
+            case .sidebar: return "Sidebar"
+            case .fullScreen: return "Full Screen"
+            }
+        }
+
+        var official: NSVisualEffectView.Material {
+            switch self {
+            case .underWindow: return .underWindowBackground
+            case .hud: return .hudWindow
+            case .sidebar: return .sidebar
+            case .fullScreen: return .fullScreenUI
+            }
+        }
+    }
+
+    /// Phantom's own chrome preference, so it lives in `UserDefaults`: an
+    /// unknown key in `gui-settings` raises Ghostty's config errors.
+    static let materialKey = "WindowBackdropMaterial"
+
+    static var material: Material {
+        Material(rawValue: UserDefaults.standard.string(forKey: materialKey) ?? "")
+            ?? .underWindow
+    }
+
+    static func make(config: Ghostty.Config) -> NSVisualEffectView? {
         guard isActive(config.backgroundBlur) else { return nil }
 
         let view = NSVisualEffectView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.blendingMode = .behindWindow
-        view.material = .underWindowBackground
-        view.state = .followsWindowActiveState
+        view.material = material.official
+        /// Held active rather than following the window. Left to follow, the
+        /// material flattens whenever the window is not the active one, which
+        /// is a window that changes colour while the reader is in another app
+        /// and changes back when they return.
+        view.state = .active
         return view
     }
 
     /// Wraps `content` so the material sits behind it, or hands `content` back
     /// untouched when this window is not on the material.
-    static func install(behind content: NSView, config: Ghostty.Config) -> NSView {
-        guard let backdrop = make(config: config) else { return content }
+    static func install(_ backdrop: NSVisualEffectView?, behind content: NSView) -> NSView {
+        guard let backdrop else { return content }
 
         let container = NSView()
         content.translatesAutoresizingMaskIntoConstraints = false

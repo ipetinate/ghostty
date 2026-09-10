@@ -295,6 +295,7 @@ private struct AppearanceStylePanel: View {
     @State private var backgroundOpacity: Double = 1
     @State private var blurMode: String = "off"
     @State private var blurRadius: Double = 20
+    @State private var backdropMaterial: WindowGlassBackdrop.Material = .underWindow
     @State private var sidebarWidth: Double = 240
     @State private var dividerMode: String = AppearanceCoordinator.defaultDividerModeRaw
     @State private var dividerColor: Color = .gray
@@ -447,10 +448,10 @@ private struct AppearanceStylePanel: View {
             }
 
             LabeledContent("Background") {
-                /// "Glass" is the blurred background. The system glass
-                /// material used to be a fourth option, but it cannot hold a
-                /// seam-free surface across the two panes — each pane gets
-                /// its own material and they never match.
+                /// "Glass" is the material the window sits on, one surface
+                /// behind both panes. It replaced a blur whose radius was
+                /// configurable; a material has no intensity, so the choice
+                /// below is which material rather than how much.
                 Picker("", selection: $blurMode) {
                     Text("Solid").tag("solid")
                     Text("Clear").tag("off")
@@ -463,16 +464,16 @@ private struct AppearanceStylePanel: View {
             }
 
             if blurMode == "radius" {
-                LabeledContent("Blur Intensity") {
-                    HStack {
-                        Slider(value: $blurRadius, in: 1...80, step: 1) { editing in
-                            if !editing { applyBlur() }
+                LabeledContent("Material") {
+                    Picker("", selection: $backdropMaterial) {
+                        ForEach(WindowGlassBackdrop.Material.allCases, id: \.self) { option in
+                            Text(option.label).tag(option)
                         }
-                        Text(verbatim: "\(Int(blurRadius))")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .trailing)
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 320)
+                    .onChange(of: backdropMaterial) { _ in saveMaterial() }
                 }
             }
 
@@ -647,6 +648,8 @@ private struct AppearanceStylePanel: View {
             }
         }
 
+        backdropMaterial = WindowGlassBackdrop.material
+
         let defaults = UserDefaults.standard
         dividerMode = defaults.string(forKey: AppearanceCoordinator.dividerModeKey)
             ?? AppearanceCoordinator.defaultDividerModeRaw
@@ -654,6 +657,16 @@ private struct AppearanceStylePanel: View {
            let color = NSColor(hex: hex) {
             dividerColor = Color(nsColor: color)
         }
+    }
+
+    private func saveMaterial() {
+        UserDefaults.standard.set(
+            backdropMaterial.rawValue,
+            forKey: WindowGlassBackdrop.materialKey)
+        NotificationCenter.default.post(
+            name: TerminalController.sidebarTintDidChange,
+            object: nil
+        )
     }
 
     private func saveDivider() {

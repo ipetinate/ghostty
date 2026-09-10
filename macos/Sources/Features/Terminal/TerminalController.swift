@@ -143,6 +143,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// The sidebar hosting view, tinted with the terminal's effective
     /// background (color + opacity) so both panes always match.
     private var sidebarBackgroundView: NSView?
+    private weak var glassBackdrop: NSVisualEffectView?
 
     /// Fills the titlebar strip over the terminal pane, which the terminal's
     /// own content doesn't reach.
@@ -1857,7 +1858,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         syncSidebarBackground()
 
-        return WindowGlassBackdrop.install(behind: splitView, config: config)
+        let backdrop = WindowGlassBackdrop.make(config: config)
+        self.glassBackdrop = backdrop
+        return WindowGlassBackdrop.install(backdrop, behind: splitView)
     }
 
     /// Creates a terminal tab that starts inside the given group.
@@ -2128,6 +2131,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     @objc private func sidebarTintDidChangeNotification(_ notification: Notification) {
         syncSidebarBackground()
+        glassBackdrop?.material = WindowGlassBackdrop.material.official
 
         /// The divider's thickness changes when the mode crosses hidden
         /// (1pt ↔ 0), and an autolayout `NSSplitView` bakes the thickness

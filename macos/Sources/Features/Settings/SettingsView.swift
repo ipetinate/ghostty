@@ -91,6 +91,11 @@ struct SettingsRootView: View {
             // Shortc…" — a settings list that hides what it is offering
             // before you have touched anything.
             .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 300)
+            /// The column width above is a request the settings window does
+            /// not honour — it opened at about 148pt with a minimum of 240
+            /// asked for. A frame on the content is a constraint rather than
+            /// a request, so the column cannot be squeezed under it.
+            .frame(minWidth: 240)
             .settingsSidebarAlwaysVisible()
         } detail: {
             switch selection {

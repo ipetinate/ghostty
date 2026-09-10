@@ -295,6 +295,7 @@ private struct AppearanceStylePanel: View {
     @State private var backgroundOpacity: Double = 1
     @State private var blurMode: String = "off"
     @State private var blurRadius: Double = 20
+    @State private var backdropMaterial: WindowGlassBackdrop.Material = .deep
     @State private var sidebarWidth: Double = 240
     @State private var dividerMode: String = AppearanceCoordinator.defaultDividerModeRaw
     @State private var dividerColor: Color = .gray
@@ -327,10 +328,12 @@ private struct AppearanceStylePanel: View {
         guard !style.isEmpty else { return nil }
 
         let image = NSImage(
-            size: NSSize(width: 12, height: 13),
+            size: NSSize(width: 9, height: 13),
             flipped: false
         ) { _ in
-            let cell = NSRect(x: 1, y: 1, width: 10, height: 11)
+            /// A character cell is about twice as tall as it is wide, and the
+            /// block drawn in a square read as a bullet rather than a cursor.
+            let cell = NSRect(x: 1, y: 1, width: 7, height: 11)
             NSColor.black.setFill()
             NSColor.black.setStroke()
 
@@ -338,8 +341,8 @@ private struct AppearanceStylePanel: View {
             case "block":
                 cell.fill()
             case "block_hollow":
-                let outline = NSBezierPath(rect: cell.insetBy(dx: 0.75, dy: 0.75))
-                outline.lineWidth = 1.5
+                let outline = NSBezierPath(rect: cell.insetBy(dx: 0.6, dy: 0.6))
+                outline.lineWidth = 1.2
                 outline.stroke()
             case "bar":
                 NSRect(x: cell.minX, y: cell.minY, width: 2, height: cell.height).fill()
@@ -435,7 +438,14 @@ private struct AppearanceStylePanel: View {
                         Text(style.label)
                     } icon: {
                         if let image = Self.cursorIcon(for: style.value) {
+                            /// `NSImage.isTemplate` is an AppKit contract that
+                            /// SwiftUI's `Image` does not read, so the filled
+                            /// shapes came out in the black they were drawn in
+                            /// and vanished against a dark menu. Asking for the
+                            /// template rendering here is what hands them to
+                            /// the label's own colour.
                             Image(nsImage: image)
+                                .renderingMode(.template)
                         }
                     }
                     .tag(style.value)
@@ -447,10 +457,10 @@ private struct AppearanceStylePanel: View {
             }
 
             LabeledContent("Background") {
-                /// "Glass" is the blurred background. The system glass
-                /// material used to be a fourth option, but it cannot hold a
-                /// seam-free surface across the two panes — each pane gets
-                /// its own material and they never match.
+                /// "Glass" is the material the window sits on, one surface
+                /// behind both panes. It replaced a blur whose radius was
+                /// configurable; a material has no intensity, so the choice
+                /// below is which material rather than how much.
                 Picker("", selection: $blurMode) {
                     Text("Solid").tag("solid")
                     Text("Clear").tag("off")
@@ -463,16 +473,16 @@ private struct AppearanceStylePanel: View {
             }
 
             if blurMode == "radius" {
-                LabeledContent("Blur Intensity") {
-                    HStack {
-                        Slider(value: $blurRadius, in: 1...80, step: 1) { editing in
-                            if !editing { applyBlur() }
+                LabeledContent("Material") {
+                    Picker("", selection: $backdropMaterial) {
+                        ForEach(WindowGlassBackdrop.Material.allCases, id: \.self) { option in
+                            Text(option.label).tag(option)
                         }
-                        Text(verbatim: "\(Int(blurRadius))")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .trailing)
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 240)
+                    .onChange(of: backdropMaterial) { _ in saveMaterial() }
                 }
             }
 
@@ -647,6 +657,8 @@ private struct AppearanceStylePanel: View {
             }
         }
 
+        backdropMaterial = WindowGlassBackdrop.material
+
         let defaults = UserDefaults.standard
         dividerMode = defaults.string(forKey: AppearanceCoordinator.dividerModeKey)
             ?? AppearanceCoordinator.defaultDividerModeRaw
@@ -654,6 +666,16 @@ private struct AppearanceStylePanel: View {
            let color = NSColor(hex: hex) {
             dividerColor = Color(nsColor: color)
         }
+    }
+
+    private func saveMaterial() {
+        UserDefaults.standard.set(
+            backdropMaterial.rawValue,
+            forKey: WindowGlassBackdrop.materialKey)
+        NotificationCenter.default.post(
+            name: TerminalController.sidebarTintDidChange,
+            object: nil
+        )
     }
 
     private func saveDivider() {

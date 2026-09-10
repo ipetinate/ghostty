@@ -157,7 +157,11 @@ final class GuiConfigStore: ObservableObject {
             needsSave = true
         }
         if values["background-opacity"] == nil {
-            values["background-opacity"] = "0.80"
+            values["background-opacity"] = "0.70"
+            needsSave = true
+        }
+        if values[UpdatePolicy.configKey] == nil {
+            values[UpdatePolicy.configKey] = UpdatePolicy.factoryDefault.rawValue
             needsSave = true
         }
         return needsSave

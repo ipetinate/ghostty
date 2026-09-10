@@ -44,6 +44,7 @@ struct GuiConfigBootstrapTests {
         let gui = contents(of: dir.appendingPathComponent("gui-settings"))
         #expect(gui.contains("sidebar = true"))
         #expect(gui.contains("window-save-state = always"))
+        #expect(gui.contains("auto-update = download"))
     }
 
     /// A second launch must not append the include again, nor overwrite a
@@ -52,7 +53,7 @@ struct GuiConfigBootstrapTests {
         let dir = try makeDirectory()
 
         _ = GuiConfigStore.bootstrap(in: dir)
-        try "# managed\n\nsidebar = false\nwindow-save-state = never\n"
+        try "# managed\n\nsidebar = false\nwindow-save-state = never\nauto-update = off\n"
             .write(to: dir.appendingPathComponent("gui-settings"), atomically: true, encoding: .utf8)
         _ = GuiConfigStore.bootstrap(in: dir)
 
@@ -63,6 +64,7 @@ struct GuiConfigBootstrapTests {
         let gui = contents(of: dir.appendingPathComponent("gui-settings"))
         #expect(gui.contains("sidebar = false"))
         #expect(gui.contains("window-save-state = never"))
+        #expect(gui.contains("auto-update = off"))
     }
 
     /// The include is restored on a launch where the reader has rewritten
@@ -97,6 +99,7 @@ struct GuiConfigBootstrapTests {
             "window-save-state": "never",
             "background-blur": "0",
             "background-opacity": "1.0",
+            "auto-update": "off",
         ]
 
         #expect(!GuiConfigStore.applyForkDefaults(to: &values))
@@ -104,6 +107,7 @@ struct GuiConfigBootstrapTests {
         #expect(values["window-save-state"] == "never")
         #expect(values["background-blur"] == "0")
         #expect(values["background-opacity"] == "1.0")
+        #expect(values["auto-update"] == "off")
     }
 
     // MARK: Factory theme
@@ -117,7 +121,7 @@ struct GuiConfigBootstrapTests {
 
         let gui = contents(of: dir.appendingPathComponent(GuiConfigStore.fileName))
         #expect(gui.contains("background-blur = 80"))
-        #expect(gui.contains("background-opacity = 0.80"))
+        #expect(gui.contains("background-opacity = 0.70"))
         #expect(gui.contains("theme = "))
         #expect(gui.contains(GuiConfigStore.factoryThemeName))
 

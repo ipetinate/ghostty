@@ -569,7 +569,7 @@ class AppDelegate: NSObject,
         /// smaller, which is what `quitBegan` goes on to enforce. Recording it
         /// here rather than relying on the last debounced save is what keeps a
         /// window closed a moment before quitting from coming back.
-        PhantomSessionStore.shared.saveNow()
+        PhantomSessionStore.shared.saveNow(askedToQuit: true)
         PhantomSessionStore.shared.quitBegan()
 
         let windows = NSApplication.shared.windows
@@ -1065,13 +1065,9 @@ class AppDelegate: NSObject,
         // defined by our "auto-update" configuration (if set) or fall back to Sparkle
         // user-based defaults.
         if Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool == false {
-            updateController.updater.automaticallyChecksForUpdates = false
-            updateController.updater.automaticallyDownloadsUpdates = false
+            updateController.apply(.off)
         } else if let autoUpdate = config.autoUpdate {
-            updateController.updater.automaticallyChecksForUpdates =
-                autoUpdate == .check || autoUpdate == .download
-            updateController.updater.automaticallyDownloadsUpdates =
-                autoUpdate == .download
+            updateController.apply(.init(autoUpdate))
             /*
              To test `auto-update` easily, uncomment the line below.
              `SUEnableAutomaticChecks` is already absent from Ghostty-Info.plist

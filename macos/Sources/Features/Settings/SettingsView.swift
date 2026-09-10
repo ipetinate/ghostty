@@ -90,7 +90,12 @@ struct SettingsRootView: View {
             // ideal of 180 it opened already truncated to "Keyboard
             // Shortc…" — a settings list that hides what it is offering
             // before you have touched anything.
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+            .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 300)
+            /// The column width above is a request the settings window does
+            /// not honour — it opened at about 148pt with a minimum of 240
+            /// asked for. A frame on the content is a constraint rather than
+            /// a request, so the column cannot be squeezed under it.
+            .frame(minWidth: 240)
             .settingsSidebarAlwaysVisible()
         } detail: {
             switch selection {
@@ -145,6 +150,7 @@ struct GeneralSettingsView: View {
     @AppStorage(WelcomeShownRecord.showsAtLaunchKey) private var showsWelcomeAtLaunch = false
 
     @State private var restoreWindows = true
+    @State private var updatesAutomatically = UpdatePolicy.factoryDefault.checksAutomatically
 
     var body: some View {
         Form {
@@ -186,6 +192,30 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle("Update Automatically", isOn: $updatesAutomatically)
+                    .toggleStyle(.switch)
+                    .onChange(of: updatesAutomatically) { value in
+                        setUpdatePolicy(value ? .download : .off)
+                    }
+
+                LabeledContent("Installed Version") {
+                    HStack(spacing: 12) {
+                        Text(Phantom.versionSummary)
+                            .foregroundStyle(.secondary)
+                        Button("Check Now") {
+                            (NSApp.delegate as? AppDelegate)?.updateController.checkForUpdates()
+                        }
+                    }
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Phantom checks its own release feed in the background, downloads a newer version and installs it the next time you quit. Turn this off and Phantom never looks.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 LabeledContent("Phantom Settings File") {
                     Button("Open in Editor") {
                         NSWorkspace.shared.open(store.guiFileURL)
@@ -197,6 +227,8 @@ struct GeneralSettingsView: View {
                         ghostty.openConfig()
                     }
                 }
+            } header: {
+                Text("Configuration Files")
             } footer: {
                 Text("Everything changed in this window is stored in \(GuiConfigStore.fileName) (the Phantom settings file), which is included from your main config. Hand-written options in the main config stay untouched. Style options (fonts, colors, blur) live in Appearance.")
                     .font(.caption)
@@ -209,7 +241,13 @@ struct GeneralSettingsView: View {
         .navigationTitle("General")
         .onAppear {
             restoreWindows = (store.string("window-save-state") ?? "always") == "always"
+            updatesAutomatically = UpdatePolicy.stored(store.string(UpdatePolicy.configKey)).checksAutomatically
         }
+    }
+
+    private func setUpdatePolicy(_ policy: UpdatePolicy) {
+        store.set(UpdatePolicy.configKey, policy.rawValue)
+        (NSApp.delegate as? AppDelegate)?.updateController.apply(policy)
     }
 }
 

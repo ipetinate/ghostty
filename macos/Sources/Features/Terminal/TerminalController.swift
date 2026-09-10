@@ -143,6 +143,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// The sidebar hosting view, tinted with the terminal's effective
     /// background (color + opacity) so both panes always match.
     private var sidebarBackgroundView: NSView?
+    private weak var glassBackdrop: NSVisualEffectView?
 
     /// Fills the titlebar strip over the terminal pane, which the terminal's
     /// own content doesn't reach.
@@ -884,6 +885,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     ///
     /// Every window gets one, once, unconditionally: `layer.contents` cannot
     /// say whether a surface has drawn, so there is nothing to test against.
+    /// The material floor does not replace it. The floor stops the desktop
+    /// showing through; it does not carry the theme colour the terminal
+    /// paints, so a pane whose surface has not drawn shows the floor bare,
+    /// which is lighter than the settled pane. The shield is that colour.
     /// The shield is the window's background colour at the configured
     /// opacity, so over content it reads as the terminal dimming for a
     /// quarter of a second.
@@ -946,6 +951,15 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // Call this last in case it uses any of the properties above.
         window.syncAppearance(surfaceConfig)
         terminalViewContainer?.ghosttyConfigDidChange(ghostty.config, preferredBackgroundColor: window.preferredBackgroundColor)
+
+        /// The panes are painted from the same colour this window was just
+        /// given, so they are repainted here rather than left to whichever
+        /// caller remembers. Every route into this function is a route that
+        /// can change that colour: a theme arriving, a surface reporting its
+        /// own background through OSC 11, focus moving to a split that
+        /// answers differently. Without this the panes kept whatever they
+        /// were last told, which is a window drawing two colours at once.
+        syncSidebarBackground()
     }
 
     /// Adjusts the given frame for the configured window position.
@@ -1856,7 +1870,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         syncSidebarBackground()
 
-        return splitView
+        let backdrop = WindowGlassBackdrop.make(config: config)
+        self.glassBackdrop = backdrop
+        return WindowGlassBackdrop.install(backdrop, behind: splitView)
     }
 
     /// Creates a terminal tab that starts inside the given group.
@@ -2127,6 +2143,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     @objc private func sidebarTintDidChangeNotification(_ notification: Notification) {
         syncSidebarBackground()
+        glassBackdrop?.material = WindowGlassBackdrop.material.official
 
         /// The divider's thickness changes when the mode crosses hidden
         /// (1pt ↔ 0), and an autolayout `NSSplitView` bakes the thickness

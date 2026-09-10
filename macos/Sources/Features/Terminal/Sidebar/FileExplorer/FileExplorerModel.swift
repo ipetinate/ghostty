@@ -588,6 +588,11 @@ final class FileExplorerModel: ObservableObject {
         return result
     }
 
+    static func fileToOpen(after result: Result<URL, FileExplorerError>, isFolder: Bool) -> URL? {
+        guard !isFolder, case .success(let url) = result else { return nil }
+        return url
+    }
+
     /// Sends the item at `path` to the Trash.
     @discardableResult
     func delete(path: String) -> Result<Void, FileExplorerError> {

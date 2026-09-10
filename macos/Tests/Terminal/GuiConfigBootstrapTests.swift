@@ -99,6 +99,7 @@ struct GuiConfigBootstrapTests {
             "window-save-state": "never",
             "background-blur": "0",
             "background-opacity": "1.0",
+            "auto-update": "off",
         ]
 
         #expect(!GuiConfigStore.applyForkDefaults(to: &values))
@@ -106,6 +107,7 @@ struct GuiConfigBootstrapTests {
         #expect(values["window-save-state"] == "never")
         #expect(values["background-blur"] == "0")
         #expect(values["background-opacity"] == "1.0")
+        #expect(values["auto-update"] == "off")
     }
 
     // MARK: Factory theme
@@ -119,7 +121,7 @@ struct GuiConfigBootstrapTests {
 
         let gui = contents(of: dir.appendingPathComponent(GuiConfigStore.fileName))
         #expect(gui.contains("background-blur = 80"))
-        #expect(gui.contains("background-opacity = 0.80"))
+        #expect(gui.contains("background-opacity = 0.70"))
         #expect(gui.contains("theme = "))
         #expect(gui.contains(GuiConfigStore.factoryThemeName))
 

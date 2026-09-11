@@ -8,7 +8,11 @@
 
 const params = new URLSearchParams(location.search);
 const doc = params.get("doc");
-const base = params.get("base") ?? "";
+/* Absolute, always: the viewer resolves a document's own paths with
+   `new URL(path, baseURL)`, and that throws on a relative base — which is how
+   an icon theme's browser came to report that it could not read the file the
+   server was serving. */
+const base = new URL(params.get("base") ?? "./", location.href).href;
 const theme = params.get("theme") ?? "dark";
 
 const root = document.getElementById("root");

@@ -72,17 +72,34 @@ function trim(entry) {
   };
 }
 
+/**
+ * Which archive to stage.
+ *
+ * The preview holds the document and its media, which is all a page needs to
+ * render — except an icon theme's. That document draws a browser over the
+ * theme's own `icon-theme.json` and the SVGs it names, and those ship only in
+ * the installable package. Without them the browser renders and then reports
+ * that it cannot read the file. So the two icon themes are staged whole; every
+ * other extension stays on the preview, which is a tenth of the weight.
+ */
+function source(entry) {
+  const whole = entry.contributes?.includes("iconThemes");
+  return { kind: whole ? "package" : "preview", asset: whole ? entry.download : entry.preview };
+}
+
 async function stage(entry) {
   const dir = path.join(publicDir, entry.id);
   const stamp = path.join(dir, ".version");
+  const { kind, asset } = source(entry);
+  const want = `${entry.version} ${kind}`;
   if (existsSync(stamp)) {
     const seen = await readFile(stamp, "utf8").catch(() => "");
-    if (seen.trim() === entry.version) return "cached";
+    if (seen.trim() === want) return "cached";
   }
-  if (!entry.preview?.url) return "no-preview";
+  if (!asset?.url) return "no-archive";
 
-  const res = await fetch(entry.preview.url, { redirect: "follow" });
-  if (!res.ok) throw new Error(`${res.status} for ${entry.preview.url}`);
+  const res = await fetch(asset.url, { redirect: "follow" });
+  if (!res.ok) throw new Error(`${res.status} for ${asset.url}`);
   const bytes = Buffer.from(await res.arrayBuffer());
 
   const zip = path.join(tmpdir(), `phantom-ext-${entry.id}.zip`);
@@ -91,8 +108,8 @@ async function stage(entry) {
   await mkdir(dir, { recursive: true });
   await run("unzip", ["-o", "-q", zip, "-d", dir]);
   await rm(zip, { force: true });
-  await writeFile(stamp, entry.version);
-  return "fetched";
+  await writeFile(stamp, want);
+  return kind === "package" ? "fetched-whole" : "fetched";
 }
 
 async function pool(items, worker) {

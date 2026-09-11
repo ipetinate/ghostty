@@ -43,6 +43,34 @@ without downloading the code: browsing costs a small document, not the package.
 The page is rendered in a web view with a strict content security policy, no
 network access and no inline scripts. It is a document, never executed.
 
+## Suggestions
+
+Phantom offers what a file needs instead of waiting to be asked. Two things
+raise a suggestion, both drawn as a card in the bottom-right of the pane.
+
+**A file nothing claims.** Open one and, if no installed extension handles that
+file type, the card names the extensions in the registry that do, with an
+Install button. Once the extension is in, the card comes back only if the
+extension still needs a program that is not on your `PATH` — a language server
+or a formatter — with the install command the extension itself declared.
+
+**A project that asks for extensions.** A repository can ship its own list at
+`.phantom/suggestions.json`, read from the terminal's directory upwards. The
+card shows every suggested extension's icon and installs all of them in one
+press.
+
+```json
+{
+  "extensions": ["phantom.rust", "phantom.toml"],
+  "message": "The toolchain this repository is built with."
+}
+```
+
+`extensions` holds registry ids, and anything already installed is left out of
+the card. `message` is optional and replaces the list of names in the card.
+
+A dismissed card stays dismissed for the rest of the session.
+
 ## Trust
 
 A manifest that declares a **server** or a **formatter** asks to run a program

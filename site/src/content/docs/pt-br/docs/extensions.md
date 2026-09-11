@@ -45,6 +45,36 @@ loja sem baixar o código: navegar custa um documento pequeno, não o pacote.
 A página é renderizada numa web view com content security policy estrita, sem
 acesso à rede e sem scripts inline. É um documento, nunca executado.
 
+## Sugestões
+
+O Phantom oferece o que um arquivo precisa em vez de esperar que você peça.
+Duas coisas levantam uma sugestão, e as duas aparecem como um cartão no canto
+inferior direito do painel.
+
+**Um arquivo que ninguém reivindica.** Abra um e, se nenhuma extensão instalada
+cuidar daquele tipo de arquivo, o cartão nomeia as extensões do registry que
+cuidam, com um botão de instalar. Depois da instalação, o cartão só volta se a
+extensão ainda precisar de um programa que não está no seu `PATH` — um language
+server ou um formatador — com o comando de instalação que a própria extensão
+declarou.
+
+**Um projeto que pede extensões.** Um repositório pode trazer a própria lista em
+`.phantom/suggestions.json`, procurada a partir do diretório do terminal para
+cima. O cartão mostra o ícone de cada extensão sugerida e instala todas de uma
+vez.
+
+```json
+{
+  "extensions": ["phantom.rust", "phantom.toml"],
+  "message": "A toolchain com que este repositório é construído."
+}
+```
+
+`extensions` guarda ids do registry, e o que já estiver instalado fica de fora
+do cartão. `message` é opcional e substitui a lista de nomes no cartão.
+
+Um cartão dispensado continua dispensado pelo resto da sessão.
+
 ## Confiança
 
 Um manifesto que declara um **servidor** ou um **formatador** pede para rodar

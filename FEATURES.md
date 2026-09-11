@@ -60,6 +60,7 @@ and not a new app.
 | Files | Remappable shortcuts, more than one per command | Shipped | v0.7.0 |
 | Files | Keyboard navigation in the tree: arrows, Space, Return | Shipped | v0.8.0 |
 | Editor | Code editor inside the terminal pane | Shipped | v0.2.0 |
+| Editor | Installing a language lights up an open file, with no tab switch | Shipped | v0.21.0 |
 | Editor | Syntax highlighting, 19 languages | Shipped | v0.2.0 |
 | Editor | Minimap, gutter, current-line band | Shipped | v0.2.0 |
 | Editor | Workspace text search | Shipped | v0.2.0 |
@@ -121,6 +122,8 @@ and not a new app.
 | Extensions | Icon packs come from the store, not from the binary | Shipped | v0.19.0 |
 | Extensions | An extension can draw a sidebar panel, in TypeScript | Shipped | v0.19.0 |
 | Extensions | A page reaches the filesystem only through methods its manifest declared | Shipped | v0.19.0 |
+| Extensions | A toast suggests the extension a file needs, and the programs it still wants | Shipped | v0.21.0 |
+| Extensions | A project suggests its own extensions in `.phantom/suggestions.json` | Shipped | v0.21.0 |
 | Appearance | Icon themes carry a light half as well as a dark one | Shipped | v0.18.0 |
 | Appearance | A file icon reads the project's dependencies, not only the suffix | Shipped | v0.18.0 |
 | Appearance | Translucency drawn on a material: Soft and Deep | Shipped | v0.20.0 |

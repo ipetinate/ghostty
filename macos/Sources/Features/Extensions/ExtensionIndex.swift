@@ -52,6 +52,7 @@ struct ExtensionIndex: Equatable, Sendable {
 
         var card: ExtensionCard?
         var categories: [String] = []
+        var fileTypes: [String] = []
 
         /// The installable asset, as the three fields that were on this type
         /// before there was more than one asset to name.
@@ -168,7 +169,8 @@ extension ExtensionIndex.Entry {
                 limit: ExtensionIndex.maxPreviewBytes
             ),
             card: (json["card"] as? [String: Any]).flatMap(ExtensionCard.parse),
-            categories: displayList(json["categories"])
+            categories: displayList(json["categories"]),
+            fileTypes: fileTypeList(json["fileTypes"])
         )
     }
 
@@ -193,6 +195,22 @@ extension ExtensionIndex.Entry {
             .filter { seen.insert($0).inserted }
             .prefix(maxListItems)
             .map { $0 }
+    }
+
+    private static func fileTypeList(_ value: Any?) -> [String] {
+        let raw = (value as? [Any]) ?? []
+        var seen: Set<String> = []
+        return raw
+            .compactMap { $0 as? String }
+            .map { normalizedFileType($0) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .prefix(maxListItems)
+            .map { $0 }
+    }
+
+    static func normalizedFileType(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed.hasPrefix(".") ? String(trimmed.dropFirst()) : trimmed).lowercased()
     }
 
     private static func languageList(_ value: Any?) -> [String] {

@@ -10,6 +10,8 @@ import SwiftUI
 /// terminal back" mean something local.
 @MainActor
 final class EditorCenter: ObservableObject {
+    var onDidOpen: ((URL) -> Void)?
+
     /// How the pane is divided, and what is open in each cell.
     ///
     /// The one source of truth for the editor's layout. `tabs` below is a
@@ -534,6 +536,7 @@ final class EditorCenter: ObservableObject {
             if let reveal { apply(reveal, markedBy: agent, to: document) }
             place(path)
             lastSelectedFile = path
+            onDidOpen?(url)
             return true
         }
     }

@@ -23,12 +23,9 @@
   </p>
 </p>
 
-<video width="1024" height="472" controls>
-  <source src="https://raw.githubusercontent.com/ipetinate/phantom/refs/heads/main/site/public/clips/phantom-tour.mp4" type="video/mp4">
-  This is a tour guide video. And your browser does not support the video tag.
-</video>
 
 
+https://github.com/user-attachments/assets/ccb96ab7-4d0c-4bc4-b0c6-4a202057dbd1
 
 > Phantom is a personal fork of [Ghostty](https://github.com/ghostty-org/ghostty)
 > by [Mitchell Hashimoto](https://github.com/mitchellh) and its contributors.

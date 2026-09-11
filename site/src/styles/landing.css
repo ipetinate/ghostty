@@ -64,6 +64,13 @@ svg {
   display: block;
 }
 
+/* The rule above is an author rule and beats the browser's own
+   `[hidden] { display: none }`, which left the player showing its play and
+   pause marks at the same time. Hiding has to win over laying out. */
+[hidden] {
+  display: none !important;
+}
+
 a {
   color: inherit;
   text-decoration: none;

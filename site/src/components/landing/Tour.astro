@@ -85,6 +85,19 @@ const { tour } = copy;
         <button
           type="button"
           class="player__btn player__btn--end"
+          data-pip
+          aria-label={tour.pip}
+          hidden
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"
+            ><path
+              d="M3 5h18v14H3zm2 2v10h14V7zm6 5h6v4h-6z"
+              fill="currentColor"></path></svg
+          >
+        </button>
+        <button
+          type="button"
+          class="player__btn"
           data-fullscreen
           aria-label={tour.fullscreen}
         >
@@ -159,10 +172,16 @@ const { tour } = copy;
       );
     };
 
+    /* `hidden` is an HTMLElement property and these two marks are SVG, so
+       assigning it would set a stray field and leave both on screen. The
+       attribute is what the stylesheet reads. */
+    const show = (el, on) =>
+      on ? el.removeAttribute("hidden") : el.setAttribute("hidden", "");
+
     const setPlaying = (playing) => {
       root.dataset.playing = playing ? "true" : "false";
-      iconPlay.hidden = playing;
-      iconPause.hidden = !playing;
+      show(iconPlay, !playing);
+      show(iconPause, playing);
       toggle.setAttribute(
         "aria-label",
         playing ? toggle.dataset.pause : toggle.dataset.play,
@@ -184,6 +203,32 @@ const { tour } = copy;
     root
       .querySelector("[data-forward]")
       .addEventListener("click", () => (video.currentTime += 10));
+    /* Picture in picture, where the browser has it. Safari spells it its own
+       way, and a browser with neither keeps the button hidden rather than
+       offering a control that does nothing. */
+    const pip = root.querySelector("[data-pip]");
+    const standard = document.pictureInPictureEnabled && !video.disablePictureInPicture;
+    const webkit = typeof video.webkitSetPresentationMode === "function";
+    if (standard || webkit) {
+      pip.hidden = false;
+      pip.addEventListener("click", async () => {
+        try {
+          if (standard) {
+            if (document.pictureInPictureElement) await document.exitPictureInPicture();
+            else await video.requestPictureInPicture();
+          } else {
+            video.webkitSetPresentationMode(
+              video.webkitPresentationMode === "picture-in-picture"
+                ? "inline"
+                : "picture-in-picture",
+            );
+          }
+        } catch {
+          /* The browser refused — leave the video where it is. */
+        }
+      });
+    }
+
     root.querySelector("[data-fullscreen]").addEventListener("click", () => {
       if (document.fullscreenElement) document.exitFullscreen();
       else root.querySelector(".player__stage").requestFullscreen?.();

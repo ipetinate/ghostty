@@ -110,7 +110,7 @@ export const en: Copy = {
     skip: "Skip to content",
   },
   hero: {
-    titleLead: "Everything around the terminal, ",
+    titleLead: "Your whole workflow, ",
     titleEm: "inside",
     titleTail: " the terminal.",
     lede: "Phantom is a macOS terminal built on Ghostty's engine. Around it: a sidebar that groups your projects, an editor with language servers, git and worktrees, and the coding agents you already run. One window, no alt-tab.",
@@ -388,7 +388,7 @@ export const ptBr: Copy = {
     skip: "Ir para o conteúdo",
   },
   hero: {
-    titleLead: "Tudo o que cerca o terminal, ",
+    titleLead: "Todo seu fluxo de trabalho, ",
     titleEm: "dentro",
     titleTail: " do terminal.",
     lede: "Phantom é um terminal para macOS construído sobre o motor do Ghostty. Em volta dele: uma sidebar que agrupa seus projetos, um editor com language servers, git e worktrees, e os agentes de código que você já usa. Uma janela só, sem alt-tab.",

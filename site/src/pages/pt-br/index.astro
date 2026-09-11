@@ -1,0 +1,13 @@
+---
+import Landing from "../../layouts/Landing.astro";
+import Page from "../../components/landing/Page.astro";
+import { ptBr } from "../../lib/copy";
+---
+
+<Landing
+  copy={ptBr}
+  title="Phantom — um terminal para macOS movido a Ghostty"
+  description="Um terminal para macOS construído sobre o motor do Ghostty, com uma sidebar que agrupa seus projetos, um editor com language servers, git, worktrees, agentes de código e uma loja de extensões."
+>
+  <Page copy={ptBr} />
+</Landing>

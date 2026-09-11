@@ -1,0 +1,16 @@
+---
+import { Code } from "astro:components";
+
+interface Props {
+  label: string;
+  lang: string;
+  body: string;
+}
+
+const { label, lang, body } = Astro.props;
+---
+
+<figure class="code">
+  <figcaption>{label}</figcaption>
+  <Code code={body} lang={lang} theme="dracula" />
+</figure>

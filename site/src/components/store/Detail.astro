@@ -1,0 +1,129 @@
+---
+import Footer from "../landing/Footer.astro";
+import { url, registry as registryURL } from "../../lib/site";
+import {
+  contributeOrder,
+  formatBytes,
+  formatDate,
+  type Extension,
+} from "../../lib/store";
+import type { Copy } from "../../lib/copy";
+
+interface Props {
+  copy: Copy;
+  extension: Extension;
+}
+
+const { copy, extension } = Astro.props;
+const listPath = copy.lang === "en" ? "extensions/" : "pt-br/extensions/";
+const base = url(`extensions/${extension.id}/`);
+const doc = extension.document
+  ? `${url("extension-viewer/")}?doc=${encodeURIComponent(base + extension.document)}&base=${encodeURIComponent(base)}`
+  : null;
+
+const contributes = contributeOrder.filter((k) =>
+  extension.contributes.includes(k),
+);
+
+const facts = [
+  { label: copy.store.fields.version, value: extension.version },
+  { label: copy.store.fields.publisher, value: extension.publisher },
+  { label: copy.store.fields.license, value: extension.license ?? "—" },
+  {
+    label: copy.store.fields.updated,
+    value: formatDate(extension.updated ?? extension.created, copy.htmlLang),
+  },
+  {
+    label: copy.store.fields.requires,
+    value: extension.minimumPhantomVersion ?? "—",
+  },
+  { label: copy.store.fields.size, value: formatBytes(extension.download?.bytes) },
+  { label: copy.store.fields.releases, value: String(extension.releases || 1) },
+];
+---
+
+<section class="detail">
+  <div class="shell">
+    <a class="detail__back" href={url(listPath)}>
+      <span aria-hidden="true">&larr;</span>
+      {copy.store.back}
+    </a>
+
+    <header class="detail__head">
+      {
+        extension.icon && (
+          <img class="detail__icon" src={extension.icon} alt="" width="72" height="72" />
+        )
+      }
+      <div>
+        <h1>{extension.name}</h1>
+        <p class="detail__tagline">{extension.description}</p>
+        <p class="detail__badges">
+          {contributes.map((c) => <span class="tag">{copy.store.contributes[c] ?? c}</span>)}
+        </p>
+      </div>
+    </header>
+
+    <dl class="facts">
+      {
+        facts.map((fact) => (
+          <div>
+            <dt>{fact.label}</dt>
+            <dd>{fact.value}</dd>
+          </div>
+        ))
+      }
+    </dl>
+
+    <div class="note">
+      <h3>{copy.store.install}</h3>
+      <p>{copy.store.installBody}</p>
+      <p class="detail__links">
+        {
+          extension.homepage && (
+            <a href={extension.homepage}>{copy.store.openRegistry}</a>
+          )
+        }
+        {
+          extension.download && (
+            <a href={extension.download.url}>{copy.store.download}</a>
+          )
+        }
+      </p>
+    </div>
+
+    {
+      doc ? (
+        <div class="doc">
+          <iframe
+            src={doc}
+            title={extension.name}
+            loading="lazy"
+            data-doc
+            height="1200"
+          />
+        </div>
+      ) : (
+        <p class="store__empty">{copy.store.documentMissing}</p>
+      )
+    }
+  </div>
+</section>
+
+<Footer copy={copy} />
+
+<script is:inline>
+  (() => {
+    const frame = document.querySelector("[data-doc]");
+    if (!frame) return;
+    window.addEventListener("message", (event) => {
+      if (event.origin !== location.origin) return;
+      const data = event.data;
+      if (!data || data.type !== "phantom-viewer-height") return;
+      const height = Number(data.height);
+      if (Number.isFinite(height) && height > 200) {
+        frame.style.height = `${height + 24}px`;
+      }
+    });
+  })();
+</script>

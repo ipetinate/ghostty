@@ -1,0 +1,85 @@
+---
+import Footer from "../landing/Footer.astro";
+import { dmg, dmgArm64, releases, version, minMacOS } from "../../lib/site";
+import type { Copy } from "../../lib/copy";
+
+interface Props {
+  copy: Copy;
+}
+
+const { copy } = Astro.props;
+
+const targets = [
+  {
+    ...copy.downloads.targets.universal,
+    ready: true,
+    href: dmg,
+    meta: [`v${version}`, copy.downloads.checksum],
+  },
+  {
+    ...copy.downloads.targets.arm,
+    ready: true,
+    href: dmgArm64,
+    meta: [`v${version}`, copy.downloads.checksum],
+  },
+  { ...copy.downloads.targets.linux, ready: false, href: null, meta: [] },
+];
+---
+
+<section class="downloads">
+  <div class="shell">
+    <h1 class="store__title">{copy.downloads.title}</h1>
+    <p class="store__lede">{copy.downloads.lede}</p>
+
+    <ul class="targets">
+      {
+        targets.map((target) => (
+          <li class:list={["target", !target.ready && "target--soon"]}>
+            <div class="target__head">
+              <h2>{target.name}</h2>
+              <span class="target__status">
+                {target.ready ? copy.downloads.now : copy.downloads.soon}
+              </span>
+            </div>
+            <p class="target__detail">{target.detail}</p>
+            {target.meta.length > 0 && (
+              <p class="target__meta">
+                {target.meta.map((item, i) => (
+                  <>
+                    {i > 0 && <> &middot; </>}
+                    <span>{item}</span>
+                  </>
+                ))}
+              </p>
+            )}
+            {target.href && (
+              <p class="target__action">
+                <a class="btn btn--primary" href={target.href}>
+                  {copy.downloads.get}
+                </a>
+                <a class="btn btn--ghost" href={releases}>
+                  {copy.download.other}
+                  <span class="btn__arrow" aria-hidden="true">
+                    &rarr;
+                  </span>
+                </a>
+              </p>
+            )}
+          </li>
+        ))
+      }
+    </ul>
+
+    <div class="note">
+      <h3>{copy.download.gatekeeperTitle}</h3>
+      <p set:html={copy.download.gatekeeperBody} />
+    </div>
+
+    <div class="note">
+      <h3>{copy.download.updatesTitle}</h3>
+      <p set:html={copy.download.updatesBody} />
+    </div>
+  </div>
+</section>
+
+<Footer copy={copy} />

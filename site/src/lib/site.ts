@@ -12,7 +12,8 @@ export const dmgArm64 = `${repo}/releases/latest/download/Phantom-arm64.dmg`;
 export const releases = `${repo}/releases`;
 export const ghostty = "https://ghostty.org";
 
-export const version = "0.21.0-beta";
+/* The version a visitor can download comes from the release itself —
+   see scripts/check-downloads.mjs and src/data/downloads.json. */
 export const minMacOS = "13";
 export const mcpToolCount = 25;
 export const agentCount = 6;

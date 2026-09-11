@@ -1,7 +1,8 @@
 ---
 import Footer from "../landing/Footer.astro";
 import { Icon } from "astro-icon/components";
-import { dmg, dmgArm64, releases, version, minMacOS } from "../../lib/site";
+import { dmg, dmgArm64, releases } from "../../lib/site";
+import { formatBytes } from "../../lib/store";
 import type { Copy } from "../../lib/copy";
 import downloads from "../../data/downloads.json";
 
@@ -16,18 +17,28 @@ const mac = [
   {
     ...copy.downloads.targets.universal,
     icon: "apple" as const,
-    ready: downloads.available.universal,
-    href: downloads.available.universal ? dmg : null,
-    meta: downloads.available.universal
-      ? [`v${version}`, copy.downloads.checksum]
+    ready: downloads.targets.universal.available,
+    href: downloads.targets.universal.available ? dmg : null,
+    meta: downloads.targets.universal.available
+      ? [
+          `v${downloads.version}`,
+          formatBytes(downloads.targets.universal.bytes),
+          copy.downloads.checksum,
+        ].filter((item) => item !== "—")
       : [],
   },
   {
     ...copy.downloads.targets.arm,
     icon: "apple" as const,
-    ready: downloads.available.arm,
-    href: downloads.available.arm ? dmgArm64 : null,
-    meta: downloads.available.arm ? [`v${version}`, copy.downloads.checksum] : [],
+    ready: downloads.targets.arm.available,
+    href: downloads.targets.arm.available ? dmgArm64 : null,
+    meta: downloads.targets.arm.available
+      ? [
+          `v${downloads.version}`,
+          formatBytes(downloads.targets.arm.bytes),
+          copy.downloads.checksum,
+        ].filter((item) => item !== "—")
+      : [],
   },
 ];
 const others = [

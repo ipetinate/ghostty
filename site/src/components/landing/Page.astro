@@ -5,6 +5,7 @@ import Tour from "./Tour.astro";
 import CodeCard from "./CodeCard.astro";
 import Footer from "./Footer.astro";
 import { url, releases, ghostty } from "../../lib/site";
+import downloads from "../../data/downloads.json";
 import type { Copy } from "../../lib/copy";
 
 interface Props {
@@ -31,7 +32,7 @@ const downloadPath = copy.lang === "en" ? "download/" : "pt-br/download/";
     </div>
     <p class="hero__meta">
       {
-        copy.hero.meta.map((item, i) => (
+        [`v${downloads.version}`, ...copy.hero.meta].map((item, i) => (
           <>
             {i > 0 && <> &middot; </>}
             <span>{item}</span>

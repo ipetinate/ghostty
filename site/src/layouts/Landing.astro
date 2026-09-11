@@ -26,8 +26,11 @@ const alternate = copy.lang === "en" ? url("pt-br/") : url("");
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
-    <link rel="icon" href={url("favicon.svg")} type="image/svg+xml" />
-    <link rel="apple-touch-icon" href={url("phantom-appicon-256.png")} />
+    <link rel="icon" href={url("favicon.ico")} sizes="any" />
+    <link rel="icon" href={url("favicon-32.png")} type="image/png" sizes="32x32" />
+    <link rel="icon" href={url("favicon-16.png")} type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href={url("apple-touch-icon.png")} sizes="180x180" />
+    <link rel="manifest" href={url("site.webmanifest")} />
     <Seo
       title={title}
       description={description}

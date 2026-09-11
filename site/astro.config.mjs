@@ -21,7 +21,7 @@ export default defineConfig({
         src: "./src/assets/phantom-mark.svg",
         replacesTitle: false,
       },
-      favicon: "/favicon.svg",
+      favicon: "/favicon.ico",
       /* Starlight writes og:title, og:description, og:url and og:type per
          page; these are the rest, the same on every one of them. */
       head: [
@@ -33,6 +33,10 @@ export default defineConfig({
         { tag: "meta", attrs: { property: "og:image:alt", content: OG_ALT } },
         { tag: "meta", attrs: { name: "twitter:image", content: `${SITE}/og.jpg` } },
         { tag: "meta", attrs: { name: "twitter:image:alt", content: OG_ALT } },
+        { tag: "link", attrs: { rel: "icon", href: "/favicon-32.png", type: "image/png", sizes: "32x32" } },
+        { tag: "link", attrs: { rel: "icon", href: "/favicon-16.png", type: "image/png", sizes: "16x16" } },
+        { tag: "link", attrs: { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" } },
+        { tag: "link", attrs: { rel: "manifest", href: "/site.webmanifest" } },
         { tag: "meta", attrs: { name: "theme-color", content: "#060608" } },
         { tag: "meta", attrs: { name: "color-scheme", content: "dark" } },
         { tag: "meta", attrs: { name: "author", content: "Isac Petinate" } },

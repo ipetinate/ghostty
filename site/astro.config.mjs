@@ -2,6 +2,7 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
+import icon from "astro-icon";
 
 export default defineConfig({
   site: "https://ipetinate.github.io",
@@ -83,5 +84,6 @@ export default defineConfig({
       credits: false,
     }),
     sitemap(),
+    icon({ include: { "fa6-brands": ["apple", "linux"] } }),
   ],
 });

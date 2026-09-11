@@ -1,7 +1,9 @@
 ---
 import Footer from "../landing/Footer.astro";
+import { Icon } from "astro-icon/components";
 import { dmg, dmgArm64, releases, version, minMacOS } from "../../lib/site";
 import type { Copy } from "../../lib/copy";
+import downloads from "../../data/downloads.json";
 
 interface Props {
   copy: Copy;
@@ -9,20 +11,33 @@ interface Props {
 
 const { copy } = Astro.props;
 
-const targets = [
+/** The two macOS builds sit side by side; anything else runs full width. */
+const mac = [
   {
     ...copy.downloads.targets.universal,
-    ready: true,
-    href: dmg,
-    meta: [`v${version}`, copy.downloads.checksum],
+    icon: "apple" as const,
+    ready: downloads.available.universal,
+    href: downloads.available.universal ? dmg : null,
+    meta: downloads.available.universal
+      ? [`v${version}`, copy.downloads.checksum]
+      : [],
   },
   {
     ...copy.downloads.targets.arm,
-    ready: true,
-    href: dmgArm64,
-    meta: [`v${version}`, copy.downloads.checksum],
+    icon: "apple" as const,
+    ready: downloads.available.arm,
+    href: downloads.available.arm ? dmgArm64 : null,
+    meta: downloads.available.arm ? [`v${version}`, copy.downloads.checksum] : [],
   },
-  { ...copy.downloads.targets.linux, ready: false, href: null, meta: [] },
+];
+const others = [
+  {
+    ...copy.downloads.targets.linux,
+    icon: "linux" as const,
+    ready: false,
+    href: null,
+    meta: [] as string[],
+  },
 ];
 ---
 
@@ -31,11 +46,52 @@ const targets = [
     <h1 class="store__title">{copy.downloads.title}</h1>
     <p class="store__lede">{copy.downloads.lede}</p>
 
-    <ul class="targets">
+    <ul class="targets targets--pair">
       {
-        targets.map((target) => (
+        mac.map((target) => (
           <li class:list={["target", !target.ready && "target--soon"]}>
             <div class="target__head">
+              <Icon name={`fa6-brands:${target.icon}`} class="target__icon" size={20} />
+              <h2>{target.name}</h2>
+              <span class="target__status">
+                {target.ready ? copy.downloads.now : copy.downloads.soon}
+              </span>
+            </div>
+            <p class="target__detail">{target.detail}</p>
+            {target.meta.length > 0 && (
+              <p class="target__meta">
+                {target.meta.map((item, i) => (
+                  <>
+                    {i > 0 && <> &middot; </>}
+                    <span>{item}</span>
+                  </>
+                ))}
+              </p>
+            )}
+            {target.href && (
+              <p class="target__action">
+                <a class="btn btn--primary" href={target.href}>
+                  {copy.downloads.get}
+                </a>
+                <a class="btn btn--ghost" href={releases}>
+                  {copy.download.other}
+                  <span class="btn__arrow" aria-hidden="true">
+                    &rarr;
+                  </span>
+                </a>
+              </p>
+            )}
+          </li>
+        ))
+      }
+    </ul>
+
+    <ul class="targets">
+      {
+        others.map((target) => (
+          <li class:list={["target", !target.ready && "target--soon"]}>
+            <div class="target__head">
+              <Icon name={`fa6-brands:${target.icon}`} class="target__icon" size={20} />
               <h2>{target.name}</h2>
               <span class="target__status">
                 {target.ready ? copy.downloads.now : copy.downloads.soon}

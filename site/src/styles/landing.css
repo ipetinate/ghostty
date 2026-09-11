@@ -1634,3 +1634,36 @@ p {
 .feature__links .feature__more {
   margin-top: 0;
 }
+
+/* The two macOS builds read as a pair; anything else runs full width. */
+.targets--pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.targets--pair .target {
+  display: flex;
+  flex-direction: column;
+}
+
+.targets--pair .target__detail {
+  flex: 1;
+}
+
+.target__icon {
+  flex: none;
+  color: var(--text-2);
+  transform: translateY(0.15rem);
+}
+
+.target--soon .target__icon {
+  color: var(--text-3);
+}
+
+@media (max-width: 54rem) {
+  .targets--pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

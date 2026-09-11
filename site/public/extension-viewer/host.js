@@ -19,14 +19,46 @@ function fail(message) {
   report();
 }
 
+/**
+ * How tall the rendered document actually is.
+ *
+ * Not `documentElement.scrollHeight`: the viewer's stylesheet stretches the
+ * page to the frame with `min-height: 100vh`, so that number is the frame's
+ * own height. Reporting it made the parent grow the frame, which grew the
+ * number, which grew the frame — a page that scrolled on its own and ran to
+ * thousands of empty pixels.
+ *
+ * The bottom edge of the last laid-out child does not move when the frame
+ * grows, so measuring it settles after one pass.
+ */
+function contentHeight() {
+  const root = document.getElementById("root");
+  if (!root) return 0;
+  let bottom = 0;
+  for (const child of root.children) {
+    const rect = child.getBoundingClientRect();
+    if (rect.height === 0 && rect.width === 0) continue;
+    bottom = Math.max(bottom, rect.bottom + window.scrollY);
+  }
+  if (bottom === 0) return 0;
+  const padding = parseFloat(getComputedStyle(root).paddingBottom) || 0;
+  return Math.ceil(bottom + padding);
+}
+
+let lastReported = 0;
+let pending = false;
+
 function report() {
-  const height = Math.ceil(
-    Math.max(
-      document.documentElement.scrollHeight,
-      document.body?.scrollHeight ?? 0,
-    ),
-  );
-  parent.postMessage({ type: "phantom-viewer-height", height }, location.origin);
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => {
+    pending = false;
+    const height = contentHeight();
+    /* A frame that never measured anything keeps whatever it had. */
+    if (height < 1 || Math.abs(height - lastReported) <= 2) return;
+    lastReported = height;
+    parent.postMessage({ type: "phantom-viewer-height", height }, location.origin);
+  });
 }
 
 async function ready(timeoutMs = 8000) {
@@ -47,7 +79,7 @@ if (!doc) {
     const source = await res.text();
     if (!(await ready())) throw new Error("the viewer did not start");
     window.phantomViewer.render({ source, baseURL: base, theme });
-    new ResizeObserver(report).observe(document.documentElement);
+    new ResizeObserver(report).observe(document.getElementById("root"));
     setTimeout(report, 60);
     setTimeout(report, 400);
     setTimeout(report, 1200);

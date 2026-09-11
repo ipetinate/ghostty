@@ -410,9 +410,12 @@ enum MCPTerminalTools {
                 name: "focus_terminal",
                 description: """
                     Bring a terminal to the front of its window, by the id \
-                    `list_terminals` gave it. Use it to put in front of the reader \
-                    the terminal you want them to look at — one waiting on input, \
-                    or one you just created for them.
+                    `list_terminals` gave it, and bring Phantom forward with it. \
+                    Use it to put in front of the reader the terminal you want \
+                    them to look at — one waiting on input, or one you just \
+                    created for them. A window sitting on another Space is left \
+                    where the reader put it; `window_came_forward` says which \
+                    happened.
                     """,
                 schema: MCPSchema.object([
                     "terminal": MCPSchema.string(
@@ -429,9 +432,16 @@ enum MCPTerminalTools {
                 let controller = window.windowController as? TerminalController
                 controller?.sidebarTabManager?.select(tab)
 
+                if !NSApp.isActive {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                let front = WindowSpaceSafety.orderFront(
+                    window, .keyAndFront, from: .mcpFocusRequest)
+
                 answer(.json(.object([
                     "terminal": .string(id.uuidString),
                     "title": .string(displayTitle(tab)),
+                    "window_came_forward": .bool(front),
                 ])))
             })
     }

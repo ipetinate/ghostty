@@ -14,6 +14,7 @@ enum WindowSpaceSafety {
         case reopenRescue = "reopen rescue"
         case selectRescue = "select rescue"
         case surfaceFocusRequest = "surface focus request"
+        case mcpFocusRequest = "mcp focus request"
     }
 
     static func mayOrderFront(appIsActive: Bool, isOnActiveSpace: Bool) -> Bool {

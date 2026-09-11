@@ -14,6 +14,7 @@ interface Props {
 
 const { copy } = Astro.props;
 const downloadPath = copy.lang === "en" ? "download/" : "pt-br/download/";
+const count = new Intl.NumberFormat(copy.htmlLang);
 ---
 
 <section class="hero">
@@ -32,7 +33,13 @@ const downloadPath = copy.lang === "en" ? "download/" : "pt-br/download/";
     </div>
     <p class="hero__meta">
       {
-        [`v${downloads.version}`, ...copy.hero.meta].map((item, i) => (
+        [
+          `v${downloads.version}`,
+          ...(downloads.counter.known && downloads.counter.total > 0
+            ? [`${count.format(downloads.counter.total)} ${copy.hero.counter}`]
+            : []),
+          ...copy.hero.meta,
+        ].map((item, i) => (
           <>
             {i > 0 && <> &middot; </>}
             <span>{item}</span>

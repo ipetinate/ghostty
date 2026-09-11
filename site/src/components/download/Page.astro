@@ -11,6 +11,7 @@ interface Props {
 }
 
 const { copy } = Astro.props;
+const count = new Intl.NumberFormat(copy.htmlLang);
 
 /** The two macOS builds sit side by side; anything else runs full width. */
 const mac = [
@@ -56,6 +57,15 @@ const others = [
   <div class="shell">
     <h1 class="store__title">{copy.downloads.title}</h1>
     <p class="store__lede">{copy.downloads.lede}</p>
+
+    {
+      downloads.counter.known && downloads.counter.total > 0 && (
+        <p class="store__meta">
+          <strong>{count.format(downloads.counter.total)}</strong>{" "}
+          {copy.downloads.counted} v{downloads.counter.since}
+        </p>
+      )
+    }
 
     <ul class="targets targets--pair">
       {

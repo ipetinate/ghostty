@@ -22,6 +22,7 @@ export type Copy = {
     download: string;
     docs: string;
     meta: string[];
+    counter: string;
     shotAlt: string;
   };
   credit: { label: string; body: string[] };
@@ -85,6 +86,7 @@ export type Copy = {
     lede: string;
     now: string;
     soon: string;
+    counted: string;
     get: string;
     checksum: string;
     targets: {
@@ -115,6 +117,7 @@ export const en: Copy = {
     download: "Download for macOS",
     docs: "Read the documentation",
     meta: ["macOS 13 or later", "Apple silicon and Intel", "MIT"],
+    counter: "downloads",
     shotAlt:
       "The Phantom window: sidebar with grouped terminals on the left, an editor and a terminal on the right.",
   },
@@ -351,6 +354,7 @@ export const en: Copy = {
     lede: "Two builds today, and the one the fork is working towards. Every release is published from this repository, with the appcast each build updates itself from beside it.",
     now: "Available",
     soon: "Coming soon",
+    counted: "downloads since",
     get: "Download the .dmg",
     checksum: "macOS 13 Ventura or later",
     targets: {
@@ -391,6 +395,7 @@ export const ptBr: Copy = {
     download: "Baixar para macOS",
     docs: "Ler a documentação",
     meta: ["macOS 13 ou superior", "Apple silicon e Intel", "MIT"],
+    counter: "downloads",
     shotAlt:
       "A janela do Phantom: sidebar com terminais agrupados à esquerda, um editor e um terminal à direita.",
   },
@@ -627,6 +632,7 @@ export const ptBr: Copy = {
     lede: "Dois builds hoje, e o que o fork ainda persegue. Todo release sai deste reposit\u00f3rio, com o appcast pelo qual cada build se atualiza ao lado.",
     now: "Dispon\u00edvel",
     soon: "Em breve",
+    counted: "downloads desde",
     get: "Baixar o .dmg",
     checksum: "macOS 13 Ventura ou superior",
     targets: {

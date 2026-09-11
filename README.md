@@ -23,7 +23,10 @@
   </p>
 </p>
 
-<img width="1710" height="1073" alt="Screenshot 2026-08-23 at 15 51 26" src="https://github.com/user-attachments/assets/4b199a7b-6ce8-4abe-8d3d-c28cccd96ad2" />
+<video width="1024" height="472" controls>
+  <source src="https://raw.githubusercontent.com/ipetinate/phantom/refs/heads/main/site/public/clips/phantom-tour.mp4" type="video/mp4">
+  This is a tour guide video. And your browser does not support the video tag.
+</video>
 
 
 

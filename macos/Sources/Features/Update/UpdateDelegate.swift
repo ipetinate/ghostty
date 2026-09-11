@@ -1,6 +1,14 @@
 import Sparkle
 import Cocoa
 
+private let feedURL: String = {
+    let architectures = Bundle.main.executableArchitectures ?? []
+    let appleSiliconOnly = architectures.count == 1 &&
+        architectures[0].intValue == NSBundleExecutableArchitectureARM64
+    let asset = appleSiliconOnly ? "appcast-arm64.xml" : "appcast.xml"
+    return "https://github.com/ipetinate/phantom/releases/latest/download/\(asset)"
+}()
+
 extension UpdateDriver: SPUUpdaterDelegate {
     func feedURLString(for updater: SPUUpdater) -> String? {
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else {
@@ -24,7 +32,7 @@ extension UpdateDriver: SPUUpdaterDelegate {
         // failure `checkForUpdates` used to be stubbed out to prevent.
         switch appDelegate.ghostty.config.autoUpdateChannel {
         case .tip, .stable:
-            return "https://github.com/ipetinate/phantom/releases/latest/download/appcast.xml"
+            return feedURL
         }
     }
 

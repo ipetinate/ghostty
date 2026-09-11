@@ -3,13 +3,24 @@ name: Phantom Release
 # The fork's release pipeline. Ghostty's release-tag.yml is gone from this
 # repo: it used infrastructure this fork has no access to (paid Namespace
 # runners, Nix, a real Developer ID cert, R2).
-# This builds, ad-hoc signs, packages and publishes a Phantom.dmg to this
-# repo's own Releases page on every push to main — together with the Sparkle
-# appcast the app updates itself from, so the Releases page is the whole of
+# This builds, ad-hoc signs, packages and publishes two DMGs to this repo's
+# own Releases page on every push to main — a universal Phantom.dmg and the
+# Apple-Silicon-only Phantom-arm64.dmg thinned from it — each with the Sparkle
+# appcast that build updates itself from, so the Releases page is the whole of
 # the update infrastructure.
 on:
   push:
     branches: [main]
+    # A push that only touches the site or the two root documents is not a
+    # release. Without this the job reaches the version step, finds the tag
+    # already exists and fails on purpose — a red main for a documentation
+    # commit. paths-ignore skips only when *every* changed file matches, so a
+    # real release still runs.
+    paths-ignore:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+      - "README.md"
+      - "FEATURES.md"
   workflow_dispatch:
 
 concurrency:
@@ -95,6 +106,40 @@ jobs:
           mv Phantom*.dmg Phantom.dmg
           test -f Phantom.dmg
 
+      - name: Thin a copy of the app to Apple Silicon
+        run: |
+          set -euo pipefail
+          rm -rf arm64
+          mkdir arm64
+          ditto zig-out/Phantom.app arm64/Phantom.app
+          thinned=0
+          while IFS= read -r -d '' file; do
+            archs=$(lipo -archs "$file" 2>/dev/null) || continue
+            case "$archs" in *x86_64*) ;; *) continue ;; esac
+            case "$archs" in *arm64*) ;; *) continue ;; esac
+            lipo -thin arm64 "$file" -output "$file.thin"
+            cat "$file.thin" > "$file"
+            rm -f "$file.thin"
+            thinned=$((thinned + 1))
+          done < <(find arm64/Phantom.app -type f -print0)
+          if [ "$thinned" -eq 0 ]; then
+            echo "::error::nothing in the bundle was universal — the two DMGs would carry the same binaries" >&2
+            exit 1
+          fi
+          echo "thinned ${thinned} binaries"
+          codesign --force --deep --sign - \
+            --entitlements macos/GhosttyReleaseLocal.entitlements \
+            arm64/Phantom.app
+          codesign --verify --deep --strict arm64/Phantom.app
+
+      - name: Create Apple Silicon DMG
+        run: |
+          set -euo pipefail
+          mkdir -p dmg-arm64
+          create-dmg arm64/Phantom.app dmg-arm64 || true
+          mv dmg-arm64/Phantom*.dmg Phantom-arm64.dmg
+          test -f Phantom-arm64.dmg
+
       # The tools come from Sparkle's own release, pinned and checksummed like
       # every action in this file: the signature they produce is the one the
       # Sparkle framework inside the app verifies, and a tool that is not the
@@ -125,7 +170,7 @@ jobs:
       # The previous feed is fetched so history survives: a reader several
       # versions behind still finds an entry. A missing feed (the first
       # release) starts a new one, and only that case is allowed to fail.
-      - name: Sign and generate appcast
+      - name: Sign and generate appcasts
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           PHANTOM_VERSION: ${{ steps.version.outputs.short_version }}
@@ -135,16 +180,25 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${SPARKLE_PRIVATE_KEY}" ]; then
-            echo "::error::SPARKLE_PRIVATE_KEY is not set — the DMG cannot be signed, so no update can be published" >&2
+            echo "::error::SPARKLE_PRIVATE_KEY is not set — the DMGs cannot be signed, so no update can be published" >&2
             exit 1
           fi
-          echo "${SPARKLE_PRIVATE_KEY}" | sign_update --ed-key-file - Phantom.dmg > sign_update.txt
-          cat sign_update.txt
-          curl -sSfL -o appcast.xml \
-            "https://github.com/ipetinate/phantom/releases/latest/download/appcast.xml" \
-            || { echo "no previous appcast — starting a new feed"; : > appcast.xml; }
-          PHANTOM_COMMIT="${PHANTOM_COMMIT:0:9}" python3 ./dist/macos/phantom_appcast.py
-          xmllint --noout appcast.xml
+          export PHANTOM_COMMIT="${PHANTOM_COMMIT:0:9}"
+          for entry in "Universal|Phantom.dmg|appcast.xml" "Apple Silicon|Phantom-arm64.dmg|appcast-arm64.xml"; do
+            IFS='|' read -r flavor dmg feed <<< "$entry"
+            signature="${feed%.xml}.sig.txt"
+            echo "${SPARKLE_PRIVATE_KEY}" | sign_update --ed-key-file - "$dmg" > "$signature"
+            cat "$signature"
+            curl -sSfL -o "$feed" \
+              "https://github.com/ipetinate/phantom/releases/latest/download/${feed}" \
+              || { echo "no previous ${feed} — starting a new feed"; : > "$feed"; }
+            PHANTOM_FLAVOR="$flavor" \
+            PHANTOM_DMG="$dmg" \
+            PHANTOM_APPCAST="$feed" \
+            PHANTOM_SIGNATURE="$signature" \
+              python3 ./dist/macos/phantom_appcast.py
+            xmllint --noout "$feed"
+          done
 
       - name: Tag
         run: |
@@ -158,5 +212,5 @@ jobs:
           gh release create ${{ steps.version.outputs.tag }} \
             --title "${{ steps.version.outputs.title }}" \
             --generate-notes \
-            --notes 'Ad-hoc signed, not notarized — on first launch, right-click the app and choose **Open** (or run `xattr -cr Phantom.app` after unzipping) instead of double-clicking, or Gatekeeper will refuse it as from an unidentified developer. Later versions arrive through Phantom > Check for Updates.' \
-            Phantom.dmg appcast.xml
+            --notes 'Take **Phantom.dmg** to run on any Mac, or **Phantom-arm64.dmg** for an Apple Silicon build at half the size — the two carry the same code, and each keeps updating within its own flavour. Ad-hoc signed, not notarized — on first launch, right-click the app and choose **Open** (or run `xattr -cr Phantom.app` after unzipping) instead of double-clicking, or Gatekeeper will refuse it as from an unidentified developer. Later versions arrive through Phantom > Check for Updates.' \
+            Phantom.dmg Phantom-arm64.dmg appcast.xml appcast-arm64.xml

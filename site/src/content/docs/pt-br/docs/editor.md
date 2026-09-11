@@ -14,7 +14,7 @@ lado de `build` ou `dev`, não outro aplicativo.
 - Clique em um caminho no painel **Git**.
 - Pressione ⌘K numa linha do terminal que nomeia um arquivo, ou ⇧⌘K para
   escolher entre as linhas encontradas.
-- Peça a um agente, por [`open_file`](/phantom/pt-br/docs/mcp/).
+- Peça a um agente, por [`open_file`](/pt-br/docs/mcp/).
 
 Onde o arquivo cai — na mesma célula ou numa nova — segue a configuração de
 destino nas Configurações.
@@ -50,9 +50,9 @@ as mesmas células e os mesmos arquivos nelas.
 | Imagem, PDF, SVG | Um visualizador, no tamanho certo |
 | CSV | Uma tabela |
 | Arquivo com marcadores de conflito | Um resolvedor de conflitos, no lugar |
-| Arquivo que uma extensão reivindica | O editor daquela extensão — veja [Escrever uma extensão](/phantom/pt-br/docs/extensions-authoring/) |
+| Arquivo que uma extensão reivindica | O editor daquela extensão — veja [Escrever uma extensão](/pt-br/docs/extensions-authoring/) |
 
 ## Diffs
 
 Um arquivo alterado abre como diff, dividido na horizontal ou na vertical, pelo
-painel Git. Veja [Git](/phantom/pt-br/docs/git/).
+painel Git. Veja [Git](/pt-br/docs/git/).

@@ -15,7 +15,7 @@ All, Languages, Formatters, Themes, Icons, Agents — and sorted by name, by
 recently updated, or by publisher.
 
 Everything the store lists is also browsable on this site, at
-[Extensions](/phantom/extensions/) — the same index, the same document pages.
+[Extensions](/extensions/) — the same index, the same document pages.
 
 The registry is [ipetinate/phantom-extensions](https://github.com/ipetinate/phantom-extensions).
 Its index is a single JSON file published as a release asset, so the store is a
@@ -83,4 +83,4 @@ decision stored alongside would be one the author could grant themselves.
 
 ## Writing one
 
-See [Writing an extension](/phantom/docs/extensions-authoring/).
+See [Writing an extension](/docs/extensions-authoring/).

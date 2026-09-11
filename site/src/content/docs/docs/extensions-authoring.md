@@ -66,7 +66,7 @@ Each key has a declared maximum count.
 
 `settings` is what a server reads back through `workspace/configuration`. A
 dotted section walks into the object; a section you did not declare is answered
-as null. See [Language servers](/phantom/docs/language-servers/).
+as null. See [Language servers](/docs/language-servers/).
 
 ## Views: an extension that draws
 

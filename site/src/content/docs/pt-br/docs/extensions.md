@@ -16,7 +16,7 @@ tipo — All, Languages, Formatters, Themes, Icons, Agents — e ordenado por no
 por atualização recente ou por publisher.
 
 Tudo o que a loja lista também dá para navegar neste site, em
-[Extensões](/phantom/pt-br/extensions/) — o mesmo índice, as mesmas páginas de
+[Extensões](/pt-br/extensions/) — o mesmo índice, as mesmas páginas de
 documento.
 
 O registro é [ipetinate/phantom-extensions](https://github.com/ipetinate/phantom-extensions).
@@ -89,4 +89,4 @@ sozinho.
 
 ## Escrever uma
 
-Veja [Escrever uma extensão](/phantom/pt-br/docs/extensions-authoring/).
+Veja [Escrever uma extensão](/pt-br/docs/extensions-authoring/).

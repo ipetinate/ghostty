@@ -7,7 +7,7 @@ The suffix says how finished a version is: `-beta` while the product is usable
 but still taking fixes, and nothing at all once it is stable. There are no
 `-dev` builds; work in progress lives on a branch.
 
-The user-facing documentation is at <https://ipetinate.github.io/phantom/>.
+The user-facing documentation is at <https://phantom.nertec.com.br/>.
 
 ## What comes from Ghostty
 

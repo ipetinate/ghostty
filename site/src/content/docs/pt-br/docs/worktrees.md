@@ -52,4 +52,4 @@ arquivos administrativos mudaram de lugar, e faz prune das que perderam o
 diretório. Remover uma worktree é apagar um diretório de trabalho de verdade,
 e forçado apaga um com trabalho não commitado dentro — por isso um agente
 precisa da capacidade `worktree` própria para fazer isso. Veja
-[O servidor MCP](/phantom/pt-br/docs/mcp/).
+[O servidor MCP](/pt-br/docs/mcp/).

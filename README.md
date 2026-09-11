@@ -11,9 +11,9 @@
     session one click away — on top of the terminal
     <a href="https://ghostty.org">Ghostty</a> already got right.
     <br />
-    <a href="https://ipetinate.github.io/phantom/">Website</a>
+    <a href="https://phantom.nertec.com.br/">Website</a>
     ·
-    <a href="https://ipetinate.github.io/phantom/docs/install/">Documentation</a>
+    <a href="https://phantom.nertec.com.br/docs/install/">Documentation</a>
     ·
     <a href="#install">Install</a>
     ·
@@ -110,7 +110,7 @@ Every later version arrives in place through **Phantom > Check for Updates**.
 
 The full list, with the release each piece landed in, is in
 [`FEATURES.md`](FEATURES.md). Everything above is documented at
-<https://ipetinate.github.io/phantom/docs/install/>.
+<https://phantom.nertec.com.br/docs/install/>.
 
 ## Built on Ghostty
 

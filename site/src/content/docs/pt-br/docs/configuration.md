@@ -23,7 +23,7 @@ numa chave definida nos dois — mova um valor para o `config` e apague-o do
 painel para mantê-lo.
 
 Um build cujo bundle identifier não é `com.ipetinate.phantom` usa um diretório
-próprio. Veja [Compilar do fonte](/phantom/pt-br/docs/build-from-source/).
+próprio. Veja [Compilar do fonte](/pt-br/docs/build-from-source/).
 
 ## As chaves que o Phantom acrescenta
 

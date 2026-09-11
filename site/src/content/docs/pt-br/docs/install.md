@@ -45,7 +45,7 @@ Faça um destes no lugar:
   ```
 
 Isso é só uma vez. Toda versão seguinte chega pelo
-[Sparkle](/phantom/pt-br/docs/updates/) e nunca mais pergunta.
+[Sparkle](/pt-br/docs/updates/) e nunca mais pergunta.
 
 ## O que o Phantom escreve
 
@@ -61,7 +61,7 @@ Isso é só uma vez. Toda versão seguinte chega pelo
 
 O Phantom mantém o próprio diretório de configuração em vez de dividir o do
 Ghostty, então os dois convivem na mesma máquina. Veja
-[Configuração](/phantom/pt-br/docs/configuration/).
+[Configuração](/pt-br/docs/configuration/).
 
 ## Desinstalar
 

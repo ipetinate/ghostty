@@ -37,6 +37,6 @@ Ele volta pelo menu Ajuda quando você quiser.
 
 ## Depois
 
-- Aponte um grupo para uma pasta — [Sidebar e grupos](/phantom/pt-br/docs/sidebar-and-groups/)
-- Instale uma linguagem — [Extensões](/phantom/pt-br/docs/extensions/)
-- Deixe um agente dirigir a janela — [O servidor MCP](/phantom/pt-br/docs/mcp/)
+- Aponte um grupo para uma pasta — [Sidebar e grupos](/pt-br/docs/sidebar-and-groups/)
+- Instale uma linguagem — [Extensões](/pt-br/docs/extensions/)
+- Deixe um agente dirigir a janela — [O servidor MCP](/pt-br/docs/mcp/)

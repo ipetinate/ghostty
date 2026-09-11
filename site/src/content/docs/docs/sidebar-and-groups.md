@@ -16,9 +16,9 @@ A rail at the top of the sidebar selects one pane at a time:
 |---|---|
 | **Terminals** | Every open terminal, grouped |
 | **Files** | A file explorer for the workspace |
-| **Git** | Status, staging and branch review — see [Git](/phantom/docs/git/) |
-| **Worktrees** | One section per repository — see [Worktrees](/phantom/docs/worktrees/) |
-| **Extensions** | What is installed — see [Extensions](/phantom/docs/extensions/) |
+| **Git** | Status, staging and branch review — see [Git](/docs/git/) |
+| **Worktrees** | One section per repository — see [Worktrees](/docs/worktrees/) |
+| **Extensions** | What is installed — see [Extensions](/docs/extensions/) |
 
 The sidebar collapses with the button in the title bar. Its width is
 `sidebar-width`, in points.
@@ -57,7 +57,7 @@ Settings.
 - **A dev-server port**, as a clickable `:3000` tag, the moment the process in
   that tab binds a port. Detection reads the process and its listening sockets,
   not a configuration file, so it works for any framework with no setup.
-- **The agent's state** — see [Agents](/phantom/docs/agents/).
+- **The agent's state** — see [Agents](/docs/agents/).
 - **The worktree**, when the tab is in one.
 
 ## The project's pull requests

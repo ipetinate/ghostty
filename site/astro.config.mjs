@@ -5,8 +5,8 @@ import sitemap from "@astrojs/sitemap";
 import icon from "astro-icon";
 
 export default defineConfig({
-  site: "https://ipetinate.github.io",
-  base: "/phantom",
+  site: "https://phantom.nertec.com.br",
+  base: "/",
   trailingSlash: "always",
   integrations: [
     starlight({

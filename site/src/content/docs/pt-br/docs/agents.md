@@ -50,4 +50,4 @@ Desligue isso em **Restore agent sessions**, nas Configurações.
 
 Um agente também pode agir sobre a janela em que está rodando: abrir um arquivo
 numa linha, ler a saída de outro terminal, criar uma worktree. Isso é o servidor
-MCP, documentado em [O servidor MCP](/phantom/pt-br/docs/mcp/).
+MCP, documentado em [O servidor MCP](/pt-br/docs/mcp/).

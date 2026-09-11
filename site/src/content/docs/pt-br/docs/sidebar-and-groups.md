@@ -16,9 +16,9 @@ Uma trilha no topo da sidebar seleciona um painel por vez:
 |---|---|
 | **Terminals** | Todo terminal aberto, agrupado |
 | **Files** | Um explorador de arquivos do workspace |
-| **Git** | Status, staging e branch review — veja [Git](/phantom/pt-br/docs/git/) |
-| **Worktrees** | Uma seção por repositório — veja [Worktrees](/phantom/pt-br/docs/worktrees/) |
-| **Extensions** | O que está instalado — veja [Extensões](/phantom/pt-br/docs/extensions/) |
+| **Git** | Status, staging e branch review — veja [Git](/pt-br/docs/git/) |
+| **Worktrees** | Uma seção por repositório — veja [Worktrees](/pt-br/docs/worktrees/) |
+| **Extensions** | O que está instalado — veja [Extensões](/pt-br/docs/extensions/) |
 
 A sidebar recolhe pelo botão na barra de título. A largura é `sidebar-width`,
 em pontos.
@@ -59,7 +59,7 @@ Configurações.
   em que o processo daquela aba abre a porta. A detecção lê o processo e os
   sockets em escuta, não um arquivo de configuração, então funciona com
   qualquer framework e sem setup.
-- **O estado do agente** — veja [Agentes](/phantom/pt-br/docs/agents/).
+- **O estado do agente** — veja [Agentes](/pt-br/docs/agents/).
 - **A worktree**, quando a aba está em uma.
 
 ## Os pull requests do projeto

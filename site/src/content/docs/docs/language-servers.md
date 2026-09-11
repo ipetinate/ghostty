@@ -9,7 +9,7 @@ Since 0.17.0 Phantom has **no built-in table of languages**. Every language
 exists because an extension declared it: its file names, its grammar, its
 formatter and the server that answers questions about it.
 
-Install a language from the store — see [Extensions](/phantom/docs/extensions/).
+Install a language from the store — see [Extensions](/docs/extensions/).
 
 ## What the editor gets from a server
 
@@ -54,7 +54,7 @@ its initialization options, per language. Your override wins over the manifest
 and is marked as yours.
 
 An agent can do the same through
-[`configure_language_server`](/phantom/docs/mcp/), which is why changing a
+[`configure_language_server`](/docs/mcp/), which is why changing a
 server's startup is its own MCP capability rather than part of `run`.
 
 ## When a server is missing

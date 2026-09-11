@@ -43,7 +43,7 @@ Do one of these instead:
   ```
 
 You only do this once. Every later version arrives through
-[Sparkle](/phantom/docs/updates/) and never asks again.
+[Sparkle](/docs/updates/) and never asks again.
 
 ## What Phantom writes
 
@@ -59,7 +59,7 @@ You only do this once. Every later version arrives through
 
 Phantom keeps its own configuration directory rather than sharing Ghostty's, so
 both can be installed on one machine without colliding. See
-[Configuration](/phantom/docs/configuration/).
+[Configuration](/docs/configuration/).
 
 ## Uninstall
 

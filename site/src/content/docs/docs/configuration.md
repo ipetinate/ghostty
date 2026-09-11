@@ -23,7 +23,7 @@ both set — move a value into `config` and delete it from the settings pane to
 keep it.
 
 A build whose bundle identifier is not `com.ipetinate.phantom` uses a directory
-of its own. See [Build from source](/phantom/docs/build-from-source/).
+of its own. See [Build from source](/docs/build-from-source/).
 
 ## The keys Phantom adds
 

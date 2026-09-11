@@ -37,7 +37,7 @@ restart itself under you or interrupt a running agent.
 ## What you have to do once
 
 The first copy you install is ad-hoc signed and not notarized, so Gatekeeper
-asks you to open it explicitly — see [Install](/phantom/docs/install/). Every
+asks you to open it explicitly — see [Install](/docs/install/). Every
 version after that arrives through Sparkle and never asks again.
 
 ## A consequence worth knowing

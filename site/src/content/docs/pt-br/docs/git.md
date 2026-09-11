@@ -16,7 +16,7 @@ do painel.
 
 Toda linha de aba também carrega a branch e um ponto quando o checkout está
 sujo, então você vê o estado sem abrir o painel. Veja
-[Sidebar e grupos](/phantom/pt-br/docs/sidebar-and-groups/).
+[Sidebar e grupos](/pt-br/docs/sidebar-and-groups/).
 
 ## Diffs
 

@@ -40,7 +40,7 @@ não se reinicia por baixo de você nem interrompe um agente rodando.
 
 A primeira cópia que você instala é assinada ad-hoc e não é notarizada, então o
 Gatekeeper pede que você abra explicitamente — veja
-[Instalação](/phantom/pt-br/docs/install/). Toda versão depois dessa chega pelo
+[Instalação](/pt-br/docs/install/). Toda versão depois dessa chega pelo
 Sparkle e nunca mais pergunta.
 
 ## Uma consequência que vale saber

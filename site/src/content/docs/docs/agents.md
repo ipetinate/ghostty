@@ -49,4 +49,4 @@ Turn this off with **Restore agent sessions** in Settings.
 
 An agent can also act on the window it is running in: open a file at a line,
 read another terminal's output, create a worktree. That is the MCP server, and
-it is documented in [The MCP server](/phantom/docs/mcp/).
+it is documented in [The MCP server](/docs/mcp/).

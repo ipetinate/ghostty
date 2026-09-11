@@ -51,4 +51,4 @@ The pane reports a locked worktree and its reason, repairs a worktree whose
 administrative files moved, and prunes the ones whose directory is gone.
 Removing a worktree is a real deletion of a working directory, and forced it
 deletes one with uncommitted work in it — which is why an agent needs its own
-`worktree` capability to do it. See [The MCP server](/phantom/docs/mcp/).
+`worktree` capability to do it. See [The MCP server](/docs/mcp/).

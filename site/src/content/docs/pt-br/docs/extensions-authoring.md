@@ -68,7 +68,7 @@ Cada chave tem um máximo declarado.
 
 `settings` é o que um servidor lê de volta por `workspace/configuration`. Uma
 seção pontuada entra no objeto; uma seção que você não declarou é respondida
-como null. Veja [Language servers](/phantom/pt-br/docs/language-servers/).
+como null. Veja [Language servers](/pt-br/docs/language-servers/).
 
 ## Views: uma extensão que desenha
 

@@ -9,7 +9,7 @@ Desde a 0.17.0 o Phantom **não tem tabela de linguagens embutida**. Toda
 linguagem existe porque uma extensão a declarou: os nomes de arquivo, a
 gramática, o formatador e o servidor que responde sobre ela.
 
-Instale uma linguagem pela loja — veja [Extensões](/phantom/pt-br/docs/extensions/).
+Instale uma linguagem pela loja — veja [Extensões](/pt-br/docs/extensions/).
 
 ## O que o editor ganha de um servidor
 
@@ -56,7 +56,7 @@ argumentos e as opções de inicialização, por linguagem. A sua sobrescrita ve
 o manifesto e fica marcada como sua.
 
 Um agente faz o mesmo por
-[`configure_language_server`](/phantom/pt-br/docs/mcp/), e é por isso que mudar
+[`configure_language_server`](/pt-br/docs/mcp/), e é por isso que mudar
 a inicialização de um servidor é uma capacidade MCP própria, e não parte de
 `run`.
 

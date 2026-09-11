@@ -37,6 +37,6 @@ can always reopen it from the Help menu.
 
 ## Next
 
-- Point a group at a project folder — [Sidebar and groups](/phantom/docs/sidebar-and-groups/)
-- Install a language — [Extensions](/phantom/docs/extensions/)
-- Let an agent drive the window — [The MCP server](/phantom/docs/mcp/)
+- Point a group at a project folder — [Sidebar and groups](/docs/sidebar-and-groups/)
+- Install a language — [Extensions](/docs/extensions/)
+- Let an agent drive the window — [The MCP server](/docs/mcp/)

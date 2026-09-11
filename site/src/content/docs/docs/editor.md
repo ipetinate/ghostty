@@ -14,7 +14,7 @@ Phantom's editor lives in the same pane as the terminal. A file is a tab beside
 - Click a path in the **Git** pane.
 - Press ⌘K on a terminal line that names a file, or ⇧⌘K to pick from the lines
   it found.
-- Ask an agent, through [`open_file`](/phantom/docs/mcp/).
+- Ask an agent, through [`open_file`](/docs/mcp/).
 
 Where a file lands — the same cell, or a new one — follows the destination
 setting in Settings.
@@ -49,9 +49,9 @@ with the same cells and the same files in them.
 | Image, PDF, SVG | A viewer, at the right size |
 | CSV | A table |
 | A file with conflict markers | A conflict resolver, in place |
-| A file an extension claims | That extension's own editor — see [Writing an extension](/phantom/docs/extensions-authoring/) |
+| A file an extension claims | That extension's own editor — see [Writing an extension](/docs/extensions-authoring/) |
 
 ## Diffs
 
 A changed file opens as a diff, split horizontally or vertically, from the Git
-pane. See [Git](/phantom/docs/git/).
+pane. See [Git](/docs/git/).

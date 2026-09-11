@@ -15,7 +15,7 @@ context menu. Switch branch from the picker in the pane header.
 
 Every tab row also carries the branch and a dot when the checkout is dirty, so
 you see the state without opening the pane. See
-[Sidebar and groups](/phantom/docs/sidebar-and-groups/).
+[Sidebar and groups](/docs/sidebar-and-groups/).
 
 ## Diffs
 

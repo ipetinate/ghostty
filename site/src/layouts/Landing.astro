@@ -5,6 +5,8 @@ import "@fontsource-variable/jetbrains-mono/index.css";
 import "../styles/landing.css";
 import Mark from "../components/landing/Mark.astro";
 import { url, repo } from "../lib/site";
+import Seo from "../components/Seo.astro";
+import downloads from "../data/downloads.json";
 import type { Copy } from "../lib/copy";
 
 interface Props {
@@ -24,26 +26,34 @@ const alternate = copy.lang === "en" ? url("pt-br/") : url("");
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
-    <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
     <link rel="icon" href={url("favicon.svg")} type="image/svg+xml" />
     <link rel="apple-touch-icon" href={url("phantom-appicon-256.png")} />
-    <link rel="alternate" hreflang="en" href={new URL(url(""), Astro.site)} />
-    <link
-      rel="alternate"
-      hreflang="pt-BR"
-      href={new URL(url("pt-br/"), Astro.site)}
+    <Seo
+      title={title}
+      description={description}
+      locale={copy.htmlLang === "en" ? "en" : "pt-BR"}
+      canonical={canonical}
+      imageAlt={copy.hero.shotAlt}
     />
-    <meta name="theme-color" content="#060608" />
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonical} />
-    <meta
-      property="og:image"
-      content={new URL(url("phantom-appicon.png"), Astro.site)}
+    <script
+      type="application/ld+json"
+      set:html={JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        name: "Phantom",
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "macOS 13 or later",
+        softwareVersion: downloads.version,
+        url: new URL(url(""), Astro.site).href,
+        downloadUrl: `${repo}/releases/latest`,
+        image: new URL(url("og.jpg"), Astro.site).href,
+        description,
+        license: "https://opensource.org/licenses/MIT",
+        isBasedOn: "https://ghostty.org",
+        author: { "@type": "Person", name: "Isac Petinate", url: "https://github.com/ipetinate" },
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      })}
     />
-    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>

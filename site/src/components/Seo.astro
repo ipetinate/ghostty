@@ -1,0 +1,85 @@
+---
+/**
+ * Everything a link unfurler reads.
+ *
+ * Facebook, WhatsApp, LinkedIn, Instagram, Telegram, Slack, Discord and
+ * iMessage all read Open Graph — there is no per-network namespace to add for
+ * them. X is the one that wants its own set, and it falls back to Open Graph
+ * for anything it does not find. So the work is one good Open Graph block, the
+ * Twitter block beside it, and the absolute URLs both demand.
+ */
+import { url } from "../lib/site";
+
+interface Props {
+  title: string;
+  description: string;
+  locale: "en" | "pt-BR";
+  /** Absolute, and it has to be: a relative one is dropped by every reader. */
+  canonical: URL;
+  image?: string;
+  imageAlt: string;
+  type?: "website" | "article";
+}
+
+const {
+  title,
+  description,
+  locale,
+  canonical,
+  image = "og.jpg",
+  imageAlt,
+  type = "website",
+} = Astro.props;
+
+const site = Astro.site ?? new URL("https://phantom.nertec.com.br");
+const absolute = (path: string) => new URL(url(path), site).href;
+
+const preview = absolute(image);
+const square = absolute("og-square.jpg");
+---
+
+<link rel="canonical" href={canonical.href} />
+<link rel="alternate" hreflang="en" href={absolute("")} />
+<link rel="alternate" hreflang="pt-BR" href={absolute("pt-br/")} />
+<link rel="alternate" hreflang="x-default" href={absolute("")} />
+
+<meta name="description" content={description} />
+<meta name="author" content="Isac Petinate" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<meta name="theme-color" content="#060608" />
+<meta name="color-scheme" content="dark" />
+<meta name="application-name" content="Phantom" />
+<meta name="apple-mobile-web-app-title" content="Phantom" />
+<meta name="msapplication-TileColor" content="#060608" />
+
+{/* Open Graph — Facebook, WhatsApp, LinkedIn, Instagram, Telegram, Slack,
+    Discord, iMessage. */}
+<meta property="og:type" content={type} />
+<meta property="og:site_name" content="Phantom" />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical.href} />
+<meta property="og:locale" content={locale === "en" ? "en_US" : "pt_BR"} />
+<meta property="og:locale:alternate" content={locale === "en" ? "pt_BR" : "en_US"} />
+<meta property="og:image" content={preview} />
+<meta property="og:image:secure_url" content={preview} />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="675" />
+<meta property="og:image:alt" content={imageAlt} />
+{/* A second, square crop for the readers that prefer one. */}
+<meta property="og:image" content={square} />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="1200" />
+<meta property="og:image:alt" content={imageAlt} />
+
+{/* X reads these first and falls back to Open Graph for the rest. */}
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={preview} />
+<meta name="twitter:image:alt" content={imageAlt} />
+
+<link rel="alternate" type="application/xml" href={absolute("sitemap-index.xml")} />
+<link rel="me" href="https://github.com/ipetinate" />

@@ -4,6 +4,10 @@ import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
 import icon from "astro-icon";
 
+const SITE = "https://phantom.nertec.com.br";
+const OG_ALT =
+  "Phantom: a macOS terminal with a sidebar of grouped projects beside an editor and a terminal.";
+
 export default defineConfig({
   site: "https://phantom.nertec.com.br",
   base: "/",
@@ -18,6 +22,25 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: "/favicon.svg",
+      /* Starlight writes og:title, og:description, og:url and og:type per
+         page; these are the rest, the same on every one of them. */
+      head: [
+        { tag: "meta", attrs: { property: "og:image", content: `${SITE}/og.jpg` } },
+        { tag: "meta", attrs: { property: "og:image:secure_url", content: `${SITE}/og.jpg` } },
+        { tag: "meta", attrs: { property: "og:image:type", content: "image/jpeg" } },
+        { tag: "meta", attrs: { property: "og:image:width", content: "1200" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "675" } },
+        { tag: "meta", attrs: { property: "og:image:alt", content: OG_ALT } },
+        { tag: "meta", attrs: { name: "twitter:image", content: `${SITE}/og.jpg` } },
+        { tag: "meta", attrs: { name: "twitter:image:alt", content: OG_ALT } },
+        { tag: "meta", attrs: { name: "theme-color", content: "#060608" } },
+        { tag: "meta", attrs: { name: "color-scheme", content: "dark" } },
+        { tag: "meta", attrs: { name: "author", content: "Isac Petinate" } },
+        { tag: "meta", attrs: { name: "application-name", content: "Phantom" } },
+        { tag: "meta", attrs: { name: "apple-mobile-web-app-title", content: "Phantom" } },
+        { tag: "meta", attrs: { name: "msapplication-TileColor", content: "#060608" } },
+        { tag: "meta", attrs: { name: "robots", content: "index, follow, max-image-preview:large" } },
+      ],
       customCss: ["./src/styles/docs.css"],
       expressiveCode: { themes: ["dracula"] },
       social: [

@@ -1,0 +1,221 @@
+---
+import Mark from "./Mark.astro";
+---
+
+<div class="hero-ghost" data-ghost aria-hidden="true">
+  <canvas class="hero-ghost__canvas" data-ghost-canvas></canvas>
+  <Mark class="hero-ghost__still" />
+</div>
+
+<script>
+  const FIT = 0.26;
+  const CHASE = { pull: 16, drag: 4 };
+  const HOLD = { pull: 6, drag: 3.4 };
+  const DRIFT = { pull: 3.2, drag: 2.4 };
+  const STILL_AFTER = 0.42;
+  const VELOCITY_SCALE = 1.4;
+  const VELOCITY_MAX = 1.8;
+  const YAW_MAX = 1.25;
+  const YAW_AT = 0.75;
+  const YAW_EASE = 6;
+  const MOUTH_LOCAL = { x: 200, y: 68 };
+  const EAT = { radius: FIT * 0.15, calm: 0.18, dwell: 0.38, ease: 9 };
+
+  (async () => {
+    const host = document.querySelector<HTMLElement>("[data-ghost]");
+    const canvas = document.querySelector<HTMLCanvasElement>("[data-ghost-canvas]");
+    const still = host?.querySelector<SVGElement>(".hero-ghost__still");
+    const hero = host?.closest("section");
+    if (!host || !canvas || !hero) return;
+    if (window.matchMedia("(max-width: 60rem)").matches) return;
+    if (!navigator.gpu) return;
+
+    const [loaded, shader] = await Promise.all([
+      import("vgpu"),
+      import("../../shaders/ghost.wgsl?raw"),
+    ]).catch(() => []);
+    if (!loaded || !shader) return;
+    const { init, surface, effect, clock, frame, frameLoop } = loaded;
+
+    let gpu: Awaited<ReturnType<typeof init>>;
+    try {
+      gpu = await init();
+    } catch {
+      return;
+    }
+
+    const view = surface(gpu, canvas, { dpr: [1, 2], clearColor: [0, 0, 0, 0] });
+    const ghost = effect(gpu, shader.default, {
+      label: "hero-ghost",
+      set: {
+        params: {
+          resolution: [view.size[0], view.size[1]],
+          center: [0, 0],
+          velocity: [0, 0],
+          time: 0,
+          fit: FIT,
+          yaw: 0,
+          mouth: 0,
+          flow: 0,
+        },
+      },
+    });
+
+    const time = clock(gpu);
+    let aspect = view.size[0] / view.size[1];
+    view.onResize(({ width, height }) => {
+      aspect = width / height;
+      ghost.set({ params: { resolution: [width, height] } });
+    });
+
+    const toBox = FIT / 800;
+    const limitX = () => Math.max(aspect / 2 - FIT * 0.7, 0.05);
+    const limitY = () => Math.max(0.5 - FIT * 0.7, 0.05);
+    const homeX = () => limitX() * 0.5;
+
+    const pos = { x: homeX(), y: -0.06 };
+    const vel = { x: 0, y: 0 };
+    const seen = { x: pos.x, y: pos.y };
+    let yaw = 0;
+    let flow = 0;
+    let movedAt = -Infinity;
+    let inside = false;
+    let mouth = 0;
+    let mouthTarget = 0;
+    let nearSince = -1;
+    let eaten = false;
+    let fed = false;
+
+    hero.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
+      const box = canvas.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return;
+      const u = (event.clientX - box.left) / box.width;
+      const v = (event.clientY - box.top) / box.height;
+      inside = u > -0.5 && u < 1.1 && v > -0.12 && v < 1.12;
+      if (!inside) return;
+      seen.x = (u - 0.5) * aspect;
+      seen.y = v - 0.5;
+      movedAt = time.time;
+      eaten = false;
+      mouthTarget = 0;
+      nearSince = -1;
+    });
+    hero.addEventListener("pointerleave", () => {
+      inside = false;
+      eaten = false;
+      mouthTarget = 0;
+      nearSince = -1;
+    });
+
+    let shown = false;
+    const reveal = () => {
+      if (shown) return;
+      shown = true;
+      still?.setAttribute("hidden", "");
+      host.dataset.live = "true";
+    };
+
+    const step = (dt: number) => {
+      const t = time.time;
+      const chasing = inside && t - movedAt < STILL_AFTER;
+      const biteX = Math.sin(yaw) * MOUTH_LOCAL.x * toBox;
+      const biteY = MOUTH_LOCAL.y * toBox;
+      const anchorX = inside ? seen.x - biteX : homeX();
+      const anchorY = inside ? seen.y - biteY : -0.06;
+      const spring = chasing ? CHASE : inside ? HOLD : DRIFT;
+      const sway = chasing ? 0.25 : inside ? 0.18 : 1;
+
+      const lx = limitX();
+      const ly = limitY();
+      const targetX = clamp(
+        anchorX + (Math.sin(t * 0.37) * 0.055 + Math.sin(t * 0.23 + 1.1) * 0.03) * sway,
+        -lx,
+        lx,
+      );
+      const targetY = clamp(
+        anchorY + (Math.sin(t * 0.29 + 2) * 0.045 + Math.sin(t * 0.51) * 0.022) * sway,
+        -ly,
+        ly,
+      );
+
+      vel.x += ((targetX - pos.x) * spring.pull - vel.x * spring.drag) * dt;
+      vel.y += ((targetY - pos.y) * spring.pull - vel.y * spring.drag) * dt;
+      pos.x += vel.x * dt;
+      pos.y += vel.y * dt;
+
+      let sx = vel.x * VELOCITY_SCALE;
+      let sy = vel.y * VELOCITY_SCALE;
+      const mag = Math.hypot(sx, sy);
+      if (mag > VELOCITY_MAX) {
+        sx = (sx / mag) * VELOCITY_MAX;
+        sy = (sy / mag) * VELOCITY_MAX;
+      }
+
+      flow += dt * (1 + Math.min(Math.hypot(sx, sy), VELOCITY_MAX) * 0.6);
+
+      const facing = clamp(sx / YAW_AT, -1, 1) * YAW_MAX;
+      yaw += (facing - yaw) * (1 - Math.exp(-dt * YAW_EASE));
+
+      const reach = Math.hypot(pos.x + biteX - seen.x, pos.y + biteY - seen.y);
+      const resting = Math.hypot(vel.x, vel.y) < EAT.calm;
+      if (inside && !chasing && !eaten && resting && reach < EAT.radius) {
+        if (nearSince < 0) nearSince = t;
+        if (t - nearSince > EAT.dwell) mouthTarget = 1;
+      } else if (mouthTarget === 0) {
+        nearSince = -1;
+      }
+
+      mouth += (mouthTarget - mouth) * (1 - Math.exp(-dt * EAT.ease));
+      if (mouthTarget === 1 && mouth > 0.88) {
+        eaten = true;
+        mouthTarget = 0;
+        nearSince = -1;
+      }
+      if (eaten !== fed) {
+        fed = eaten;
+        hero.classList.toggle("hero--fed", eaten);
+      }
+
+      ghost.set({
+        params: { time: t, center: [pos.x, pos.y], velocity: [sx, sy], yaw, mouth, flow },
+      });
+    };
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      ghost.set({ params: { center: [pos.x, pos.y] } });
+      frame(gpu, (f) => f.pass(view, ghost));
+      reveal();
+      return;
+    }
+
+    let onScreen = false;
+    let loop: { stop(): void } | null = null;
+
+    const start = () => {
+      if (loop) return;
+      loop = frameLoop(gpu, (f) => {
+        step(Math.min(time.deltaTime, 0.05));
+        f.pass(view, ghost);
+        reveal();
+      });
+    };
+
+    const stop = () => {
+      loop?.stop();
+      loop = null;
+    };
+
+    const settle = () => (!document.hidden && onScreen ? start() : stop());
+
+    new IntersectionObserver((entries) => {
+      onScreen = entries.some((entry) => entry.isIntersecting);
+      settle();
+    }).observe(host);
+    document.addEventListener("visibilitychange", settle);
+  })();
+
+  function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+  }
+</script>

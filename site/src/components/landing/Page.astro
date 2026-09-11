@@ -1,5 +1,6 @@
 ---
 import Mark from "./Mark.astro";
+import HeroGhost from "./HeroGhost.astro";
 import Frame from "./Frame.astro";
 import Tour from "./Tour.astro";
 import CodeCard from "./CodeCard.astro";
@@ -18,7 +19,7 @@ const count = new Intl.NumberFormat(copy.htmlLang);
 ---
 
 <section class="hero">
-  <div class="shell">
+  <div class="shell hero__body">
     <Mark class="hero__mark" />
     <h1>
       {copy.hero.titleLead}<em>{copy.hero.titleEm}</em>{copy.hero.titleTail}
@@ -47,6 +48,7 @@ const count = new Intl.NumberFormat(copy.htmlLang);
         ))
       }
     </p>
+    <HeroGhost />
   </div>
 
   <div class="shell">

@@ -335,6 +335,47 @@ p {
   white-space: nowrap;
 }
 
+.hero--fed {
+  cursor: none;
+}
+
+.hero__body {
+  position: relative;
+}
+
+.hero-ghost {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  right: var(--gutter);
+  width: min(32rem, 44%);
+  pointer-events: none;
+}
+
+.hero-ghost__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hero-ghost__still {
+  position: absolute;
+  left: 64%;
+  top: 44%;
+  height: 26%;
+  width: auto;
+  transform: translate(-50%, -50%);
+  color: var(--paper);
+  opacity: 1;
+}
+
+@media (max-width: 60rem) {
+  .hero-ghost {
+    display: none;
+  }
+}
+
 /* --------------------------------------------------------------- button */
 
 .btn {

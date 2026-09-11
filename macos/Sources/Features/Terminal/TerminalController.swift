@@ -85,6 +85,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     private var editorTerminalDirectoryCancellable: AnyCancellable?
     private var editorHostingView: NSView?
 
+    let toastCenter = ToastCenter()
+    private var toastHostingView: NSView?
+    private var toastCancellable: AnyCancellable?
+
     /// The window's terminal view, and the grid cell it currently sits in is
     /// not what keeps it alive — this is.
     ///
@@ -1388,8 +1392,19 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         shouldCascadeWindows = false
     }
 
+    override func pwdDidChange(to url: URL?) {
+        super.pwdDidChange(to: url)
+        guard let url else { return }
+        SuggestionToasts.offerProjectSuggestions(near: url, to: toastCenter)
+    }
+
     override func windowDidLoad() {
         super.windowDidLoad()
+
+        editorCenter.onDidOpen = { [weak self] url in
+            guard let self else { return }
+            SuggestionToasts.offerLanguageSupport(for: url, to: self.toastCenter)
+        }
 
         if let window {
             WindowBreadcrumbs.note(
@@ -1468,6 +1483,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             )
         } else {
             window.contentView = container
+            attachToastHost(to: container)
         }
 
         // If we have a default size, we want to apply it.
@@ -1520,6 +1536,28 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// Builds the sidebar | terminal split view used as the window content
     /// view when the sidebar is enabled. Native tabbing stays untouched;
     /// the sidebar is purely an alternative presentation of the tab group.
+    private func attachToastHost(to pane: NSView) {
+        let hosting = NSHostingView(rootView: ToastHostView(center: toastCenter).interfaceFont())
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        hosting.isHidden = true
+        pane.addSubview(hosting)
+        NSLayoutConstraint.activate([
+            hosting.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -18),
+            hosting.bottomAnchor.constraint(equalTo: pane.bottomAnchor, constant: -18),
+            hosting.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+            hosting.leadingAnchor.constraint(greaterThanOrEqualTo: pane.leadingAnchor, constant: 18),
+            hosting.topAnchor.constraint(
+                greaterThanOrEqualTo: pane.safeAreaLayoutGuide.topAnchor, constant: 18),
+        ])
+        toastHostingView = hosting
+        toastCancellable = toastCenter.$toasts
+            .map(\.isEmpty)
+            .removeDuplicates()
+            .sink { [weak hosting] isEmpty in
+                hosting?.isHidden = isEmpty
+            }
+    }
+
     private func makeSidebarSplitView(
         terminalContainer: NSView,
         window: NSWindow,
@@ -1785,6 +1823,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             gridHosting.bottomAnchor.constraint(equalTo: rightPane.bottomAnchor),
         ])
         self.paneGridTopConstraint = gridTop
+
+        attachToastHost(to: rightPane)
 
         editorGridCancellable = editorCenter.$tree
             .removeDuplicates()

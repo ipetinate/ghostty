@@ -1,0 +1,244 @@
+---
+import { url } from "../../lib/site";
+import type { Copy } from "../../lib/copy";
+
+interface Props {
+  copy: Copy;
+  alt: string;
+}
+
+const { copy, alt } = Astro.props;
+const src = url("clips/phantom-tour.mp4");
+const poster = url("clips/phantom-tour.jpg");
+const { tour } = copy;
+---
+
+<figure
+  class="player"
+  data-player
+  data-play-label={tour.play}
+  data-pause-label={tour.pause}
+>
+  <div class="player__stage">
+    {/* preload="none" is the whole lazy story: the browser fetches nothing
+        until play, then streams the rest over range requests. */}
+    <video
+      data-video
+      src={src}
+      poster={poster}
+      preload="none"
+      playsinline
+      muted
+      width="1600"
+      height="1048"
+      aria-label={alt}></video>
+
+    <button type="button" class="player__big" data-big aria-label={tour.play}>
+      <svg viewBox="0 0 24 24" aria-hidden="true" width="28" height="28">
+        <path d="M8 5.5v13l11-6.5z" fill="currentColor"></path>
+      </svg>
+      <span>{tour.play}</span>
+    </button>
+
+    <div class="player__bar" data-bar>
+      <div
+        class="player__scrub"
+        data-scrub
+        role="slider"
+        tabindex="0"
+        aria-label={tour.seek}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+      >
+        <span class="player__buffered" data-buffered></span>
+        <span class="player__progress" data-progress></span>
+        <span class="player__knob" data-knob></span>
+      </div>
+
+      <div class="player__row">
+        <button type="button" class="player__btn" data-toggle aria-label={tour.play}>
+          <svg data-icon-play viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"
+            ><path d="M8 5.5v13l11-6.5z" fill="currentColor"></path></svg
+          >
+          <svg data-icon-pause viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" hidden
+            ><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"></path></svg
+          >
+        </button>
+        <button type="button" class="player__btn" data-back aria-label={tour.back}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"
+            ><path
+              d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"
+              fill="currentColor"></path></svg
+          >
+          <span class="player__nudge">10</span>
+        </button>
+        <button type="button" class="player__btn" data-forward aria-label={tour.forward}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"
+            ><path
+              d="M12 5V2l5 4-5 4V7a5 5 0 1 0 5 5h2a7 7 0 1 1-7-7z"
+              fill="currentColor"></path></svg
+          >
+          <span class="player__nudge">10</span>
+        </button>
+        <p class="player__time"><span data-current>0:00</span> / <span data-total>4:07</span></p>
+        <button
+          type="button"
+          class="player__btn player__btn--end"
+          data-fullscreen
+          aria-label={tour.fullscreen}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"
+            ><path
+              d="M4 9V4h5v2H6v3zm11-5h5v5h-2V6h-3zM6 15v3h3v2H4v-5zm12 3v-3h2v5h-5v-2z"
+              fill="currentColor"></path></svg
+          >
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <nav class="chapters" aria-label={tour.seek}>
+    {
+      tour.chapters.map((chapter) => (
+        <button type="button" class="chapter" data-at={chapter.at}>
+          <span class="chapter__at">
+            {Math.floor(chapter.at / 60)}:{String(chapter.at % 60).padStart(2, "0")}
+          </span>
+          {chapter.label}
+        </button>
+      ))
+    }
+  </nav>
+
+  <figcaption class="player__caption">{tour.caption}</figcaption>
+</figure>
+
+<script is:inline>
+  (() => {
+    const root = document.querySelector("[data-player]");
+    if (!root) return;
+    const video = root.querySelector("[data-video]");
+    const big = root.querySelector("[data-big]");
+    const toggle = root.querySelector("[data-toggle]");
+    const iconPlay = root.querySelector("[data-icon-play]");
+    const iconPause = root.querySelector("[data-icon-pause]");
+    const scrub = root.querySelector("[data-scrub]");
+    const progress = root.querySelector("[data-progress]");
+    const buffered = root.querySelector("[data-buffered]");
+    const knob = root.querySelector("[data-knob]");
+    const current = root.querySelector("[data-current]");
+    const total = root.querySelector("[data-total]");
+    const chapters = Array.from(root.querySelectorAll(".chapter"));
+
+    const clock = (s) => {
+      if (!Number.isFinite(s)) return "0:00";
+      const m = Math.floor(s / 60);
+      return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+    };
+
+    const paint = () => {
+      const d = video.duration;
+      if (!Number.isFinite(d) || d === 0) return;
+      const pct = (video.currentTime / d) * 100;
+      progress.style.width = `${pct}%`;
+      knob.style.left = `${pct}%`;
+      scrub.setAttribute("aria-valuenow", String(Math.round(pct)));
+      scrub.setAttribute("aria-valuetext", clock(video.currentTime));
+      current.textContent = clock(video.currentTime);
+      if (video.buffered.length > 0) {
+        buffered.style.width = `${(video.buffered.end(video.buffered.length - 1) / d) * 100}%`;
+      }
+      const now = video.currentTime;
+      let active = -1;
+      chapters.forEach((c, i) => {
+        if (now >= Number(c.dataset.at)) active = i;
+      });
+      chapters.forEach((c, i) =>
+        c.setAttribute("aria-current", i === active ? "true" : "false"),
+      );
+    };
+
+    const setPlaying = (playing) => {
+      root.dataset.playing = playing ? "true" : "false";
+      iconPlay.hidden = playing;
+      iconPause.hidden = !playing;
+      toggle.setAttribute(
+        "aria-label",
+        playing ? toggle.dataset.pause : toggle.dataset.play,
+      );
+    };
+    toggle.dataset.play = root.dataset.playLabel ?? "Play";
+    toggle.dataset.pause = root.dataset.pauseLabel ?? "Pause";
+
+    const play = () => {
+      root.dataset.started = "true";
+      video.play();
+    };
+
+    big.addEventListener("click", play);
+    toggle.addEventListener("click", () => (video.paused ? play() : video.pause()));
+    root
+      .querySelector("[data-back]")
+      .addEventListener("click", () => (video.currentTime -= 10));
+    root
+      .querySelector("[data-forward]")
+      .addEventListener("click", () => (video.currentTime += 10));
+    root.querySelector("[data-fullscreen]").addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else root.querySelector(".player__stage").requestFullscreen?.();
+    });
+
+    for (const chapter of chapters) {
+      chapter.addEventListener("click", () => {
+        root.dataset.started = "true";
+        video.currentTime = Number(chapter.dataset.at);
+        video.play();
+      });
+    }
+
+    video.addEventListener("play", () => setPlaying(true));
+    video.addEventListener("pause", () => setPlaying(false));
+    video.addEventListener("timeupdate", paint);
+    video.addEventListener("progress", paint);
+    video.addEventListener("loadedmetadata", () => {
+      total.textContent = clock(video.duration);
+      paint();
+    });
+    video.addEventListener("click", () => (video.paused ? play() : video.pause()));
+    video.addEventListener("ended", () => {
+      root.dataset.started = "false";
+      video.currentTime = 0;
+    });
+
+    const seekTo = (clientX) => {
+      const box = scrub.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - box.left) / box.width));
+      if (Number.isFinite(video.duration)) video.currentTime = ratio * video.duration;
+    };
+    let dragging = false;
+    scrub.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      scrub.setPointerCapture(event.pointerId);
+      root.dataset.started = "true";
+      seekTo(event.clientX);
+    });
+    scrub.addEventListener("pointermove", (event) => dragging && seekTo(event.clientX));
+    scrub.addEventListener("pointerup", () => (dragging = false));
+    scrub.addEventListener("keydown", (event) => {
+      const step = event.key === "ArrowLeft" ? -5 : event.key === "ArrowRight" ? 5 : 0;
+      if (step === 0) return;
+      event.preventDefault();
+      video.currentTime += step;
+    });
+
+    root.addEventListener("keydown", (event) => {
+      if (event.target.closest("button") && event.key === " ") return;
+      if (event.key === " " || event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        video.paused ? play() : video.pause();
+      }
+      if (event.key.toLowerCase() === "f") root.querySelector("[data-fullscreen]").click();
+    });
+  })();
+</script>

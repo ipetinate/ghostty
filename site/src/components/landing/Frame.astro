@@ -1,0 +1,47 @@
+---
+import { Image } from "astro:assets";
+import type { ImageMetadata } from "astro";
+
+interface Props {
+  shot: string;
+  alt: string;
+  hero?: boolean;
+  pendingLabel: string;
+  expandLabel: string;
+  code?: { label: string; body: string };
+}
+
+const { shot, alt, hero = false, pendingLabel, expandLabel } = Astro.props;
+
+const shots = import.meta.glob<{ default: ImageMetadata }>(
+  "/src/assets/shots/*.{png,jpg,jpeg,webp,avif}",
+  { eager: true },
+);
+
+const entry = Object.entries(shots).find(([path]) =>
+  path.includes(`/shots/${shot}.`),
+);
+const image = entry?.[1].default;
+---
+
+<figure class:list={["frame", hero && "frame--hero"]}>
+  {
+    image ? (
+      <button type="button" class="frame__zoom" data-zoom aria-label={`${expandLabel}: ${alt}`}>
+        <Image
+          src={image}
+          alt={alt}
+          widths={[720, 1080, 1600, 2048]}
+          sizes={hero ? "(max-width: 78rem) 100vw, 70rem" : "(max-width: 60rem) 100vw, 40rem"}
+          loading={hero ? "eager" : "lazy"}
+          decoding={hero ? "sync" : "async"}
+        />
+      </button>
+    ) : (
+      <div class="frame__empty">
+        <span>{pendingLabel}</span>
+        <code>src/assets/shots/{shot}.png</code>
+      </div>
+    )
+  }
+</figure>

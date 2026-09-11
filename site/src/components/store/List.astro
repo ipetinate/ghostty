@@ -1,0 +1,169 @@
+---
+import Footer from "../landing/Footer.astro";
+import { url } from "../../lib/site";
+import {
+  extensions,
+  kinds,
+  kindsOf,
+  countOf,
+  groupedExtensions,
+  type GroupKey,
+} from "../../lib/store";
+import type { Copy } from "../../lib/copy";
+
+interface Props {
+  copy: Copy;
+}
+
+const { copy } = Astro.props;
+const prefix = copy.lang === "en" ? "extensions/" : "pt-br/extensions/";
+const groups = groupedExtensions(
+  (key: GroupKey) => copy.store.kinds[key] ?? key,
+  copy.htmlLang,
+);
+---
+
+<section class="store">
+  <div class="shell">
+    <h1 class="store__title">{copy.store.title}</h1>
+    <p class="store__lede">{copy.store.lede}</p>
+
+    <div class="store__controls">
+      <div class="chips" role="group" aria-label={copy.store.title}>
+        {
+          kinds
+            .filter((k) => countOf(k.key) > 0)
+            .map((kind) => (
+              <button
+                type="button"
+                class="chip"
+                data-kind={kind.key}
+                aria-pressed={kind.key === "all" ? "true" : "false"}
+              >
+                {copy.store.kinds[kind.key]}
+                <span class="chip__count">{countOf(kind.key)}</span>
+              </button>
+            ))
+        }
+      </div>
+      <label class="search">
+        <span class="visually-hidden">{copy.store.search}</span>
+        <input
+          type="search"
+          data-search
+          placeholder={copy.store.search}
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </label>
+    </div>
+
+    <p class="store__meta">
+      <span data-count>{extensions.length}</span>
+      {" "}{copy.store.countLabel}
+    </p>
+
+    <div class="groups" data-groups>
+      {
+        groups.map((group) => (
+          <section class="group" data-group={group.key}>
+            <h2 class="group__title">
+              {group.label}
+              <span>{group.items.length}</span>
+            </h2>
+            <ul class="grid">
+              {group.items.map((extension) => (
+                <li
+                  class="card"
+                  data-kinds={kindsOf(extension).join(" ")}
+                  data-text={`${extension.name} ${extension.description} ${extension.tags.join(" ")} ${extension.languages.join(" ")}`.toLowerCase()}
+                >
+                  <a href={url(`${prefix}${extension.id}/`)}>
+                    <span class="card__icon">
+                      {extension.icon ? (
+                        <img
+                          src={extension.icon}
+                          alt=""
+                          width="48"
+                          height="48"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <span class="card__icon--blank" />
+                      )}
+                    </span>
+                    <span class="card__body">
+                      <span class="card__name">{extension.name}</span>
+                      <span class="card__desc">{extension.description}</span>
+                      <span class="card__meta">
+                        <span>{extension.version}</span>
+                        {extension.contributes.slice(0, 3).map((c) => (
+                          <span class="tag">
+                            {copy.store.contributes[c] ?? c}
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      }
+    </div>
+
+    <p class="store__empty" data-empty hidden>{copy.store.empty}</p>
+  </div>
+</section>
+
+<Footer copy={copy} />
+
+<script is:inline>
+  (() => {
+    const container = document.querySelector("[data-groups]");
+    if (!container) return;
+    const sections = Array.from(container.querySelectorAll(".group"));
+    const chips = Array.from(document.querySelectorAll(".chip"));
+    const search = document.querySelector("[data-search]");
+    const count = document.querySelector("[data-count]");
+    const empty = document.querySelector("[data-empty]");
+    let kind = "all";
+
+    const apply = () => {
+      const term = (search?.value ?? "").trim().toLowerCase();
+      let shown = 0;
+      for (const section of sections) {
+        let inSection = 0;
+        for (const card of section.querySelectorAll(".card")) {
+          const okKind =
+            kind === "all" ||
+            (card.dataset.kinds ?? "").split(" ").includes(kind);
+          const okTerm =
+            term === "" || (card.dataset.text ?? "").includes(term);
+          const visible = okKind && okTerm;
+          card.hidden = !visible;
+          if (visible) inSection += 1;
+        }
+        section.hidden = inSection === 0;
+        shown += inSection;
+      }
+      /* One category on screen needs no heading to tell it apart. */
+      container.dataset.flat = kind === "all" ? "false" : "true";
+      if (count) count.textContent = String(shown);
+      if (empty) empty.hidden = shown !== 0;
+    };
+
+    for (const chip of chips) {
+      chip.addEventListener("click", () => {
+        kind = chip.dataset.kind ?? "all";
+        for (const other of chips) {
+          other.setAttribute("aria-pressed", other === chip ? "true" : "false");
+        }
+        apply();
+      });
+    }
+    search?.addEventListener("input", apply);
+    apply();
+  })();
+</script>

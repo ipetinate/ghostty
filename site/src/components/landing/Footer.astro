@@ -1,0 +1,20 @@
+---
+import { url } from "../../lib/site";
+import type { Copy } from "../../lib/copy";
+
+interface Props {
+  copy: Copy;
+}
+
+const { copy } = Astro.props;
+const link = (href: string) => (href.startsWith("http") ? href : url(href));
+---
+
+<footer class="footer">
+  <div class="shell footer__grid">
+    <p class="footer__legal">{copy.footer.legal}</p>
+    <nav class="footer__links">
+      {copy.footer.links.map((item) => <a href={link(item.href)}>{item.label}</a>)}
+    </nav>
+  </div>
+</footer>

@@ -11,13 +11,15 @@
     session one click away — on top of the terminal
     <a href="https://ghostty.org">Ghostty</a> already got right.
     <br />
-    <a href="#why">Why</a>
+    <a href="https://phantom.nertec.com.br/">Website</a>
+    ·
+    <a href="https://phantom.nertec.com.br/docs/install/">Documentation</a>
+    ·
+    <a href="#install">Install</a>
     ·
     <a href="#features">Features</a>
     ·
     <a href="#built-on-ghostty">Built on Ghostty</a>
-    ·
-    <a href="HACKING.md">Building</a>
   </p>
 </p>
 
@@ -43,6 +45,20 @@ running — without alt-tabbing through a dozen indistinguishable tabs.
 
 Phantom doesn't touch the engine. It's the app around it: a sidebar.
 
+## Install
+
+Take **Phantom.dmg** from the
+[latest release](https://github.com/ipetinate/phantom/releases/latest) and drag
+Phantom to `/Applications`. It needs macOS 13 Ventura or later, and runs on
+Apple silicon and Intel.
+
+The app is ad-hoc signed and **not notarized**, so the first launch has one
+extra step: right-click Phantom and choose **Open** — or run
+`xattr -cr /Applications/Phantom.app` — instead of double-clicking, otherwise
+Gatekeeper refuses it as coming from an unidentified developer.
+
+Every later version arrives in place through **Phantom > Check for Updates**.
+
 ## Features
 
 - **Grouped tabs** — group terminals manually, or point a group at a project
@@ -62,6 +78,25 @@ Phantom doesn't touch the engine. It's the app around it: a sidebar.
 - **Project PR list** — a group's header pops up every open PR across every
   repo in that project (workspace folders included), sorted, without a
   browser tab.
+- **An editor in the same pane** — open a file beside the terminal that
+  produced it: grammars, a minimap, workspace search, format on save, splits
+  in any direction, and viewers for Markdown, images, PDF, SVG and CSV.
+- **Language servers from a store** — no language is compiled in. Each one
+  arrives as an extension that declares its server, its formatter and its
+  grammar; hover, definition, references, rename, completion and diagnostics
+  follow.
+- **Git where the file is** — status and staging in the sidebar, conflicts
+  resolved in the file itself, split diffs, and a branch review of every
+  commit and file against the base.
+- **Worktrees, both directions** — create or adopt a git worktree from the
+  sidebar, run a setup command in it, and let the open editor tabs follow when
+  a terminal switches.
+- **An MCP server** — 25 tools across terminals, groups, the editor,
+  diagnostics, language servers and worktrees, each capability granted by you
+  and scoped to a tab, a group or everything.
+- **An extension store** — languages, formatters, themes, icon packs and
+  agents, every download checked against a sha256 before it is unpacked. Since
+  0.19.0 an extension can also draw a sidebar panel or an editor of its own.
 - **Themes, done properly** — the full curated catalog, an inline theme
   creator with a live preview, and Phantom's own chrome (Settings, About,
   the theme browser) follows whatever theme is active instead of the
@@ -72,6 +107,10 @@ Phantom doesn't touch the engine. It's the app around it: a sidebar.
 - **Native Settings, no config-file spelunking** — every style knob (font,
   cursor, effect, dividers) is a GUI control that writes to a config file
   Ghostty already understands.
+
+The full list, with the release each piece landed in, is in
+[`FEATURES.md`](FEATURES.md). Everything above is documented at
+<https://phantom.nertec.com.br/docs/install/>.
 
 ## Built on Ghostty
 
@@ -94,6 +133,9 @@ for the full setup. Short version, from the repo root:
 ```shell-session
 zig build -Doptimize=ReleaseFast
 ```
+
+The documentation site lives in [`site/`](site) and is built with Astro and
+Starlight; `yarn build` there produces the pages GitHub Pages serves.
 
 ## License
 

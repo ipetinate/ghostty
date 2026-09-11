@@ -1,0 +1,166 @@
+---
+import "@fontsource-variable/inter/index.css";
+import "@fontsource-variable/newsreader/index.css";
+import "@fontsource-variable/jetbrains-mono/index.css";
+import "../styles/landing.css";
+import Mark from "../components/landing/Mark.astro";
+import { url, repo } from "../lib/site";
+import type { Copy } from "../lib/copy";
+
+interface Props {
+  copy: Copy;
+  title: string;
+  description: string;
+}
+
+const { copy, title, description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const alternate = copy.lang === "en" ? url("pt-br/") : url("");
+---
+
+<!doctype html>
+<html lang={copy.htmlLang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={url("favicon.svg")} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={url("phantom-appicon-256.png")} />
+    <link rel="alternate" hreflang="en" href={new URL(url(""), Astro.site)} />
+    <link
+      rel="alternate"
+      hreflang="pt-BR"
+      href={new URL(url("pt-br/"), Astro.site)}
+    />
+    <meta name="theme-color" content="#060608" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta
+      property="og:image"
+      content={new URL(url("phantom-appicon.png"), Astro.site)}
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="glows" aria-hidden="true">
+      <span style="--x: 78%; --y: 14%; --size: 46rem; --a: 0.055"></span>
+      <span style="--x: 12%; --y: 29%; --size: 38rem; --a: 0.045"></span>
+      <span style="--x: 86%; --y: 44%; --size: 52rem; --a: 0.05"></span>
+      <span style="--x: 22%; --y: 58%; --size: 34rem; --a: 0.04"></span>
+      <span style="--x: 68%; --y: 71%; --size: 44rem; --a: 0.05"></span>
+      <span style="--x: 8%; --y: 87%; --size: 40rem; --a: 0.042"></span>
+    </div>
+
+    <a class="skip" href="#main">{copy.nav.skip}</a>
+
+    <header class="nav" data-nav>
+      <div class="shell nav__inner">
+        <a class="brand" href={url(copy.lang === "en" ? "" : "pt-br/")}>
+          <Mark />
+          Phantom
+        </a>
+        <nav class="nav__links">
+          <a href={url(copy.docsHome)}>{copy.nav.docs}</a>
+          <a class="nav__hide-sm" href={url(copy.lang === "en" ? "extensions/" : "pt-br/extensions/")}>{copy.nav.extensions}</a>
+          <a class="nav__hide-sm" href={repo}>{copy.nav.github}</a>
+          <span class="nav__lang">
+            <a
+              href={copy.lang === "en" ? "#" : url("")}
+              aria-current={copy.lang === "en" ? "true" : undefined}>EN</a
+            >
+            <a
+              href={copy.lang === "en" ? alternate : "#"}
+              aria-current={copy.lang === "en" ? undefined : "true"}>PT</a
+            >
+          </span>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <dialog class="lightbox" data-lightbox>
+      <button
+        type="button"
+        class="lightbox__close"
+        data-lightbox-close
+        aria-label={copy.lightbox.close}>&times;</button>
+      <img data-lightbox-img alt="" />
+    </dialog>
+
+    <script is:inline>
+      (() => {
+        const nav = document.querySelector("[data-nav]");
+        const onScroll = () => {
+          if (!nav) return;
+          nav.dataset.scrolled = window.scrollY > 24 ? "true" : "false";
+        };
+        onScroll();
+        window.addEventListener("scroll", onScroll, { passive: true });
+
+        const reveals = document.querySelectorAll(".reveal");
+        const reduce = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        if (reduce || !("IntersectionObserver" in window)) {
+          reveals.forEach((el) => (el.dataset.shown = "true"));
+          return;
+        }
+        const io = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              entry.target.dataset.shown = "true";
+              io.unobserve(entry.target);
+            });
+          },
+          { rootMargin: "0px 0px -12% 0px", threshold: 0.08 },
+        );
+        reveals.forEach((el) => io.observe(el));
+      })();
+
+      /* Click a screenshot to see it at full width. */
+      (() => {
+        const dialog = document.querySelector("[data-lightbox]");
+        const full = document.querySelector("[data-lightbox-img]");
+        if (!dialog || !full) return;
+
+        const open = (img) => {
+          full.src = img.currentSrc || img.src;
+          if (img.srcset) full.srcset = img.srcset;
+          full.sizes = "100vw";
+          full.alt = img.alt;
+          dialog.showModal();
+        };
+
+        for (const button of document.querySelectorAll("[data-zoom]")) {
+          button.addEventListener("click", () => {
+            const img = button.querySelector("img");
+            if (img) open(img);
+          });
+        }
+
+        dialog
+          .querySelector("[data-lightbox-close]")
+          ?.addEventListener("click", () => dialog.close());
+
+        /* Anywhere outside the picture closes it. */
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) dialog.close();
+        });
+
+        dialog.addEventListener("close", () => {
+          full.removeAttribute("src");
+          full.removeAttribute("srcset");
+        });
+      })();
+    </script>
+  </body>
+</html>

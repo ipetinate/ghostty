@@ -363,6 +363,7 @@ private struct DocumentView: View {
     let theme: CodeTheme
     let configuration: CodeEditorConfiguration
     @ObservedObject var lsp: LSPCenter
+    @ObservedObject private var languages: LanguageResolver = .shared
 
     /// The committed text the margin's `+` and `-` are measured against.
     ///

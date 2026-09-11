@@ -1,17 +1,23 @@
 """
 Writes the Sparkle appcast for a Phantom release.
 
-Phantom's feed lives where Phantom's releases live: appcast.xml is an asset of
-every GitHub release, and the app reads it through the stable alias
-    https://github.com/ipetinate/phantom/releases/latest/download/appcast.xml
+Phantom's feeds live where Phantom's releases live: every feed is an asset of
+every GitHub release, and the app reads its own through the stable alias
+    https://github.com/ipetinate/phantom/releases/latest/download/<feed>
 so no server, bucket or domain is involved — only this repository.
 
+One release ships two DMGs — a universal one and an Apple-Silicon-only one
+thinned from it — and each gets its own feed, so an app never updates itself
+into the other flavour. The app picks the feed by counting the architectures in
+its own executable (UpdateDelegate.swift).
+
 Expects, in the current directory:
-    - sign_update.txt   the output of Sparkle's sign_update for Phantom.dmg
-    - appcast.xml       the previous release's feed, when there is one; a
-                        missing or empty file starts a new feed. The history is
-                        kept so a reader several versions behind still sees an
-                        entry, and pruned so the file cannot grow forever.
+    - the signature file  the output of Sparkle's sign_update for the DMG
+    - the feed file       the previous release's feed, when there is one; a
+                          missing or empty file starts a new feed. The history
+                          is kept so a reader several versions behind still
+                          sees an entry, and pruned so the file cannot grow
+                          forever.
 
 And in the environment:
     - PHANTOM_VERSION   X.Y.Z, what CFBundleShortVersionString says
@@ -19,8 +25,13 @@ And in the environment:
                         compares this one, so it must be monotonic
     - PHANTOM_TAG       the git tag the DMG is published under
     - PHANTOM_COMMIT    the short commit hash
+    - PHANTOM_DMG       the DMG asset this feed points at, default Phantom.dmg
+    - PHANTOM_APPCAST   the feed file, default appcast.xml
+    - PHANTOM_SIGNATURE the signature file, default sign_update.txt
+    - PHANTOM_FLAVOR    what to call this build in the feed's own title and in
+                        the item description, default Universal
 
-Writes appcast.xml in place.
+Writes the feed file in place.
 
 The build number is the item's identity. An item with the same build is replaced
 rather than duplicated: two items claiming one build would make Sparkle report a
@@ -42,8 +53,12 @@ version = os.environ["PHANTOM_VERSION"]
 build = os.environ["PHANTOM_BUILD"]
 tag = os.environ["PHANTOM_TAG"]
 commit = os.environ["PHANTOM_COMMIT"]
+dmg = os.environ.get("PHANTOM_DMG", "Phantom.dmg")
+appcast = os.environ.get("PHANTOM_APPCAST", "appcast.xml")
+signature = os.environ.get("PHANTOM_SIGNATURE", "sign_update.txt")
+flavor = os.environ.get("PHANTOM_FLAVOR", "Universal")
 
-with open("sign_update.txt", encoding="utf-8") as f:
+with open(signature, encoding="utf-8") as f:
     attrs = {}
     for pair in f.read().split(" "):
         key, value = pair.split("=", 1)
@@ -54,19 +69,19 @@ with open("sign_update.txt", encoding="utf-8") as f:
 
 for required in ("sparkle:edSignature", "length"):
     if not attrs.get(required):
-        sys.exit(f"sign_update.txt has no {required}: the DMG was not signed")
+        sys.exit(f"{signature} has no {required}: {dmg} was not signed")
 
 ET.register_namespace("sparkle", SPARKLE)
 
-if os.path.exists("appcast.xml") and os.path.getsize("appcast.xml") > 0:
-    tree = ET.parse("appcast.xml")
+if os.path.exists(appcast) and os.path.getsize(appcast) > 0:
+    tree = ET.parse(appcast)
     channel = tree.find("channel")
 else:
     root = ET.Element("rss", {"version": "2.0"})
     channel = ET.SubElement(root, "channel")
-    ET.SubElement(channel, "title").text = "Phantom"
+    ET.SubElement(channel, "title").text = f"Phantom ({flavor})"
     ET.SubElement(channel, "link").text = f"{REPO}/releases"
-    ET.SubElement(channel, "description").text = "Phantom releases"
+    ET.SubElement(channel, "description").text = f"Phantom releases ({flavor})"
     ET.SubElement(channel, "language").text = "en"
     tree = ET.ElementTree(root)
 
@@ -92,13 +107,13 @@ ET.SubElement(item, f"{{{SPARKLE}}}minimumSystemVersion").text = MINIMUM_SYSTEM_
 ET.SubElement(item, "link").text = f"{REPO}/releases/tag/{tag}"
 ET.SubElement(item, f"{{{SPARKLE}}}releaseNotesLink").text = f"{REPO}/releases/tag/{tag}"
 ET.SubElement(item, "description").text = (
-    f"Phantom {version}, build {build}, commit {commit}."
+    f"Phantom {version} ({flavor}), build {build}, commit {commit}."
 )
 ET.SubElement(
     item,
     "enclosure",
     {
-        "url": f"{REPO}/releases/download/{tag}/Phantom.dmg",
+        "url": f"{REPO}/releases/download/{tag}/{dmg}",
         "type": "application/octet-stream",
         "length": attrs["length"],
         f"{{{SPARKLE}}}edSignature": attrs["sparkle:edSignature"],
@@ -106,5 +121,5 @@ ET.SubElement(
 )
 
 ET.indent(tree, space="  ")
-tree.write("appcast.xml", encoding="utf-8", xml_declaration=True)
-print(f"appcast.xml: {len(channel.findall('item'))} item(s), newest {version} (build {build})")
+tree.write(appcast, encoding="utf-8", xml_declaration=True)
+print(f"{appcast}: {len(channel.findall('item'))} item(s), newest {version} (build {build})")

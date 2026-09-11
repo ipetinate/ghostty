@@ -1,0 +1,151 @@
+---
+import Mark from "./Mark.astro";
+import Frame from "./Frame.astro";
+import Tour from "./Tour.astro";
+import CodeCard from "./CodeCard.astro";
+import Footer from "./Footer.astro";
+import { url, releases, ghostty } from "../../lib/site";
+import type { Copy } from "../../lib/copy";
+
+interface Props {
+  copy: Copy;
+}
+
+const { copy } = Astro.props;
+const downloadPath = copy.lang === "en" ? "download/" : "pt-br/download/";
+---
+
+<section class="hero">
+  <div class="shell">
+    <Mark class="hero__mark" />
+    <h1>
+      {copy.hero.titleLead}<em>{copy.hero.titleEm}</em>{copy.hero.titleTail}
+    </h1>
+    <p class="hero__lede">{copy.hero.lede}</p>
+    <div class="hero__actions">
+      <a class="btn btn--primary" href={url(downloadPath)}>{copy.hero.download}</a>
+      <a class="btn btn--ghost" href={url(copy.docsHome)}>
+        {copy.hero.docs}
+        <span class="btn__arrow" aria-hidden="true">&rarr;</span>
+      </a>
+    </div>
+    <p class="hero__meta">
+      {
+        copy.hero.meta.map((item, i) => (
+          <>
+            {i > 0 && <> &middot; </>}
+            <span>{item}</span>
+          </>
+        ))
+      }
+    </p>
+  </div>
+
+  <div class="shell">
+    <div class="reveal">
+      <Tour copy={copy} alt={copy.hero.shotAlt} />
+    </div>
+  </div>
+</section>
+
+<section class="credit">
+  <div class="shell credit__grid reveal">
+    <p class="eyebrow" style="margin:0">{copy.credit.label}</p>
+    <div>
+      {copy.credit.body.map((paragraph) => <p>{paragraph}</p>)}
+      <p><a href={ghostty}>ghostty.org</a></p>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="shell features__intro">
+    <p class="eyebrow eyebrow--accent" style="margin:0">{copy.featuresLabel}</p>
+  </div>
+  <div class="features__list">
+  {
+    copy.features.map((feature, i) => (
+      <div class="shell">
+        <article class:list={["feature", i % 2 === 1 && "feature--flip"]}>
+          <div class="feature__body reveal">
+            <span class="feature__index">{feature.index}</span>
+            <h2>{feature.title}</h2>
+            {feature.body.map((paragraph) => (
+              <p>{paragraph}</p>
+            ))}
+            <p class="feature__links">
+              {feature.links.map((link) => (
+                <a class="feature__more" href={url(link.href)}>
+                  {link.label}
+                  <span class="btn__arrow" aria-hidden="true">
+                    &rarr;
+                  </span>
+                </a>
+              ))}
+            </p>
+          </div>
+          <div class="reveal">
+            {feature.code ? (
+              <CodeCard
+                label={feature.code.label}
+                lang={feature.code.lang}
+                body={feature.code.body}
+              />
+            ) : (
+              <Frame
+                shot={feature.media}
+                alt={feature.alt}
+                pendingLabel={copy.emptyShot}
+                expandLabel={copy.lightbox.expand}
+              />
+            )}
+          </div>
+        </article>
+      </div>
+    ))
+  }
+  </div>
+</section>
+
+<section class="numbers">
+  <div class="shell">
+    <div class="numbers__grid">
+      {
+        copy.numbers.map((n) => (
+          <div class="numbers__cell">
+            <div class="numbers__value">{n.value}</div>
+            <p class="numbers__label">{n.label}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<section class="download" id="download">
+  <div class="shell">
+    <div class="download__inner reveal">
+      <h2>{copy.download.title}</h2>
+      <p>{copy.download.body}</p>
+      <div class="hero__actions">
+        <a class="btn btn--primary" href={url(downloadPath)}>{copy.download.button}</a>
+        <a class="btn btn--ghost" href={releases}>
+          {copy.download.other}
+          <span class="btn__arrow" aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+
+      <div class="note">
+        <h3>{copy.download.gatekeeperTitle}</h3>
+        <p set:html={copy.download.gatekeeperBody} />
+      </div>
+
+      <div class="note">
+        <h3>{copy.download.updatesTitle}</h3>
+        <p set:html={copy.download.updatesBody} />
+      </div>
+    </div>
+  </div>
+</section>
+
+<Footer copy={copy} />

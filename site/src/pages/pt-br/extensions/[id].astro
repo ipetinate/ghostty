@@ -1,0 +1,23 @@
+---
+import Landing from "../../../layouts/Landing.astro";
+import Detail from "../../../components/store/Detail.astro";
+import { ptBr } from "../../../lib/copy";
+import { extensions } from "../../../lib/store";
+
+export function getStaticPaths() {
+  return extensions.map((extension) => ({
+    params: { id: extension.id },
+    props: { extension },
+  }));
+}
+
+const { extension } = Astro.props;
+---
+
+<Landing
+  copy={ptBr}
+  title={`${extension.name} — Extensões do Phantom`}
+  description={extension.description}
+>
+  <Detail copy={ptBr} extension={extension} />
+</Landing>

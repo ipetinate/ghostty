@@ -7,9 +7,19 @@ name: Phantom Test
 # Zig core test suite, the macOS build, the Swift regression suite, and
 # formatting.
 on:
-  pull_request: {}
+  pull_request:
+    paths-ignore:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+      - "README.md"
+      - "FEATURES.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+      - "README.md"
+      - "FEATURES.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

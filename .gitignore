@@ -43,3 +43,11 @@ vgcore.*
 # -A` that had no way to tell it apart from the code beside it, and GitHub
 # refuses a push carrying a 377 MB file.
 macos/macos/
+
+# Documentation site (site/)
+site/node_modules/
+site/dist/
+site/.astro/
+# Staged from the extension registry by site/scripts/fetch-extensions.mjs
+site/src/data/
+site/public/extensions/

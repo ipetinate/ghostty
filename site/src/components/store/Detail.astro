@@ -121,9 +121,11 @@ const facts = [
       const data = event.data;
       if (!data || data.type !== "phantom-viewer-height") return;
       const height = Number(data.height);
-      if (Number.isFinite(height) && height > 200) {
-        frame.style.height = `${height + 24}px`;
-      }
+      if (!Number.isFinite(height) || height < 200 || height > 40000) return;
+      const next = height + 8;
+      /* Only a real change, so a repaint cannot feed the next measurement. */
+      if (Math.abs(next - frame.offsetHeight) <= 2) return;
+      frame.style.height = `${next}px`;
     });
   })();
 </script>

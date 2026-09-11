@@ -48,6 +48,7 @@ export type Copy = {
     back: string;
     forward: string;
     fullscreen: string;
+    pip: string;
     seek: string;
     chapters: { at: number; label: string }[];
   };
@@ -113,7 +114,7 @@ export const en: Copy = {
     lede: "Phantom is a macOS terminal built on Ghostty's engine. Around it: a sidebar that groups your projects, an editor with language servers, git and worktrees, and the coding agents you already run. One window, no alt-tab.",
     download: "Download for macOS",
     docs: "Read the documentation",
-    meta: ["v0.21.0-beta", "macOS 13 or later", "Apple silicon and Intel", "MIT"],
+    meta: ["macOS 13 or later", "Apple silicon and Intel", "MIT"],
     shotAlt:
       "The Phantom window: sidebar with grouped terminals on the left, an editor and a terminal on the right.",
   },
@@ -287,6 +288,7 @@ export const en: Copy = {
     back: "Back ten seconds",
     forward: "Forward ten seconds",
     fullscreen: "Full screen",
+    pip: "Picture in picture",
     seek: "Seek",
     chapters: [
       { at: 0, label: "Welcome" },
@@ -388,7 +390,7 @@ export const ptBr: Copy = {
     lede: "Phantom é um terminal para macOS construído sobre o motor do Ghostty. Em volta dele: uma sidebar que agrupa seus projetos, um editor com language servers, git e worktrees, e os agentes de código que você já usa. Uma janela só, sem alt-tab.",
     download: "Baixar para macOS",
     docs: "Ler a documentação",
-    meta: ["v0.21.0-beta", "macOS 13 ou superior", "Apple silicon e Intel", "MIT"],
+    meta: ["macOS 13 ou superior", "Apple silicon e Intel", "MIT"],
     shotAlt:
       "A janela do Phantom: sidebar com terminais agrupados à esquerda, um editor e um terminal à direita.",
   },
@@ -562,6 +564,7 @@ export const ptBr: Copy = {
     back: "Voltar dez segundos",
     forward: "Avan\u00e7ar dez segundos",
     fullscreen: "Tela cheia",
+    pip: "Picture in picture",
     seek: "Avan\u00e7ar para",
     chapters: [
       { at: 0, label: "Boas-vindas" },
